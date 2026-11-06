@@ -926,7 +926,14 @@ impl Config {
         let base = std::env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
-        Some(base.join("hypr").join("hyprland.conf"))
+        // Like Hyprland 0.55-0.56: hyprland.lua wins over hyprland.conf.
+        let dir = base.join("hypr");
+        let lua = dir.join("hyprland.lua");
+        Some(if lua.exists() {
+            lua
+        } else {
+            dir.join("hyprland.conf")
+        })
     }
 
     /// Loads a config file. Errors on individual lines are collected and
@@ -934,7 +941,29 @@ impl Config {
     pub fn load(path: &Path) -> std::io::Result<(Config, Vec<ConfigError>)> {
         let text = std::fs::read_to_string(path)?;
         let mut parser = Parser::default();
-        parser.parse(&text, path);
+        if path.extension().is_some_and(|e| e == "lua") {
+            let dir = path.parent().unwrap_or(Path::new("."));
+            let name = path.display().to_string();
+            match crate::lua_config::to_hyprlang(&text, dir, &name) {
+                Ok((hyprlang, lua_errors)) => {
+                    parser.parse(&hyprlang, path);
+                    parser
+                        .errors
+                        .extend(lua_errors.into_iter().map(|message| ConfigError {
+                            file: path.to_path_buf(),
+                            line: 0,
+                            message,
+                        }));
+                }
+                Err(message) => parser.errors.push(ConfigError {
+                    file: path.to_path_buf(),
+                    line: 0,
+                    message,
+                }),
+            }
+        } else {
+            parser.parse(&text, path);
+        }
         Ok((parser.config, parser.errors))
     }
 
