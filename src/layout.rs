@@ -258,6 +258,90 @@ impl<T: PartialEq + Clone> Dwindle<T> {
         }
     }
 
+    /// Swaps the positions of two windows in the tree.
+    pub fn swap(&mut self, a: &T, b: &T) -> bool {
+        if a == b || !self.contains(a) || !self.contains(b) {
+            return false;
+        }
+        fn go<T: PartialEq + Clone>(n: &mut Node<T>, a: &T, b: &T) {
+            match n {
+                Node::Leaf(l) if *l == *a => *l = b.clone(),
+                Node::Leaf(l) if *l == *b => *l = a.clone(),
+                Node::Leaf(_) => {}
+                Node::Split { children, .. } => children.iter_mut().for_each(|c| go(c, a, b)),
+            }
+        }
+        if let Some(root) = &mut self.root {
+            go(root, a, b);
+        }
+        true
+    }
+
+    /// Changes the ratio of the split directly containing `w` (Hyprland's
+    /// `splitratio`): `f` maps the old ratio (0.1-1.9) to the new one.
+    pub fn update_ratio(&mut self, w: &T, f: impl Fn(f32) -> f32) -> bool {
+        fn go<T: PartialEq>(n: &mut Node<T>, w: &T, f: &dyn Fn(f32) -> f32) -> bool {
+            let Node::Split {
+                ratio, children, ..
+            } = n
+            else {
+                return false;
+            };
+            if children
+                .iter()
+                .any(|c| matches!(c, Node::Leaf(l) if l == w))
+            {
+                *ratio = f(*ratio).clamp(0.1, 1.9);
+                return true;
+            }
+            children.iter_mut().any(|c| go(c, w, f))
+        }
+        self.root.as_mut().is_some_and(|r| go(r, w, &f))
+    }
+
+    /// Resizes tiled window `w` by `(dx, dy)` pixels (grow if positive) by
+    /// moving the edge of the split that directly contains it. Only the axis
+    /// of that split has an effect. `area` is the area passed to `layout`.
+    pub fn resize(&mut self, w: &T, dx: i32, dy: i32, area: Rect) -> bool {
+        let preserve = self.preserve_split;
+        fn go<T: PartialEq>(
+            n: &mut Node<T>,
+            area: Rect,
+            w: &T,
+            d: (i32, i32),
+            preserve: bool,
+        ) -> bool {
+            let Node::Split {
+                side_by_side,
+                locked,
+                ratio,
+                children,
+            } = n
+            else {
+                return false;
+            };
+            let o = orientation(*side_by_side, *locked, preserve, area);
+            if let Some(first) = children
+                .iter()
+                .position(|c| matches!(c, Node::Leaf(l) if l == w))
+            {
+                let (delta, extent) = if o { (d.0, area.w) } else { (d.1, area.h) };
+                if extent > 0 {
+                    // Growing the first child grows the ratio, the second shrinks it.
+                    let sign = if first == 0 { 1.0 } else { -1.0 };
+                    *ratio = (*ratio + sign * 2.0 * delta as f32 / extent as f32).clamp(0.1, 1.9);
+                }
+                return true;
+            }
+            let (a1, a2) = area.split(o, *ratio);
+            let [c1, c2] = &mut **children;
+            go(c1, a1, w, d, preserve) || go(c2, a2, w, d, preserve)
+        }
+        self.root
+            .as_mut()
+            .is_some_and(|r| go(r, area, w, (dx, dy), preserve))
+    }
+
     /// Computes each window's rectangle. `area` should already exclude the
     /// outer gaps; every window is shrunk by `gaps_in` on each side.
     pub fn layout(&self, area: Rect, gaps_in: i32) -> Vec<(T, Rect)> {
@@ -400,6 +484,32 @@ mod tests {
         d.preserve_split = true;
         let l = d.layout(tall, 0);
         assert_eq!(l[1].1, Rect::new(250, 0, 250, 1000));
+    }
+
+    #[test]
+    fn swap_ratio_and_resize() {
+        let mut d = Dwindle::default();
+        d.insert(1, None, AREA);
+        d.insert(2, None, AREA);
+        assert!(d.swap(&1, &2));
+        assert_eq!(rect_of(&d, 1), Rect::new(500, 0, 500, 500));
+        assert!(!d.swap(&1, &9));
+        assert!(d.swap(&1, &2));
+
+        assert!(d.update_ratio(&1, |r| r + 0.2));
+        assert_eq!(rect_of(&d, 1), Rect::new(0, 0, 600, 500));
+        assert!(d.update_ratio(&2, |_| 5.0));
+        assert_eq!(rect_of(&d, 1).w, 950);
+        assert!(!d.update_ratio(&9, |r| r));
+
+        assert!(d.update_ratio(&1, |_| 1.0));
+        // Growing the second window by 100px moves the edge left by 100px.
+        assert!(d.resize(&2, 100, 0, AREA));
+        assert_eq!(rect_of(&d, 2).w, 600);
+        // Vertical delta has no effect on a side-by-side split.
+        assert!(d.resize(&2, 0, 100, AREA));
+        assert_eq!(rect_of(&d, 2).w, 600);
+        assert!(!d.resize(&9, 1, 1, AREA));
     }
 
     #[test]

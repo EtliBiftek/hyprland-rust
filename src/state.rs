@@ -28,11 +28,7 @@ use smithay::{
 
 use smithay::wayland::shell::wlr_layer::Layer;
 
-use crate::{
-    config::Config,
-    workspace::{Workspace, MAX_WORKSPACES},
-    CalloopData,
-};
+use crate::{config::Config, workspace::Workspace, CalloopData};
 
 pub struct Hypr {
     pub start_time: std::time::Instant,
@@ -60,8 +56,10 @@ pub struct Hypr {
     // Window management
     pub config: Config,
     pub workspaces: Vec<Workspace<Window>>,
-    /// Index into `workspaces` (workspace number - 1).
+    /// Index into `workspaces` (not the workspace id).
     pub active_workspace: usize,
+    /// Focus history, special workspace, submap, key repeat, ...
+    pub wm: crate::wm::WmState,
 
     /// libseat session on the TTY backend, used for VT switching.
     pub session: Option<LibSeatSession>,
@@ -72,7 +70,7 @@ pub struct Hypr {
 
 impl Hypr {
     pub fn new(
-        event_loop: &mut EventLoop<CalloopData>,
+        event_loop: &mut EventLoop<'static, CalloopData>,
         display: Display<Self>,
         config: Config,
     ) -> Self {
@@ -113,7 +111,7 @@ impl Hypr {
         // Get the loop signal, used to stop the event loop
         let loop_signal = event_loop.get_signal();
 
-        Self {
+        let mut hypr = Self {
             start_time,
             display_handle: dh,
 
@@ -134,11 +132,14 @@ impl Hypr {
             layer_focus: None,
 
             config,
-            workspaces: (0..MAX_WORKSPACES).map(|_| Workspace::default()).collect(),
+            workspaces: vec![Workspace::new(1, "1".into())],
             active_workspace: 0,
+            wm: crate::wm::WmState::new(event_loop.handle()),
             session: None,
             ipc: crate::ipc::init(&event_loop.handle()),
-        }
+        };
+        hypr.apply_input_config();
+        hypr
     }
 
     fn init_wayland_listener(

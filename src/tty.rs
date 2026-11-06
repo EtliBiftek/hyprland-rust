@@ -177,7 +177,10 @@ pub fn init_tty(
     handle
         .insert_source(
             LibinputInputBackend::new(libinput.clone()),
-            |event, _, data| data.state.process_input_event(event),
+            |event, _, data| {
+                data.state.libinput_device_event(&event);
+                data.state.process_input_event(event)
+            },
         )
         .map_err(|e| e.error)?;
 
