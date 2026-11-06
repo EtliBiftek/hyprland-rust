@@ -63,6 +63,13 @@ impl Hypr {
     pub fn add_window(&mut self, window: Window) {
         let area = self.tiling_area();
         let target = self.focused_window();
+        let (class, title) = crate::ipc::class_title(&window);
+        let addr = crate::ipc::window_addr(&window);
+        let ws_no = self.active_workspace + 1;
+        self.ipc.emit(
+            "openwindow",
+            &format!("{},{ws_no},{class},{title}", addr.trim_start_matches("0x")),
+        );
         let ws = &mut self.workspaces[self.active_workspace];
         ws.tiled.insert(window.clone(), target.as_ref(), area);
         self.relayout();
@@ -74,6 +81,10 @@ impl Hypr {
         let Some((idx, window)) = self.window_for_surface(surface) else {
             return;
         };
+        self.ipc.emit(
+            "closewindow",
+            crate::ipc::window_addr(&window).trim_start_matches("0x"),
+        );
         self.workspaces[idx].remove(&window);
         self.space.unmap_elem(&window);
         if idx == self.active_workspace {
@@ -192,6 +203,7 @@ impl Hypr {
             }
         }
         keyboard.set_focus(self, window.as_ref().and_then(wl_surface).cloned(), serial);
+        self.ipc.emit_active(window.as_ref());
     }
 
     pub fn switch_workspace(&mut self, number: usize) {
@@ -203,6 +215,8 @@ impl Hypr {
             self.space.unmap_elem(&w);
         }
         self.active_workspace = idx;
+        self.ipc.emit("workspace", &number.to_string());
+        self.ipc.emit("workspacev2", &format!("{number},{number}"));
         self.relayout();
         let focus = self.workspaces[idx].last_focused.clone();
         self.focus_window(focus);
@@ -221,6 +235,11 @@ impl Hypr {
         self.workspaces[self.active_workspace].remove(&window);
         self.space.unmap_elem(&window);
 
+        let addr = crate::ipc::window_addr(&window);
+        let addr = addr.trim_start_matches("0x");
+        self.ipc.emit("movewindow", &format!("{addr},{number}"));
+        self.ipc
+            .emit("movewindowv2", &format!("{addr},{number},{number}"));
         let target = &mut self.workspaces[idx];
         if was_floating {
             target.floating.push(window.clone());
@@ -251,6 +270,12 @@ impl Hypr {
             self.space.unmap_elem(&window);
         }
         self.relayout();
+        let floating = self.workspaces[self.active_workspace].is_floating(&window);
+        let addr = crate::ipc::window_addr(&window);
+        self.ipc.emit(
+            "changefloatingmode",
+            &format!("{},{}", addr.trim_start_matches("0x"), floating as u8),
+        );
         self.focus_window(Some(window));
     }
 
@@ -265,6 +290,8 @@ impl Hypr {
             Some(window)
         };
         self.relayout();
+        let fs = self.workspaces[self.active_workspace].fullscreen.is_some();
+        self.ipc.emit("fullscreen", &(fs as u8).to_string());
     }
 
     fn move_focus(&mut self, dir: crate::config::Direction) {

@@ -8,6 +8,7 @@ mod config;
 mod grabs;
 mod handlers;
 mod input;
+mod ipc;
 mod layout;
 mod state;
 mod tty;
