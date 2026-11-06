@@ -9,6 +9,8 @@ pub enum OptValue {
     Int(i64),
     Bool(bool),
     Float(f64),
+    /// Unused until a string option exists (e.g. `input:kb_layout`).
+    #[allow(dead_code)]
     Str(String),
     /// Complex value printed by `toString()` in Hyprland (gradients etc.).
     Custom(String),
