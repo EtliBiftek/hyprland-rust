@@ -17,19 +17,39 @@ Turkish; reply in Turkish. Code, docs, commits and this file stay in English
   CI, never run on real hardware), `headless` (virtual output, no rendering,
   for CI). Selected with `--backend`; default is winit if `WAYLAND_DISPLAY` or
   `DISPLAY` is set, else tty.
-- Dwindle tiling (`src/layout.rs`), 10 workspaces, floating and fullscreen
-  windows, borders (solid color, active/inactive), gaps.
-- hyprlang config subset (`src/config.rs`): `$vars`, `category { }`,
-  `cat:key` shorthand, `bind`, `exec-once`, `exec`, `source`, colors. Unknown
-  but well-known Hyprland options are ignored with a debug log, not errors.
-- Dispatchers: exec, killactive, exit, workspace, movetoworkspace,
-  togglefloating, fullscreen, movefocus, cyclenext, togglesplit.
-- IPC (`src/ipc.rs`): request socket `.socket.sock` and event socket
-  `.socket2.sock` under `$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/`;
-  `src/bin/hyprctl.rs` is a std-only client (`-j`, `-i`, `--batch`).
-- Tests: unit tests (config, layout, workspace, IPC formatting) plus three
-  shell tests in `tests/` run by CI: keybinds (Xvfb + xdotool), headless smoke
-  (layout checked via `hyprctl -j clients`), IPC (Xvfb + hyprctl).
+- Target Hyprland release: **v0.57.1** (IPC JSON, rules, master layout and
+  dispatcher names were checked against that tag's source/wiki).
+- Layouts: dwindle (`layout.rs`) and master (`master.rs`), chosen per
+  workspace (`general:layout`, workspace rule `layout:`), wrapped in
+  `tiling.rs`; `layoutmsg` for both. Groups (tabbed) with a solid-color
+  groupbar (`groups.rs`, `wm_groups.rs`).
+- Dynamic workspaces (ids, `name:`, special/scratchpad), selectors
+  (`selectors.rs`): `N`, `+1`, `e+1`, `m+1`, `r+1`, `previous`, `empty`.
+- Floating, fullscreen (modes 0/1), pin, borders (solid; window-rule and
+  group colors), gaps, wlr-layer-shell (exclusive zones, layer focus),
+  xdg-decoration (always server side).
+- hyprlang config (`config.rs`): `$vars`, categories, `cat:key`, `bind` with
+  flags `l r e n m t i o d`, `unbind`, submaps, `exec(-once)`, `source`,
+  colors, `input { }` / `touchpad { }` / `device { }`, `windowrule` /
+  `windowrulev2` / `layerrule` (`rules.rs`, `wm/window_rules.rs`). Unknown but
+  well-known options are ignored with a debug log.
+- Config reload: `hyprctl reload`, mtime-polling autoreload (incl. `source`d
+  files), `hyprctl keyword`, `getoption` (`reload.rs`, `options.rs`).
+- Dispatchers: exec, killactive, forcekillactive, closewindow, exit,
+  workspace, movetoworkspace(silent), togglespecialworkspace, togglefloating,
+  setfloating, settiled, fullscreen, pin, movefocus, movewindow, swapwindow,
+  resizeactive, moveactive, centerwindow, cyclenext, swapnext,
+  focuscurrentorlast, focusurgentorlast, focuswindow, splitratio,
+  togglesplit, layoutmsg, submap, pass, tagwindow, group dispatchers.
+- IPC (`ipc.rs`, `ipc_cmds.rs`): async request socket `.socket.sock` and
+  event socket `.socket2.sock` under
+  `$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/`. Requests include
+  clients, workspaces, monitors, activewindow, layers, binds, devices,
+  getoption, keyword, reload, configerrors, dispatch, `[[BATCH]]`.
+  `src/bin/hyprctl.rs` is a std-only client.
+- Tests: unit tests for all pure modules plus six shell tests in `tests/` run
+  by CI: keybinds (Xvfb + xdotool), headless smoke, IPC, layer-shell
+  (waybar), window rules, master layout + groups.
 - Smoke-tested in Xvfb with 3 `weston-terminal`s (`docs/screenshot.png`).
 
 ## Roadmap
@@ -48,13 +68,10 @@ Prioritized checklist (condensed from `docs/ROADMAP.md` plus known code gaps).
 
 Phase 0, infrastructure
 - [ ] Run the TTY backend on real hardware and fix what breaks.
-- [ ] Stop idle redraws: borders and cursor get a new render `Id` every frame,
-      so idle frames are always redrawn. Give them persistent `Id`s, fix damage.
 - [ ] Split into a cargo workspace: `hypr-config`, `hypr-layout`, `hypr-ipc`,
       `hyprctl`, `compositor`.
 - [ ] `docs/PARITY.md`: per-item table (config option, dispatcher, hyprctl
-      command, IPC event, protocol; none/partial/full/tested). Needs a pinned
-      Hyprland release.
+      command, IPC event, protocol; none/partial/full/tested) for v0.57.1.
 
 TTY backend known gaps
 - [ ] Never run on real hardware.
@@ -66,32 +83,25 @@ TTY backend known gaps
 - [ ] No linux-dmabuf global.
 
 IPC known gaps
-- [ ] JSON field names are unverified against real Hyprland.
+- [ ] JSON shapes were checked against the v0.57.1 source, not a running
+      Hyprland.
 - [ ] Many placeholder fields (list in the `src/ipc.rs` header comment).
-- [ ] Requests are served synchronously with a 500 ms timeout (see the
-      `shortcut:` comment in `src/ipc.rs`).
-- [ ] `openwindow` is emitted before app_id/title are known.
-- [ ] `fullscreen` event is emitted only from the dispatcher, not client
-      requests.
-- [ ] Missing events: `focusedmon`, `monitoradded/removed`,
-      `createworkspace/destroyworkspace`, `openlayer/closelayer`, `submap`,
-      `urgent`, `windowtitle`, `configreloaded`, ...
-- [ ] Missing hyprctl commands: `keyword`, `reload`, `getoption`, `devices`,
-      `layers`, `cursorpos`, `notify`, `switchxkblayout`, `seterror`,
-      `configerrors`, ...
+- [ ] Missing events: `monitoradded/removed` (single monitor), and other
+      v0.57.1 events not emitted in `ipc.rs`.
+- [ ] `seterror` / `notify` are not drawn on screen; `rollinglog` is empty.
 
 Not started
-- [ ] Layer-shell (waybar, rofi, mako), xdg-decoration (server side).
-- [ ] Input config (`kb_layout`, repeat, sensitivity, `touchpad { }`,
-      `device { }`).
 - [ ] XWayland.
-- [ ] Remaining dispatchers (~70 in Hyprland), workspace selectors
-      (`e+1`, `name:`, `special:`), bind flags (`bindl/r/e/m/n/t/i/o/d`),
-      submaps.
-- [ ] Window rules (`windowrule`/`windowrulev2`, `layerrule`).
-- [ ] Master layout, groups, special workspaces.
-- [ ] Config auto-reload, `hyprctl reload/keyword`, config error overlay,
-      empty `is_known_unimplemented`.
+- [ ] Remaining dispatchers (`movecurrentworkspacetomonitor`, `dpms`,
+      `alterzorder`, `sendshortcut`, `global`, `setprop`, ...).
+- [ ] Bind flags `l`, `o`, `t` behave like plain binds (no lock screen,
+      long-press or shortcut inhibit); `bindm` has no CI test.
+- [ ] Master: no per-window weights (`resizeactive` only moves `mfact`).
+      Groupbar has no titles and reserves no layout space; drag-into-group
+      and group window rules are missing.
+- [ ] Per-device `kb_*` overrides are ignored (one keyboard per seat).
+- [ ] Config error overlay; empty `is_known_unimplemented`; inotify instead
+      of mtime polling.
 - [ ] Animations (Bézier), rounded corners, gradient borders, blur, shadows.
 - [ ] Remaining protocols: primary selection, data-control, ext-idle-notify,
       ext-session-lock, wlr-screencopy, fractional-scale, etc.
@@ -100,7 +110,6 @@ Not started
 - [ ] Fuzzing (config parser, IPC), packaging, migration guide (phase 9).
 
 Open decisions for the owner
-- Which Hyprland release to target (needed for PARITY.md).
 - Plugin approach: no plugins / Rust dylib API / WASM (decide after phase 3).
 - Access to a Linux machine for hardware testing.
 
@@ -111,6 +120,17 @@ Open decisions for the owner
 | `src/main.rs` | CLI args (`-c`, `--backend`, `--check-config`), config loading, exec-once |
 | `src/config.rs` | hyprlang parser, `Config`, `Bind`, `Dispatcher`, `DEFAULT_CONFIG` |
 | `src/layout.rs` | generic dwindle binary tree `Dwindle<T>`, `Rect`, `find_in_direction` |
+| `src/master.rs` | master layout geometry and `layoutmsg` (pure) |
+| `src/tiling.rs` | per-workspace tiled layout: dwindle or master |
+| `src/groups.rs` | group membership logic (pure) |
+| `src/wm_groups.rs` | group dispatchers, `layoutmsg`, groupbar elements |
+| `src/selectors.rs` | workspace/window selector parsing and resolution (pure) |
+| `src/rules.rs` | windowrule/layerrule parsing and matching (pure) |
+| `src/wm/window_rules.rs` | applying window rules to windows (static + dynamic) |
+| `src/reload.rs` | config reload, autoreload, `keyword` |
+| `src/options.rs` | `getoption` lookup and formatting |
+| `src/ipc_cmds.rs` | non-snapshot hyprctl requests (devices, notify, ...) |
+| `src/handlers/layer_shell.rs` | wlr-layer-shell and xdg-decoration |
 | `src/workspace.rs` | `Workspace<W>`: tiled tree + floating stack + fullscreen + last focus |
 | `src/wm.rs` | `impl Hypr`: relayout, focus, workspaces, dispatchers, border rects |
 | `src/state.rs` | `Hypr` compositor state (Smithay states, seat, config, workspaces) |
@@ -125,8 +145,11 @@ Open decisions for the owner
 | `tests/keybinds-xvfb.sh` | Xvfb + xdotool key press test |
 | `tests/headless-smoke.sh` | headless backend + 2 clients, layout via `hyprctl -j clients` |
 | `tests/ipc-xvfb.sh` | hyprctl requests and `.socket2.sock` events in Xvfb |
+| `tests/layer-shell.sh` | waybar exclusive zone + `hyprctl layers` (headless) |
+| `tests/window-rules.sh` | float/size/center, workspace silent, regex matchers |
+| `tests/master-groups.sh` | master geometry, layoutmsg, groups |
 | `docs/ROADMAP.md` | Turkish roadmap, phases 0-9 |
-| `.github/workflows/ci.yml` | fmt, build, test, clippy, check-config, the 3 shell tests |
+| `.github/workflows/ci.yml` | fmt, build, test, clippy, check-config, the 6 shell tests |
 
 `state.rs`, `winit.rs`, `input.rs`, `grabs/`, `handlers/` started from
 Smithay's `smallvil` example (MIT, see `docs/SMITHAY-LICENSE`); `tty.rs` is
@@ -159,7 +182,7 @@ cargo build
 cargo test
 cargo clippy --all-targets -- -D warnings
 ./target/debug/hyprland-rust --check-config -c examples/hyprland.conf
-sh tests/keybinds-xvfb.sh; sh tests/headless-smoke.sh; sh tests/ipc-xvfb.sh
+for t in tests/*.sh; do sh "$t"; done
 ```
 
 Manual headless smoke test (no real display), e.g. in a cloud container:
@@ -212,8 +235,13 @@ Use a test config with `exec-once = weston-terminal` lines to open windows.
 - Keybind test in Xvfb: there is no WM, so focus the winit window with
   `xdotool windowfocus` (found via `xdotool search --pid`) before `key`.
 - TTY renders only after a vblank or a 16 ms retry timer (when a frame had no
-  damage); borders/cursor use a fresh `Id` every frame, so every frame is
-  currently treated as damaged.
+  damage). Borders/groupbar/cursor use persistent `SolidColorBuffer`s, so
+  idle frames carry no damage; winit skips the swap when there is none.
+- Never call `space.element_geometry()` (or anything else that locks surface
+  data) inside `toplevel.with_pending_state(..)`: it deadlocks.
+- waybar in CI needs `dbus-run-session`.
+- The owner does not want subagents (Pro plan limits); if one is
+  unavoidable, use Haiku.
 
 ## Conventions
 
