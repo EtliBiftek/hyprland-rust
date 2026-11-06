@@ -23,16 +23,17 @@ unset DISPLAY WAYLAND_DISPLAY
 fail() {
     echo "FAIL: $1"
     echo "--- compositor log ---"
-    cat "$T/log"
+    ps -o pid,stat,pcpu,wchan:20,args -p "$COMP" 2>&1 || true
+    tail -n 60 "$T/log"
     exit 1
 }
 
-clients() { timeout 5 "$HYPRCTL" -j clients; }
+clients() { timeout 2 "$HYPRCTL" -j clients; }
 
 # Waits until `hyprctl -j clients` lists exactly $1 windows.
 wait_clients() {
     n=-1
-    for _ in $(seq 50); do
+    for _ in $(seq 12); do
         n=$(clients 2>/dev/null | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))' 2>/dev/null || echo -1)
         [ "$n" = "$1" ] && return 0
         sleep 0.2
