@@ -361,12 +361,19 @@ impl Hypr {
             }
         }
 
-        let mods = Mods {
+        let mut mods = Mods {
             shift: modifiers.shift,
             ctrl: modifiers.ctrl,
             alt: modifiers.alt,
             logo: modifiers.logo,
         };
+        if pressed {
+            self.wm.key_mods.retain(|(c, _)| *c != raw);
+            self.wm.key_mods.push((raw, mods));
+        } else if let Some(p) = self.wm.key_mods.iter().position(|(c, _)| *c == raw) {
+            // Use the modifiers from the press: they may be released first.
+            mods = self.wm.key_mods.remove(p).1;
+        }
         // Match on the unshifted key so `SUPER SHIFT, 1` works
         // regardless of keyboard layout's shifted symbol.
         let syms: Vec<String> = handle

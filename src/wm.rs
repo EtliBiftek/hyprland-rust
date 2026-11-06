@@ -13,7 +13,7 @@ use smithay::{
 };
 
 use crate::{
-    config::{Direction, Dispatcher},
+    config::{Direction, Dispatcher, Mods},
     grabs::{resize_grab::ResizeEdge, MoveSurfaceGrab, ResizeSurfaceGrab},
     ipc::{class_title, window_addr},
     layout::{find_in_direction, Rect},
@@ -42,6 +42,9 @@ pub struct WmState {
     pub repeat: Option<(u32, RegistrationToken)>,
     /// Keycodes whose press was consumed by a bind (their release is too).
     pub consumed_keys: Vec<u32>,
+    /// Modifiers in effect when each held key was pressed, so a release bind
+    /// still matches if the modifier is let go first.
+    pub key_mods: Vec<(u32, Mods)>,
     /// Keys forwarded by `pass`: the release goes to the same surface.
     pub passed_keys: Vec<(u32, WlSurface)>,
     /// libinput devices seen so far, to re-apply options on config reload.
@@ -60,6 +63,7 @@ impl WmState {
             submap: String::new(),
             repeat: None,
             consumed_keys: Vec::new(),
+            key_mods: Vec::new(),
             passed_keys: Vec::new(),
             libinput_devices: Vec::new(),
         }
