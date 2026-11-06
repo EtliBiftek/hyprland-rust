@@ -13,27 +13,32 @@ line-by-line port and is not affiliated with the Hyprland project.
 Early. Keybindings and IPC are covered by CI tests; the TTY backend compiles in
 CI but has **not yet been run on real hardware**.
 
-What works now:
+What works now (targeting Hyprland v0.57.1 behaviour):
 
 - Backends: `winit` (nested window in an X11/Wayland session), `tty`
   (DRM/KMS + libinput + libseat; single GPU, first connected monitor only),
   `headless` (virtual output without rendering, for CI).
-- Dwindle tiling, 10 workspaces, floating and fullscreen windows, solid-color
-  active/inactive borders, `gaps_in`/`gaps_out`, click-to-focus, interactive
-  move/resize of floating windows.
-- hyprlang subset: `$variables`, `category { }` blocks, `category:key`
-  shorthand, `bind`, `exec-once`, `exec`, `source`, colors. Known Hyprland
-  options that are not implemented yet are ignored with a debug log.
-- Dispatchers: `exec`, `killactive`, `exit`, `workspace`, `movetoworkspace`,
-  `togglefloating`, `fullscreen`, `movefocus`, `cyclenext`, `togglesplit`.
-- IPC: Hyprland-style request and event sockets under
-  `$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/`, and a small `hyprctl`
-  binary with a subset of commands (JSON via `-j`, `--batch`). Some JSON fields
-  are placeholders.
+- Layouts: dwindle and master (per workspace, `layoutmsg`), groups (tabbed,
+  with a simple groupbar), floating, fullscreen, pinned windows, dynamic,
+  named and special (scratchpad) workspaces with Hyprland's workspace
+  selectors.
+- wlr-layer-shell (waybar, launchers, wallpapers; exclusive zones) and
+  server-side xdg-decoration.
+- hyprlang config: variables, categories, `bind` with flags (`binde`,
+  `bindr`, `bindm`, ...), submaps, `input { }` (`kb_layout = tr`, repeat,
+  pointer and touchpad options, per-device blocks), `windowrule` /
+  `windowrulev2` / `layerrule`, `exec`, `exec-once`, `source`. Autoreload on
+  file change.
+- Most window-management dispatchers (`movewindow`, `swapwindow`,
+  `resizeactive`, `togglespecialworkspace`, `pin`, group dispatchers, ...).
+- IPC: Hyprland-style request and event sockets and a `hyprctl` binary
+  (`clients`, `workspaces`, `monitors`, `layers`, `binds`, `devices`,
+  `getoption`, `keyword`, `reload`, `dispatch`, `-j`, `--batch`, ...).
 
-Not done yet: multi-monitor and `monitor=` rules, layer-shell, XWayland, input
-options, window rules, master layout, animations and visual effects. See
-[`docs/ROADMAP.md`](docs/ROADMAP.md) (in Turkish) for the plan.
+Not done yet: running the TTY backend on real hardware, multi-monitor and
+`monitor=` rules, XWayland, animations and visual effects (rounding, blur,
+shadows), screen sharing. See [`docs/ROADMAP.md`](docs/ROADMAP.md) (in
+Turkish) for the plan.
 
 ## Building
 
@@ -80,13 +85,16 @@ cargo clippy --all-targets -- -D warnings
 ```
 
 Integration scripts in `tests/` (run from the repository root after
-`cargo build`; they need Xvfb, xdotool, weston and python3 as listed in
+`cargo build`; they need Xvfb, xdotool, weston, waybar, dbus and python3 as listed in
 `.github/workflows/ci.yml`):
 
 - `tests/keybinds-xvfb.sh`: nested compositor in Xvfb, key presses via xdotool.
 - `tests/headless-smoke.sh`: headless backend with two clients, layout checked
   through `hyprctl -j clients`.
 - `tests/ipc-xvfb.sh`: `hyprctl` requests and events on the sockets.
+- `tests/layer-shell.sh`: waybar exclusive zone and `hyprctl layers`.
+- `tests/window-rules.sh`: window rules applied to new windows.
+- `tests/master-groups.sh`: master layout, `layoutmsg` and groups.
 
 GitHub Actions runs all of the above on every push.
 

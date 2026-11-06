@@ -47,9 +47,12 @@ impl CompositorHandler for Hypr {
                 if window.geometry() != old_geo {
                     self.relayout();
                 }
+                self.rules_on_commit(&window);
+                self.check_window_mapped(&window);
             }
         };
 
+        self.layer_commit(surface);
         xdg_shell::handle_commit(&mut self.popups, &self.space, surface);
         resize_grab::handle_commit(&mut self.space, surface);
     }

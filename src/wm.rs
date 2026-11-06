@@ -1,19 +1,86 @@
 //! Window management: workspaces, tiling, focus and dispatchers.
 
+use std::cell::RefCell;
+
 use smithay::{
-    desktop::Window,
+    backend::renderer::element::{
+        solid::{SolidColorBuffer, SolidColorRenderElement},
+        Kind,
+    },
+    desktop::{layer_map_for_output, Window},
+    input::pointer::{Focus, GrabStartData as PointerGrabStartData},
     reexports::{
+        calloop::{LoopHandle, RegistrationToken},
+        input,
         wayland_protocols::xdg::shell::server::xdg_toplevel,
-        wayland_server::protocol::wl_surface::WlSurface,
+        wayland_server::{protocol::wl_surface::WlSurface, Resource},
     },
     utils::{Logical, Point, Rectangle, SERIAL_COUNTER},
 };
 
 use crate::{
-    config::Dispatcher,
-    layout::{find_in_direction, Rect},
+    config::{Direction, Dispatcher, Mods},
+    grabs::{resize_grab::ResizeEdge, MoveSurfaceGrab, ResizeSurfaceGrab},
+    ipc::{class_title, window_addr},
+    layout::{border_sides, find_in_direction, Rect},
+    selectors::{resolve_ws, Target, Vec2Arg, WinInfo, WinSel, WsInfo, WsSel},
     state::Hypr,
+    tiling::LayoutKind,
+    workspace::{new_named_id, new_special_id, Workspace, FIRST_NAMED_ID},
+    CalloopData,
 };
+
+mod window_rules;
+
+/// Window-management state that is not part of a workspace.
+pub struct WmState {
+    pub loop_handle: LoopHandle<'static, CalloopData>,
+    /// Window with keyboard focus (if it is on a visible workspace).
+    pub focused: Option<Window>,
+    /// The window focused before `focused`, for `focuscurrentorlast`.
+    pub prev_focus: Option<Window>,
+    /// Id of the workspace we came from, for `workspace, previous`.
+    pub previous_workspace: Option<i32>,
+    /// Id of the special workspace shown on top of the active one.
+    pub special_shown: Option<i32>,
+    /// Pinned floating windows; they follow the active workspace.
+    pub pinned: Vec<Window>,
+    /// Active submap; empty is the global one.
+    pub submap: String,
+    /// Keycode and timer of the `binde` bind currently repeating.
+    pub repeat: Option<(u32, RegistrationToken)>,
+    /// Keycodes whose press was consumed by a bind (their release is too).
+    pub consumed_keys: Vec<u32>,
+    /// Modifiers in effect when each held key was pressed, so a release bind
+    /// still matches if the modifier is let go first.
+    pub key_mods: Vec<(u32, Mods)>,
+    /// Keys forwarded by `pass`: the release goes to the same surface.
+    pub passed_keys: Vec<(u32, WlSurface)>,
+    /// libinput devices seen so far, to re-apply options on config reload.
+    pub libinput_devices: Vec<input::Device>,
+    /// `lockgroups`: no window may enter or leave groups.
+    pub groups_locked: bool,
+}
+
+impl WmState {
+    pub fn new(loop_handle: LoopHandle<'static, CalloopData>) -> Self {
+        Self {
+            loop_handle,
+            focused: None,
+            prev_focus: None,
+            previous_workspace: None,
+            special_shown: None,
+            pinned: Vec::new(),
+            submap: String::new(),
+            repeat: None,
+            consumed_keys: Vec::new(),
+            key_mods: Vec::new(),
+            passed_keys: Vec::new(),
+            libinput_devices: Vec::new(),
+            groups_locked: false,
+        }
+    }
+}
 
 fn to_rect(r: Rectangle<i32, Logical>) -> Rect {
     Rect::new(r.loc.x, r.loc.y, r.size.w, r.size.h)
@@ -27,19 +94,35 @@ fn wl_surface(w: &Window) -> Option<&WlSurface> {
     w.toplevel().map(|t| t.wl_surface())
 }
 
+fn special_name(n: &str) -> String {
+    if n.is_empty() {
+        "special".into()
+    } else {
+        format!("special:{n}")
+    }
+}
+
 impl Hypr {
     pub fn output_geometry(&self) -> Option<Rectangle<i32, Logical>> {
         let output = self.space.outputs().next()?;
         self.space.output_geometry(output)
     }
 
-    /// The area tiled windows may use: the output minus the outer gaps.
+    /// The output minus the exclusive zones of layer surfaces (bars, docks).
+    pub fn usable_geometry(&self) -> Option<Rectangle<i32, Logical>> {
+        let output = self.space.outputs().next()?;
+        let geo = self.space.output_geometry(output)?;
+        let zone = layer_map_for_output(output).non_exclusive_zone();
+        Some(Rectangle::new(geo.loc + zone.loc, zone.size))
+    }
+
+    /// The area tiled windows may use: the usable area minus the outer gaps.
     /// Window rects are later shrunk by `gaps_in`, so subtract that here to
     /// make the distance to the screen edge exactly `gaps_out`.
     pub fn tiling_area(&self) -> Rect {
         let g = &self.config.general;
         let out = self
-            .output_geometry()
+            .usable_geometry()
             .map(to_rect)
             .unwrap_or(Rect::new(0, 0, 1280, 800));
         out.shrink((g.gaps_out - g.gaps_in).max(0))
@@ -54,27 +137,275 @@ impl Hypr {
         })
     }
 
+    // ------------------------------------------------------------ workspaces
+
+    pub fn ws_index(&self, id: i32) -> Option<usize> {
+        self.workspaces.iter().position(|w| w.id == id)
+    }
+
+    pub fn active_id(&self) -> i32 {
+        self.workspaces[self.active_workspace].id
+    }
+
+    /// Index of the shown special workspace, if any.
+    pub(crate) fn special_index(&self) -> Option<usize> {
+        self.wm.special_shown.and_then(|id| self.ws_index(id))
+    }
+
+    /// Workspace that receives new windows and focus: the special workspace
+    /// while one is shown, else the active one.
+    pub fn focus_ws(&self) -> usize {
+        self.special_index().unwrap_or(self.active_workspace)
+    }
+
+    /// Indices of the workspaces whose windows are on screen.
+    pub(crate) fn visible_ws(&self) -> Vec<usize> {
+        let mut v = vec![self.active_workspace];
+        v.extend(self.special_index());
+        v
+    }
+
+    pub(crate) fn ws_of(&self, w: &Window) -> Option<usize> {
+        self.workspaces.iter().position(|ws| ws.contains(w))
+    }
+
+    fn mon_name(&self) -> String {
+        self.space
+            .outputs()
+            .next()
+            .map(|o| o.name())
+            .unwrap_or_else(|| "HEADLESS-1".into())
+    }
+
+    fn ws_infos(&self) -> Vec<WsInfo> {
+        self.workspaces
+            .iter()
+            .filter(|w| w.id >= 1)
+            .map(|w| WsInfo {
+                id: w.id,
+                windows: w.windows().len(),
+            })
+            .collect()
+    }
+
+    fn create_ws(&mut self, id: i32, name: String) -> usize {
+        self.ipc.emit("createworkspace", &name);
+        self.ipc.emit("createworkspacev2", &format!("{id},{name}"));
+        self.workspaces.push(Workspace::new(id, name));
+        self.workspaces.len() - 1
+    }
+
+    /// Finds or creates the workspace a selector resolved to.
+    fn ensure_ws(&mut self, t: &Target) -> Option<usize> {
+        match t {
+            Target::Id(n) => match self.ws_index(*n) {
+                Some(i) => Some(i),
+                None if *n >= 1 => Some(self.create_ws(*n, n.to_string())),
+                None => None,
+            },
+            Target::Name(name) => match self.workspaces.iter().position(|w| &w.name == name) {
+                Some(i) => Some(i),
+                None => {
+                    let ids = self.workspaces.iter().map(|w| w.id);
+                    let id = new_named_id(ids.filter(|&i| i <= FIRST_NAMED_ID));
+                    Some(self.create_ws(id, name.clone()))
+                }
+            },
+            Target::Special(n) => {
+                let name = special_name(n);
+                match self.workspaces.iter().position(|w| w.name == name) {
+                    Some(i) => Some(i),
+                    None => {
+                        let ids = self
+                            .workspaces
+                            .iter()
+                            .filter(|w| w.is_special())
+                            .map(|w| w.id);
+                        let id = new_special_id(n, ids);
+                        Some(self.create_ws(id, name))
+                    }
+                }
+            }
+        }
+    }
+
+    /// Destroys empty workspaces that are neither active nor shown.
+    pub fn gc_workspaces(&mut self) {
+        let mut i = 0;
+        while i < self.workspaces.len() {
+            let ws = &self.workspaces[i];
+            let keep = i == self.active_workspace
+                || Some(ws.id) == self.wm.special_shown
+                || !ws.windows().is_empty();
+            if keep {
+                i += 1;
+                continue;
+            }
+            let (id, name) = (ws.id, ws.name.clone());
+            self.workspaces.remove(i);
+            if i < self.active_workspace {
+                self.active_workspace -= 1;
+            }
+            self.ipc.emit("destroyworkspace", &name);
+            self.ipc.emit("destroyworkspacev2", &format!("{id},{name}"));
+        }
+    }
+
+    /// `workspace, <selector>`.
+    pub fn select_workspace(&mut self, sel: &WsSel) {
+        let infos = self.ws_infos();
+        let Some(target) = resolve_ws(sel, self.active_id(), self.wm.previous_workspace, &infos)
+        else {
+            return;
+        };
+        match &target {
+            Target::Special(n) => self.toggle_special(n),
+            t => {
+                if let Some(i) = self.ensure_ws(t) {
+                    self.switch_to_index(i);
+                }
+            }
+        }
+    }
+
+    fn hide_special(&mut self) {
+        let Some(id) = self.wm.special_shown.take() else {
+            return;
+        };
+        if let Some(i) = self.ws_index(id) {
+            for w in self.workspaces[i].windows() {
+                self.space.unmap_elem(&w);
+            }
+        }
+        let mon = self.mon_name();
+        self.ipc.emit("activespecial", &format!(",{mon}"));
+    }
+
+    /// `togglespecialworkspace`: shows the special workspace on top of the
+    /// active one, or hides it if it is the one shown.
+    pub fn toggle_special(&mut self, name: &str) {
+        let full = special_name(name);
+        let shown = self
+            .special_index()
+            .map(|i| self.workspaces[i].name.clone());
+        let hide_only = shown.as_deref() == Some(full.as_str());
+        self.hide_special();
+        if !hide_only {
+            let Some(i) = self.ensure_ws(&Target::Special(name.to_string())) else {
+                return;
+            };
+            self.wm.special_shown = Some(self.workspaces[i].id);
+            let mon = self.mon_name();
+            self.ipc.emit("activespecial", &format!("{full},{mon}"));
+        }
+        self.relayout();
+        let f = self.focus_ws();
+        let next = self.workspaces[f].last_focused.clone();
+        self.focus_window(next);
+        self.gc_workspaces();
+    }
+
+    /// Makes workspace `idx` the active one.
+    pub fn switch_to_index(&mut self, idx: usize) {
+        let had_special = self.wm.special_shown.is_some();
+        self.hide_special();
+        if idx == self.active_workspace {
+            if had_special {
+                self.relayout();
+                let next = self.workspaces[idx].last_focused.clone();
+                self.focus_window(next);
+                self.gc_workspaces();
+            }
+            return;
+        }
+        let old = self.active_workspace;
+        let pinned: Vec<Window> = self
+            .wm
+            .pinned
+            .iter()
+            .filter(|w| self.workspaces[old].is_floating(w))
+            .cloned()
+            .collect();
+        for w in self.workspaces[old].windows() {
+            if !pinned.contains(&w) {
+                self.space.unmap_elem(&w);
+            }
+        }
+        for w in &pinned {
+            self.workspaces[old].remove(w);
+            self.workspaces[idx].floating.push(w.clone());
+        }
+        self.wm.previous_workspace = Some(self.workspaces[old].id);
+        self.active_workspace = idx;
+        let (id, name) = (self.workspaces[idx].id, self.workspaces[idx].name.clone());
+        self.ipc.emit("workspace", &name);
+        self.ipc.emit("workspacev2", &format!("{id},{name}"));
+        // shortcut: single monitor, so emit on every workspace switch; only emit
+        // when the focused monitor changes once multi-monitor exists.
+        self.emit_focused_mon();
+        self.relayout();
+        let focus = self.workspaces[idx].last_focused.clone();
+        self.focus_window(focus);
+        self.gc_workspaces();
+    }
+
+    // ---------------------------------------------------------------- windows
+
     pub fn focused_window(&self) -> Option<Window> {
-        let ws = &self.workspaces[self.active_workspace];
-        ws.last_focused.clone().filter(|w| ws.contains(w))
+        let f = self.wm.focused.clone()?;
+        self.visible_ws()
+            .into_iter()
+            .any(|i| self.workspaces[i].contains(&f))
+            .then_some(f)
     }
 
     /// Called when a client creates a new toplevel window.
     pub fn add_window(&mut self, window: Window) {
-        tracing::info!("window mapped on workspace {}", self.active_workspace + 1);
+        let idx = self.focus_ws();
+        tracing::info!("window mapped on workspace {}", self.workspaces[idx].name);
+        self.sync_layouts();
+        if self.try_auto_group(idx, &window) {
+            self.relayout();
+            self.focus_window(Some(window));
+            return;
+        }
         let area = self.tiling_area();
-        let target = self.focused_window();
-        let (class, title) = crate::ipc::class_title(&window);
-        let addr = crate::ipc::window_addr(&window);
-        let ws_no = self.active_workspace + 1;
-        self.ipc.emit(
-            "openwindow",
-            &format!("{},{ws_no},{class},{title}", addr.trim_start_matches("0x")),
-        );
-        let ws = &mut self.workspaces[self.active_workspace];
+        let cursor = self.seat.get_pointer().map(|p| p.current_location());
+        let focused = self
+            .focused_window()
+            .filter(|w| self.workspaces[idx].contains(w));
+        // `use_active_for_splits = false`: split the window under the pointer.
+        let under = cursor
+            .filter(|_| !self.config.dwindle.use_active_for_splits)
+            .and_then(|p| self.window_under(p))
+            .filter(|w| self.workspaces[idx].contains(w) && !self.workspaces[idx].is_floating(w));
+        let target = under.or(focused);
+        let ws = &mut self.workspaces[idx];
+        ws.tiled.dwindle.cursor = cursor.map(|p| (p.x as i32, p.y as i32));
         ws.tiled.insert(window.clone(), target.as_ref(), area);
+        ws.tiled.dwindle.cursor = None;
         self.relayout();
         self.focus_window(Some(window));
+    }
+
+    /// Applies layout choice (`general:layout`, workspace rules) and options
+    /// to every workspace. Switching layout keeps the windows.
+    pub fn sync_layouts(&mut self) {
+        let area = self.tiling_area();
+        for ws in &mut self.workspaces {
+            ws.tiled.configure(&self.config);
+            let rule = self
+                .config
+                .workspace_rules
+                .iter()
+                .find(|r| r.workspace == ws.name);
+            let kind = LayoutKind::parse(
+                rule.and_then(|r| r.layout.as_deref())
+                    .unwrap_or(&self.config.general.layout),
+            );
+            ws.tiled.set_kind(kind, area);
+            ws.tiled.master.rule_orientation = rule.and_then(|r| r.orientation);
+        }
     }
 
     /// Called when a client destroys a toplevel window.
@@ -82,33 +413,72 @@ impl Hypr {
         let Some((idx, window)) = self.window_for_surface(surface) else {
             return;
         };
-        self.ipc.emit(
-            "closewindow",
-            crate::ipc::window_addr(&window).trim_start_matches("0x"),
-        );
+        if crate::ipc::is_mapped(&window) {
+            self.ipc.emit(
+                "closewindow",
+                crate::ipc::window_addr(&window).trim_start_matches("0x"),
+            );
+        }
         self.workspaces[idx].remove(&window);
+        self.wm.pinned.retain(|w| w != &window);
         self.space.unmap_elem(&window);
-        if idx == self.active_workspace {
+        if self.visible_ws().contains(&idx) {
+            // An emptied special workspace closes itself.
+            if self.workspaces[idx].is_special() && self.workspaces[idx].windows().is_empty() {
+                self.hide_special();
+            }
             self.relayout();
-            let next = self.workspaces[idx].last_focused.clone();
+            let f = self.focus_ws();
+            let ws = &self.workspaces[f];
+            let master = if ws.tiled.kind == LayoutKind::Master
+                && self.config.master.focus_master_on_close
+            {
+                ws.tiled.master.master_window().cloned()
+            } else {
+                None
+            };
+            let next = master.or_else(|| ws.last_focused.clone());
             self.focus_window(next);
+        }
+        self.gc_workspaces();
+    }
+
+    /// Positions every visible window and sends configures.
+    pub fn relayout(&mut self) {
+        self.sync_layouts();
+        self.layout_ws(self.active_workspace);
+        if let Some(i) = self.special_index() {
+            self.layout_ws(i);
         }
     }
 
-    /// Positions every window of the active workspace and sends configures.
-    pub fn relayout(&mut self) {
+    fn layout_ws(&mut self, idx: usize) {
         let area = self.tiling_area();
         let gaps_in = self.config.general.gaps_in;
         let output_geo = self.output_geometry();
-        let ws = &mut self.workspaces[self.active_workspace];
-        ws.tiled.preserve_split = self.config.dwindle.preserve_split;
-        ws.tiled.split_ratio = self.config.dwindle.default_split_ratio;
+        let ws = &mut self.workspaces[idx];
+        let is_special = ws.is_special();
+        // `special_scale_factor` shrinks tiled windows of special workspaces
+        // towards the center of the tiling area.
+        let scale = match ws.tiled.kind {
+            LayoutKind::Dwindle => self.config.dwindle.special_scale_factor,
+            LayoutKind::Master => self.config.master.special_scale_factor,
+        };
+        let (cx, cy) = area.center();
+        let scaled = |r: Rect| {
+            if !is_special || scale >= 1.0 {
+                return r;
+            }
+            let f = |v: i32, c: i32| c + ((v - c) as f32 * scale).round() as i32;
+            let (x0, y0) = (f(r.x, cx), f(r.y, cy));
+            Rect::new(x0, y0, f(r.x + r.w, cx) - x0, f(r.y + r.h, cy) - y0)
+        };
 
         let mut placements: Vec<(Window, Rectangle<i32, Logical>, bool)> = ws
             .tiled
             .layout(area, gaps_in)
             .into_iter()
-            .map(|(w, r)| (w, from_rect(r), false))
+            .map(|(w, r)| (w, from_rect(scaled(r)), false))
             .collect();
 
         for w in &ws.floating {
@@ -129,6 +499,14 @@ impl Hypr {
             placements.push((w.clone(), rect, false));
         }
 
+        if let Some(mx) = ws.maximized.clone() {
+            for p in placements.iter_mut() {
+                if p.0 == mx {
+                    p.1 = from_rect(area.shrink(gaps_in));
+                }
+            }
+        }
+
         if let (Some(fs), Some(out)) = (ws.fullscreen.clone(), output_geo) {
             for p in placements.iter_mut() {
                 if p.0 == fs {
@@ -137,14 +515,32 @@ impl Hypr {
             }
         }
 
+        // Hidden group members get the size of the visible one but stay unmapped.
+        let mut hidden = Vec::new();
+        for g in &ws.groups.list {
+            let active = g.active();
+            let Some(p) = placements.iter().find(|p| &p.0 == active).cloned() else {
+                continue;
+            };
+            for m in g.members.iter().filter(|m| *m != active) {
+                placements.push((m.clone(), p.1, p.2));
+                hidden.push(m.clone());
+            }
+        }
+
         let fullscreen = ws.fullscreen.clone();
+        let maximized = ws.maximized.clone();
         let floating = ws.floating.clone();
+        let all = ws.windows();
         for (window, rect, is_fullscreen) in placements {
             if let Some(toplevel) = window.toplevel() {
                 let is_floating = floating.contains(&window);
+                // Not inside `with_pending_state`: it holds the surface lock that
+                // `element_geometry` takes (deadlock otherwise).
+                let keep_size = is_floating && self.space.element_geometry(&window).is_some();
                 toplevel.with_pending_state(|state| {
                     // Floating windows pick their own size after the first configure.
-                    if !is_floating || self.space.element_geometry(&window).is_none() {
+                    if !keep_size {
                         state.size = Some(rect.size);
                     }
                     if is_fullscreen {
@@ -171,11 +567,25 @@ impl Hypr {
             }
             // `Space` positions the window's geometry (it applies the client-side
             // decoration offset, e.g. shadows, itself).
-            self.space.map_element(window.clone(), rect.loc, false);
+            if hidden.contains(&window) {
+                self.space.unmap_elem(&window);
+            } else {
+                self.space.map_element(window.clone(), rect.loc, false);
+            }
         }
 
+        // A special workspace is drawn above the regular one.
+        if is_special {
+            for w in &all {
+                self.space.raise_element(w, false);
+            }
+        }
         // Keep floating windows above tiled ones, fullscreen above everything.
-        for w in floating.iter().chain(fullscreen.iter()) {
+        for w in floating
+            .iter()
+            .chain(maximized.iter())
+            .chain(fullscreen.iter())
+        {
             self.space.raise_element(w, false);
         }
     }
@@ -184,17 +594,30 @@ impl Hypr {
     pub fn focus_window(&mut self, window: Option<Window>) {
         let serial = SERIAL_COUNTER.next_serial();
         let keyboard = self.seat.get_keyboard().unwrap();
-        let ws = &mut self.workspaces[self.active_workspace];
 
+        // Focusing a hidden group member brings its tab to the front.
         if let Some(w) = &window {
-            ws.last_focused = Some(w.clone());
-            if ws.is_floating(w) {
-                // Move to top of the floating stack.
-                ws.floating.retain(|f| f != w);
-                ws.floating.push(w.clone());
-                self.space.raise_element(w, true);
+            if self.group_activate(w) {
+                self.relayout();
             }
         }
+        if let Some(w) = &window {
+            if let Some(i) = self.ws_of(w) {
+                let ws = &mut self.workspaces[i];
+                ws.last_focused = Some(w.clone());
+                if ws.is_floating(w) {
+                    // Move to top of the floating stack.
+                    ws.floating.retain(|f| f != w);
+                    ws.floating.push(w.clone());
+                    self.space.raise_element(w, true);
+                }
+            }
+        }
+        let old = self.focused_window();
+        if old != window && old.is_some() {
+            self.wm.prev_focus = old;
+        }
+        self.wm.focused = window.clone();
         for w in self.space.elements() {
             w.set_activated(Some(w) == window.as_ref());
             if let Some(t) = w.toplevel() {
@@ -203,112 +626,196 @@ impl Hypr {
                 }
             }
         }
-        keyboard.set_focus(self, window.as_ref().and_then(wl_surface).cloned(), serial);
+        // An exclusive-keyboard layer surface (launcher, lock screen) keeps focus.
+        self.layer_focus = self.exclusive_layer();
+        let target = self
+            .layer_focus
+            .clone()
+            .or_else(|| window.as_ref().and_then(wl_surface).cloned());
+        keyboard.set_focus(self, target, serial);
         self.ipc.emit_active(window.as_ref());
+        self.refresh_rules_on_focus();
     }
 
-    pub fn switch_workspace(&mut self, number: usize) {
-        let idx = number - 1;
-        if idx == self.active_workspace {
-            return;
-        }
-        for w in self.workspaces[self.active_workspace].windows() {
-            self.space.unmap_elem(&w);
-        }
-        self.active_workspace = idx;
-        self.ipc.emit("workspace", &number.to_string());
-        self.ipc.emit("workspacev2", &format!("{number},{number}"));
-        self.relayout();
-        let focus = self.workspaces[idx].last_focused.clone();
-        self.focus_window(focus);
-    }
-
-    pub fn move_to_workspace(&mut self, number: usize) {
-        let idx = number - 1;
+    /// `movetoworkspace` (follows the window) and `movetoworkspacesilent`.
+    pub fn move_to_workspace(&mut self, sel: &WsSel, silent: bool) {
         let Some(window) = self.focused_window() else {
             return;
         };
-        if idx == self.active_workspace {
+        let Some(src) = self.ws_of(&window) else {
+            return;
+        };
+        let infos = self.ws_infos();
+        let Some(target) = resolve_ws(sel, self.active_id(), self.wm.previous_workspace, &infos)
+        else {
+            return;
+        };
+        let Some(dst) = self.ensure_ws(&target) else {
+            return;
+        };
+        if dst == src {
             return;
         }
+        self.sync_layouts();
         let area = self.tiling_area();
-        let was_floating = self.workspaces[self.active_workspace].is_floating(&window);
-        self.workspaces[self.active_workspace].remove(&window);
+        let was_floating = self.workspaces[src].is_floating(&window);
+        // A grouped window takes its whole group along.
+        let ws_src = &mut self.workspaces[src];
+        let group = ws_src
+            .groups
+            .find(&window)
+            .map(|g| ws_src.groups.list.remove(g));
+        ws_src.remove(&window);
+        for m in group.iter().flat_map(|g| g.members.iter()) {
+            self.space.unmap_elem(m);
+        }
         self.space.unmap_elem(&window);
 
-        let addr = crate::ipc::window_addr(&window);
+        let (id, name) = (self.workspaces[dst].id, self.workspaces[dst].name.clone());
+        let addr = window_addr(&window);
         let addr = addr.trim_start_matches("0x");
-        self.ipc.emit("movewindow", &format!("{addr},{number}"));
+        self.ipc.emit("movewindow", &format!("{addr},{name}"));
         self.ipc
-            .emit("movewindowv2", &format!("{addr},{number},{number}"));
-        let target = &mut self.workspaces[idx];
+            .emit("movewindowv2", &format!("{addr},{id},{name}"));
+        let target_ws = &mut self.workspaces[dst];
         if was_floating {
-            target.floating.push(window.clone());
+            target_ws.floating.push(window.clone());
         } else {
-            let anchor = target.last_focused.clone();
-            target.tiled.insert(window.clone(), anchor.as_ref(), area);
+            let anchor = target_ws.last_focused.clone();
+            target_ws
+                .tiled
+                .insert(window.clone(), anchor.as_ref(), area);
         }
-        target.last_focused = Some(window);
+        target_ws.last_focused = Some(window);
+        target_ws.groups.list.extend(group);
 
         self.relayout();
-        let next = self.workspaces[self.active_workspace].last_focused.clone();
+        let f = self.focus_ws();
+        let next = self.workspaces[f].last_focused.clone();
         self.focus_window(next);
+        if !silent && !matches!(target, Target::Special(_)) {
+            self.switch_to_index(dst);
+        }
+        self.gc_workspaces();
     }
 
-    pub fn toggle_floating(&mut self) {
-        let Some(window) = self.focused_window() else {
+    /// Sets (`Some`) or toggles (`None`) the floating state of `window`.
+    fn set_floating(&mut self, window: &Window, want: Option<bool>) {
+        let Some(i) = self.ws_of(window) else {
             return;
         };
+        self.sync_layouts();
         let area = self.tiling_area();
-        let ws = &mut self.workspaces[self.active_workspace];
-        if ws.is_floating(&window) {
-            ws.floating.retain(|w| w != &window);
+        let ws = &mut self.workspaces[i];
+        let floating = ws.is_floating(window);
+        if want.unwrap_or(!floating) == floating {
+            return;
+        }
+        if floating {
+            ws.floating.retain(|w| w != window);
             ws.tiled.insert(window.clone(), None, area);
+            self.wm.pinned.retain(|w| w != window);
         } else {
-            ws.tiled.remove(&window);
+            ws.tiled.remove(window);
             ws.floating.push(window.clone());
             // Forget the tiled position so relayout centers it.
-            self.space.unmap_elem(&window);
+            self.space.unmap_elem(window);
         }
         self.relayout();
-        let floating = self.workspaces[self.active_workspace].is_floating(&window);
-        let addr = crate::ipc::window_addr(&window);
+        let floating = self.workspaces[i].is_floating(window);
+        let addr = window_addr(window);
         self.ipc.emit(
             "changefloatingmode",
             &format!("{},{}", addr.trim_start_matches("0x"), floating as u8),
         );
-        self.focus_window(Some(window));
+        self.focus_window(Some(window.clone()));
     }
 
-    pub fn toggle_fullscreen(&mut self) {
+    pub fn toggle_floating(&mut self) {
+        if let Some(w) = self.focused_window() {
+            self.set_floating(&w, None);
+        }
+    }
+
+    fn toggle_fullscreen(&mut self, maximize: bool) {
         let Some(window) = self.focused_window() else {
             return;
         };
-        let ws = &mut self.workspaces[self.active_workspace];
-        ws.fullscreen = if ws.fullscreen.as_ref() == Some(&window) {
+        let Some(i) = self.ws_of(&window) else {
+            return;
+        };
+        let ws = &mut self.workspaces[i];
+        let slot = if maximize {
+            &mut ws.maximized
+        } else {
+            &mut ws.fullscreen
+        };
+        *slot = if slot.as_ref() == Some(&window) {
             None
         } else {
             Some(window)
         };
         self.relayout();
-        let fs = self.workspaces[self.active_workspace].fullscreen.is_some();
-        self.ipc.emit("fullscreen", &(fs as u8).to_string());
+        if !maximize {
+            let fs = self.workspaces[i].fullscreen.is_some();
+            self.ipc.emit("fullscreen", &(fs as u8).to_string());
+        }
     }
 
-    fn move_focus(&mut self, dir: crate::config::Direction) {
+    /// Rects of the tiled windows of the workspace holding `w`, plus its index.
+    pub(crate) fn tiled_rects(&self, w: &Window) -> Option<(usize, Vec<(Window, Rect)>)> {
+        let i = self.ws_of(w)?;
+        let ws = &self.workspaces[i];
+        (!ws.is_floating(w)).then(|| (i, ws.tiled.layout(self.tiling_area(), 0)))
+    }
+
+    fn move_focus(&mut self, dir: Direction) {
         let Some(from) = self.focused_window() else {
             return;
         };
-        let rects = self.workspaces[self.active_workspace]
-            .tiled
-            .layout(self.tiling_area(), 0);
+        let Some((_, rects)) = self.tiled_rects(&from) else {
+            return;
+        };
         if let Some(to) = find_in_direction(&rects, &from, dir) {
             self.focus_window(Some(to));
         }
     }
 
+    /// `movewindow` / `swapwindow`: swap with the tiled neighbour in `dir`.
+    // shortcut: movewindow swaps instead of re-parenting in the tree like
+    // Hyprland; implement tree moves when master layout/groups land.
+    pub(crate) fn swap_dir(&mut self, dir: Direction) {
+        let Some(from) = self.focused_window() else {
+            return;
+        };
+        let Some((i, rects)) = self.tiled_rects(&from) else {
+            return;
+        };
+        if let Some(to) = find_in_direction(&rects, &from, dir) {
+            self.workspaces[i].tiled.swap(&from, &to);
+            self.relayout();
+        }
+    }
+
+    fn swap_next(&mut self, prev: bool) {
+        let Some(from) = self.focused_window() else {
+            return;
+        };
+        let Some(i) = self.ws_of(&from) else {
+            return;
+        };
+        let wins = self.workspaces[i].tiled.windows();
+        let Some(pos) = wins.iter().position(|w| w == &from) else {
+            return;
+        };
+        let n = wins.len();
+        let to = wins[(pos + if prev { n - 1 } else { 1 }) % n].clone();
+        self.workspaces[i].tiled.swap(&from, &to);
+        self.relayout();
+    }
+
     fn cycle_next(&mut self) {
-        let windows = self.workspaces[self.active_workspace].windows();
+        let windows = self.workspaces[self.focus_ws()].visible_windows();
         if windows.is_empty() {
             return;
         }
@@ -322,77 +829,361 @@ impl Hypr {
         self.focus_window(Some(next));
     }
 
+    fn out_size(&self) -> (i32, i32) {
+        self.output_geometry()
+            .map_or((1280, 800), |g| (g.size.w, g.size.h))
+    }
+
+    fn resize_active(&mut self, arg: &Vec2Arg) {
+        let Some(w) = self.focused_window() else {
+            return;
+        };
+        let Some(i) = self.ws_of(&w) else {
+            return;
+        };
+        let size = w.geometry().size;
+        let cur = (size.w, size.h);
+        if self.workspaces[i].is_floating(&w) {
+            let (nw, nh) = arg.resolve(cur, cur, self.out_size());
+            if let Some(t) = w.toplevel() {
+                t.with_pending_state(|s| s.size = Some((nw.max(20), nh.max(20)).into()));
+                if t.is_initial_configure_sent() {
+                    t.send_pending_configure();
+                }
+            }
+        } else if !arg.exact {
+            // shortcut: tiled windows resize by moving their split edge; exact
+            // sizes are ignored for them.
+            let (dx, dy) = arg.delta(cur);
+            let area = self.tiling_area();
+            if self.workspaces[i].tiled.resize(&w, dx, dy, area) {
+                self.relayout();
+            }
+        }
+    }
+
+    fn move_active(&mut self, arg: &Vec2Arg) {
+        let Some(w) = self.focused_window() else {
+            return;
+        };
+        let floating = self
+            .ws_of(&w)
+            .is_some_and(|i| self.workspaces[i].is_floating(&w));
+        let Some(loc) = self.space.element_location(&w).filter(|_| floating) else {
+            return;
+        };
+        let out = self.out_size();
+        let (x, y) = arg.resolve((loc.x, loc.y), out, out);
+        self.space.map_element(w, (x, y), false);
+    }
+
+    fn center_window(&mut self) {
+        let Some(w) = self.focused_window() else {
+            return;
+        };
+        let floating = self
+            .ws_of(&w)
+            .is_some_and(|i| self.workspaces[i].is_floating(&w));
+        let Some(out) = self.output_geometry().filter(|_| floating) else {
+            return;
+        };
+        let size = w.geometry().size;
+        let loc = (
+            out.loc.x + (out.size.w - size.w) / 2,
+            out.loc.y + (out.size.h - size.h) / 2,
+        );
+        self.space.map_element(w, loc, false);
+    }
+
+    fn pin_active(&mut self) {
+        let Some(w) = self.focused_window() else {
+            return;
+        };
+        // Only floating windows can be pinned.
+        if !self
+            .ws_of(&w)
+            .is_some_and(|i| self.workspaces[i].is_floating(&w))
+        {
+            return;
+        }
+        let pinned = if self.wm.pinned.contains(&w) {
+            self.wm.pinned.retain(|p| p != &w);
+            false
+        } else {
+            self.wm.pinned.push(w.clone());
+            true
+        };
+        let addr = window_addr(&w);
+        self.ipc.emit(
+            "pin",
+            &format!("{},{}", addr.trim_start_matches("0x"), pinned as u8),
+        );
+    }
+
+    pub fn window_pid(&self, w: &Window) -> i32 {
+        w.toplevel()
+            .and_then(|t| t.wl_surface().client())
+            .and_then(|c| c.get_credentials(&self.display_handle).ok())
+            .map_or(-1, |c| c.pid)
+    }
+
+    /// First window (on any workspace) matching a selector.
+    pub fn find_window(&self, sel: &WinSel) -> Option<(usize, Window)> {
+        self.workspaces.iter().enumerate().find_map(|(i, ws)| {
+            ws.windows().into_iter().find_map(|w| {
+                let (class, title) = class_title(&w);
+                let info = WinInfo {
+                    class,
+                    title,
+                    address: window_addr(&w),
+                    pid: self.window_pid(&w),
+                    floating: ws.is_floating(&w),
+                };
+                sel.matches(&info).then_some((i, w))
+            })
+        })
+    }
+
+    /// `focuswindow`: switches to the window's workspace if needed.
+    fn focus_window_sel(&mut self, sel: &WinSel) {
+        let Some((i, w)) = self.find_window(sel) else {
+            return;
+        };
+        let ws = &self.workspaces[i];
+        if ws.is_special() {
+            if self.wm.special_shown != Some(ws.id) {
+                let name = ws.name.strip_prefix("special:").unwrap_or("").to_string();
+                self.toggle_special(&name);
+            }
+        } else if i != self.active_workspace || self.wm.special_shown.is_some() {
+            self.switch_to_index(i);
+        }
+        self.focus_window(Some(w));
+    }
+
+    fn kill_window(&mut self, sel: Option<&WinSel>, force: bool) {
+        let window = match sel {
+            Some(s) => self.find_window(s).map(|(_, w)| w),
+            None => self.focused_window(),
+        };
+        let Some(window) = window else {
+            return;
+        };
+        if force {
+            // shortcut: shells out to kill(1); use libc::kill if a libc dep
+            // is added for something else.
+            let pid = self.window_pid(&window);
+            if pid > 0 {
+                let _ = std::process::Command::new("kill")
+                    .args(["-9", &pid.to_string()])
+                    .status();
+            }
+        } else if let Some(t) = window.toplevel() {
+            t.send_close();
+        }
+    }
+
+    /// Starts an interactive move/resize of the window under the pointer
+    /// (`bindm`). Dragging a tiled window with `movewindow` makes it floating
+    /// first; `resizewindow` on a tiled window is ignored.
+    pub fn start_mouse_grab(&mut self, resize: bool, button: u32) -> bool {
+        let pointer = self.seat.get_pointer().unwrap();
+        let pos = pointer.current_location();
+        let Some(window) = self.window_under(pos) else {
+            return false;
+        };
+        self.focus_window(Some(window.clone()));
+        let Some(i) = self.ws_of(&window) else {
+            return false;
+        };
+        if !self.workspaces[i].is_floating(&window) {
+            if resize {
+                return false;
+            }
+            self.set_floating(&window, Some(true));
+        }
+        let Some(loc) = self.space.element_location(&window) else {
+            return false;
+        };
+        let start_data = PointerGrabStartData {
+            focus: None,
+            button,
+            location: pos,
+        };
+        let serial = SERIAL_COUNTER.next_serial();
+        if resize {
+            let size = window.geometry().size;
+            // Resize from the corner nearest to the pointer.
+            let rel = pos - loc.to_f64();
+            let mut edges = if rel.x < size.w as f64 / 2.0 {
+                ResizeEdge::LEFT
+            } else {
+                ResizeEdge::RIGHT
+            };
+            edges |= if rel.y < size.h as f64 / 2.0 {
+                ResizeEdge::TOP
+            } else {
+                ResizeEdge::BOTTOM
+            };
+            if let Some(t) = window.toplevel() {
+                t.with_pending_state(|s| s.states.set(xdg_toplevel::State::Resizing));
+                t.send_pending_configure();
+            }
+            let grab =
+                ResizeSurfaceGrab::start(start_data, window, edges, Rectangle::new(loc, size));
+            pointer.set_grab(self, grab, serial, Focus::Clear);
+        } else {
+            let grab = MoveSurfaceGrab {
+                start_data,
+                window,
+                initial_window_location: loc,
+            };
+            pointer.set_grab(self, grab, serial, Focus::Clear);
+        }
+        true
+    }
+
     pub fn dispatch(&mut self, action: &Dispatcher) {
         tracing::debug!(?action, "dispatch");
         match action {
             Dispatcher::Exec(cmd) => spawn(cmd),
-            Dispatcher::KillActive => {
-                if let Some(t) = self.focused_window().as_ref().and_then(|w| w.toplevel()) {
-                    t.send_close();
+            Dispatcher::KillActive => self.kill_window(None, false),
+            Dispatcher::ForceKillActive => self.kill_window(None, true),
+            Dispatcher::Exit => self.loop_signal.stop(),
+            Dispatcher::Workspace(sel) => self.select_workspace(sel),
+            Dispatcher::MoveToWorkspace(sel) => self.move_to_workspace(sel, false),
+            Dispatcher::MoveToWorkspaceSilent(sel) => self.move_to_workspace(sel, true),
+            Dispatcher::ToggleFloating => self.toggle_floating(),
+            Dispatcher::SetFloating | Dispatcher::SetTiled => {
+                if let Some(w) = self.focused_window() {
+                    self.set_floating(&w, Some(*action == Dispatcher::SetFloating));
                 }
             }
-            Dispatcher::Exit => self.loop_signal.stop(),
-            Dispatcher::Workspace(n) => self.switch_workspace(*n),
-            Dispatcher::MoveToWorkspace(n) => self.move_to_workspace(*n),
-            Dispatcher::ToggleFloating => self.toggle_floating(),
-            Dispatcher::Fullscreen => self.toggle_fullscreen(),
+            Dispatcher::Fullscreen => self.toggle_fullscreen(false),
+            Dispatcher::Maximize => self.toggle_fullscreen(true),
             Dispatcher::MoveFocus(dir) => self.move_focus(*dir),
             Dispatcher::CycleNext => self.cycle_next(),
-            Dispatcher::ToggleSplit => {
+            Dispatcher::ToggleSplit => self.layout_msg("togglesplit"),
+            Dispatcher::LayoutMsg(msg) => self.layout_msg(msg),
+            Dispatcher::ToggleGroup => self.toggle_group(),
+            Dispatcher::ChangeGroupActive(step) => self.change_group_active(*step),
+            Dispatcher::MoveIntoGroup(dir) => self.move_into_group(*dir),
+            Dispatcher::MoveOutOfGroup(dir) => self.move_out_of_group(*dir),
+            Dispatcher::MoveWindowOrGroup(dir) => self.move_window_or_group(*dir),
+            Dispatcher::MoveGroupWindow(back) => self.move_group_window(*back),
+            Dispatcher::LockGroups(t) => self.lock_groups(*t),
+            Dispatcher::LockActiveGroup(t) => self.set_group_flag(*t, true),
+            Dispatcher::DenyWindowFromGroup(t) => self.set_group_flag(*t, false),
+            Dispatcher::SetIgnoreGroupLock(t) => {
+                self.config.ignore_group_lock = t.apply(self.config.ignore_group_lock)
+            }
+            Dispatcher::MoveWindow(dir) | Dispatcher::SwapWindow(dir) => self.swap_dir(*dir),
+            Dispatcher::ResizeActive(arg) => self.resize_active(arg),
+            Dispatcher::MoveActive(arg) => self.move_active(arg),
+            Dispatcher::CenterWindow => self.center_window(),
+            Dispatcher::Pin => self.pin_active(),
+            Dispatcher::FocusCurrentOrLast | Dispatcher::FocusUrgentOrLast => {
+                // shortcut: no urgency tracking, so focusurgentorlast behaves
+                // like focuscurrentorlast.
+                if let Some(p) = self.wm.prev_focus.clone() {
+                    self.focus_window_sel(&WinSel::Address(window_addr(&p)));
+                }
+            }
+            Dispatcher::SplitRatio(arg) => {
                 if let Some(w) = self.focused_window() {
-                    let area = self.tiling_area();
-                    self.workspaces[self.active_workspace]
-                        .tiled
-                        .toggle_split(&w, area);
-                    self.relayout();
+                    if let Some(i) = self.ws_of(&w) {
+                        let arg = *arg;
+                        if self.workspaces[i].tiled.update_ratio(&w, |r| arg.apply(r)) {
+                            self.relayout();
+                        }
+                    }
+                }
+            }
+            Dispatcher::SwapNext(prev) => self.swap_next(*prev),
+            Dispatcher::CloseWindow(sel) => self.kill_window(Some(sel), false),
+            Dispatcher::FocusWindow(sel) => self.focus_window_sel(sel),
+            // Needs the triggering key: handled in `process_input_event`.
+            Dispatcher::Pass(_) | Dispatcher::MouseMove | Dispatcher::MouseResize => {}
+            Dispatcher::ToggleSpecialWorkspace(name) => self.toggle_special(name),
+            Dispatcher::Submap(name) => {
+                self.wm.submap = name.clone();
+                self.ipc.emit("submap", name);
+            }
+            Dispatcher::TagWindow(tag, sel) => self.tag_window(tag, sel.as_ref()),
+        }
+        // Floating, fullscreen, pin or tags may have changed: dynamic rules.
+        self.refresh_all_rules();
+    }
+
+    /// Border render elements (outside each window). Each side keeps a
+    /// `SolidColorBuffer` in the window's user data, so unchanged borders keep
+    /// their element id and commit counter and are not redrawn.
+    pub fn border_elements(&self) -> Vec<SolidColorRenderElement> {
+        let g = &self.config.general;
+        let focused = self.focused_window();
+        let mut out = Vec::new();
+        for i in self.visible_ws() {
+            let ws = &self.workspaces[i];
+            for w in ws.windows() {
+                if ws.fullscreen.as_ref() == Some(&w) {
+                    continue;
+                }
+                let Some(loc) = self.space.element_location(&w) else {
+                    continue;
+                };
+                let size = w.geometry().size;
+                let (rule_size, rule_color) = self.rule_border(&w);
+                let b = rule_size.unwrap_or(g.border_size);
+                if b <= 0 {
+                    continue;
+                }
+                let is_focused = focused.as_ref() == Some(&w);
+                let gc = &self.config.group;
+                let rule = if is_focused {
+                    rule_color.active
+                } else {
+                    rule_color.inactive
+                };
+                // Window-rule colors win over group and general colors.
+                let color = rule.unwrap_or(match (ws.groups.group_of(&w), is_focused) {
+                    (None, true) => g.active_border_color,
+                    (None, false) => g.inactive_border_color,
+                    (Some(grp), true) if grp.locked => gc.border_locked_active,
+                    (Some(_), true) => gc.border_active,
+                    (Some(grp), false) if grp.locked => gc.border_locked_inactive,
+                    (Some(_), false) => gc.border_inactive,
+                });
+                let bufs = w
+                    .user_data()
+                    .get_or_insert(|| RefCell::new(<[SolidColorBuffer; 4]>::default()));
+                let mut bufs = bufs.borrow_mut();
+                for (buf, side) in bufs
+                    .iter_mut()
+                    .zip(border_sides(Rect::new(loc.x, loc.y, size.w, size.h), b))
+                {
+                    buf.update((side.w, side.h), color);
+                    out.push(SolidColorRenderElement::from_buffer(
+                        buf,
+                        (side.x, side.y),
+                        1.0,
+                        1.0,
+                        Kind::Unspecified,
+                    ));
                 }
             }
         }
-    }
-
-    /// Border rectangles (outside each window) with their colors, for rendering.
-    pub fn borders(&self) -> Vec<(Rectangle<i32, Logical>, [f32; 4])> {
-        let g = &self.config.general;
-        let b = g.border_size;
-        if b <= 0 {
-            return Vec::new();
-        }
-        let ws = &self.workspaces[self.active_workspace];
-        let focused = self.focused_window();
-        let mut out = Vec::new();
-        for w in ws.windows() {
-            if ws.fullscreen.as_ref() == Some(&w) {
-                continue;
-            }
-            let Some(loc) = self.space.element_location(&w) else {
-                continue;
-            };
-            let r = Rectangle::new(loc, w.geometry().size);
-            let color = if focused.as_ref() == Some(&w) {
-                g.active_border_color
-            } else {
-                g.inactive_border_color
-            };
-            let (x, y, ww, hh) = (r.loc.x, r.loc.y, r.size.w, r.size.h);
-            for rect in [
-                Rectangle::new((x - b, y - b).into(), (ww + 2 * b, b).into()), // top
-                Rectangle::new((x - b, y + hh).into(), (ww + 2 * b, b).into()), // bottom
-                Rectangle::new((x - b, y).into(), (b, hh).into()),             // left
-                Rectangle::new((x + ww, y).into(), (b, hh).into()),            // right
-            ] {
-                out.push((rect, color));
-            }
-        }
+        out.extend(self.groupbar_elements());
         out
     }
 
-    /// Window under the pointer on the active workspace.
+    /// Window under the pointer on the visible workspaces.
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<Window> {
         self.space.element_under(pos).map(|(w, _)| w.clone())
     }
 }
 
 pub fn spawn(cmd: &str) {
+    let cmd = crate::config::strip_exec_rules(cmd);
     tracing::info!("exec: {cmd}");
     // Double fork: the inner `sh` backgrounds the command and exits at once, so
     // we reap it here and the program is re-parented to init (no zombies).

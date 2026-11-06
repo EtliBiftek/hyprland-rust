@@ -17,17 +17,19 @@ use smithay::{
         compositor::{CompositorClientState, CompositorState},
         output::OutputManagerState,
         selection::data_device::DataDeviceState,
-        shell::xdg::XdgShellState,
+        shell::{
+            wlr_layer::WlrLayerShellState,
+            xdg::{decoration::XdgDecorationState, XdgShellState},
+        },
         shm::ShmState,
         socket::ListeningSocketSource,
+        xdg_activation::XdgActivationState,
     },
 };
 
-use crate::{
-    config::Config,
-    workspace::{Workspace, MAX_WORKSPACES},
-    CalloopData,
-};
+use smithay::wayland::shell::wlr_layer::Layer;
+
+use crate::{config::Config, workspace::Workspace, CalloopData};
 
 pub struct Hypr {
     pub start_time: std::time::Instant,
@@ -40,30 +42,40 @@ pub struct Hypr {
     // Smithay State
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
+    pub layer_shell_state: WlrLayerShellState,
+    pub xdg_decoration_state: XdgDecorationState,
     pub shm_state: ShmState,
     pub output_manager_state: OutputManagerState,
     pub seat_state: SeatState<Hypr>,
     pub data_device_state: DataDeviceState,
+    pub xdg_activation_state: XdgActivationState,
     pub popups: PopupManager,
 
     pub seat: Seat<Self>,
+    /// Layer surface that currently holds keyboard focus (exclusive or clicked).
+    pub layer_focus: Option<WlSurface>,
 
     // Window management
     pub config: Config,
     pub workspaces: Vec<Workspace<Window>>,
-    /// Index into `workspaces` (workspace number - 1).
+    /// Index into `workspaces` (not the workspace id).
     pub active_workspace: usize,
+    /// Focus history, special workspace, submap, key repeat, ...
+    pub wm: crate::wm::WmState,
 
     /// libseat session on the TTY backend, used for VT switching.
     pub session: Option<LibSeatSession>,
 
     /// Hyprland-compatible IPC sockets and event broadcast.
     pub ipc: crate::ipc::Ipc,
+
+    /// Config path, errors and autoreload bookkeeping.
+    pub reload: crate::reload::ReloadState,
 }
 
 impl Hypr {
     pub fn new(
-        event_loop: &mut EventLoop<CalloopData>,
+        event_loop: &mut EventLoop<'static, CalloopData>,
         display: Display<Self>,
         config: Config,
     ) -> Self {
@@ -73,10 +85,13 @@ impl Hypr {
 
         let compositor_state = CompositorState::new::<Self>(&dh);
         let xdg_shell_state = XdgShellState::new::<Self>(&dh);
+        let layer_shell_state = WlrLayerShellState::new::<Self>(&dh);
+        let xdg_decoration_state = XdgDecorationState::new::<Self>(&dh);
         let shm_state = ShmState::new::<Self>(&dh, vec![]);
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
         let mut seat_state = SeatState::new();
         let data_device_state = DataDeviceState::new::<Self>(&dh);
+        let xdg_activation_state = XdgActivationState::new::<Self>(&dh);
         let popups = PopupManager::default();
 
         // A seat is a group of keyboards, pointer and touch devices.
@@ -102,7 +117,7 @@ impl Hypr {
         // Get the loop signal, used to stop the event loop
         let loop_signal = event_loop.get_signal();
 
-        Self {
+        let mut hypr = Self {
             start_time,
             display_handle: dh,
 
@@ -112,19 +127,27 @@ impl Hypr {
 
             compositor_state,
             xdg_shell_state,
+            layer_shell_state,
+            xdg_decoration_state,
             shm_state,
             output_manager_state,
             seat_state,
             data_device_state,
+            xdg_activation_state,
             popups,
             seat,
+            layer_focus: None,
 
             config,
-            workspaces: (0..MAX_WORKSPACES).map(|_| Workspace::default()).collect(),
+            workspaces: vec![Workspace::new(1, "1".into())],
             active_workspace: 0,
+            wm: crate::wm::WmState::new(event_loop.handle()),
             session: None,
             ipc: crate::ipc::init(&event_loop.handle()),
-        }
+            reload: Default::default(),
+        };
+        hypr.apply_input_config();
+        hypr
     }
 
     fn init_wayland_listener(
@@ -172,16 +195,25 @@ impl Hypr {
         socket_name
     }
 
+    /// Overlay/top layers, then windows, then bottom/background layers.
     pub fn surface_under(
         &self,
         pos: Point<f64, Logical>,
     ) -> Option<(WlSurface, Point<f64, Logical>)> {
-        self.space
-            .element_under(pos)
-            .and_then(|(window, location)| {
-                window
-                    .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
-                    .map(|(s, p)| (s, (p + location).to_f64()))
+        self.layer_at(pos, [Layer::Overlay, Layer::Top])
+            .map(|(_, s, p)| (s, p))
+            .or_else(|| {
+                self.space
+                    .element_under(pos)
+                    .and_then(|(window, location)| {
+                        window
+                            .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
+                            .map(|(s, p)| (s, (p + location).to_f64()))
+                    })
+            })
+            .or_else(|| {
+                self.layer_at(pos, [Layer::Bottom, Layer::Background])
+                    .map(|(_, s, p)| (s, p))
             })
     }
 }

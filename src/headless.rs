@@ -61,14 +61,7 @@ pub fn init_headless(
         Timer::from_duration(Duration::from_millis(16)),
         move |_, _, data| {
             let state = &mut data.state;
-            state.space.elements().for_each(|window| {
-                window.send_frame(
-                    &output,
-                    state.start_time.elapsed(),
-                    Some(Duration::ZERO),
-                    |_, _| Some(output.clone()),
-                )
-            });
+            state.send_frames(&output);
             state.space.refresh();
             state.popups.cleanup();
             let _ = data.display_handle.flush_clients();
