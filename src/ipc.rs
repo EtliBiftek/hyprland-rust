@@ -480,7 +480,7 @@ fn bind_socket(path: PathBuf) -> std::io::Result<UnixListener> {
 
 /// Creates the socket dir, exports `HYPRLAND_INSTANCE_SIGNATURE` and registers
 /// both listeners in the event loop. Failures disable IPC (logged).
-pub fn init(handle: &LoopHandle<'static, CalloopData>) -> Ipc {
+pub fn init(handle: &LoopHandle<'_, CalloopData>) -> Ipc {
     let mut ipc = Ipc {
         dir: None,
         events: Vec::new(),
