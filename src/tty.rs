@@ -26,7 +26,6 @@ use smithay::{
             },
             gles::GlesRenderer,
             utils::CommitCounter,
-            ImportAll, ImportMem,
         },
         session::{libseat::LibSeatSession, Event as SessionEvent, Session},
         udev::{all_gpus, primary_gpu},
@@ -48,8 +47,8 @@ use smithay::{
 use crate::{CalloopData, Hypr};
 
 smithay::backend::renderer::element::render_elements! {
-    pub TtyElement<R> where R: ImportAll + ImportMem;
-    Space=SpaceRenderElements<R, WaylandSurfaceRenderElement<R>>,
+    pub TtyElement<=GlesRenderer>;
+    Space=SpaceRenderElements<GlesRenderer, WaylandSurfaceRenderElement<GlesRenderer>>,
     Solid=SolidColorRenderElement,
 }
 
@@ -88,7 +87,7 @@ fn find_connector(drm: &DrmDevice) -> Option<(connector::Info, crtc::Handle)> {
         })
 }
 
-fn solid(rect: Rectangle<i32, Logical>, color: [f32; 4]) -> TtyElement<GlesRenderer> {
+fn solid(rect: Rectangle<i32, Logical>, color: [f32; 4]) -> TtyElement {
     TtyElement::Solid(SolidColorRenderElement::new(
         Id::new(),
         rect.to_physical(1),
@@ -164,7 +163,7 @@ pub fn init_tty(
         render_formats,
     );
     let surface = manager
-        .initialize_output::<_, TtyElement<GlesRenderer>>(
+        .initialize_output::<_, TtyElement>(
             crtc,
             drm_mode,
             &[conn.handle()],
