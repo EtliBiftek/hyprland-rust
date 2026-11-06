@@ -21,9 +21,16 @@ Turkish; reply in Turkish. Code, docs, commits and this file stay in English
   dispatcher names were checked against that tag's source/wiki). **Caveat:**
   v0.57 reads only `hyprland.lua` (Lua 5.5, `src/config/lua/`); v0.55-0.56
   read Lua plus a `legacy` hyprlang parser; v0.54.3 is the last
-  hyprlang-only release. This repo parses hyprlang (`hyprland.conf`) and has
-  no Lua runtime, so its config syntax matches <= v0.56, while IPC shapes
-  follow v0.57.1. Which to target is an open decision.
+  hyprlang-only release. Decision (owner): support **both**.
+- Lua config (`lua_config.rs`, mlua with vendored Lua 5.4): `hyprland.lua`
+  runs once per (re)load against an `hl.*` API mirroring v0.57.1
+  (`hl.config`, `bind`, `unbind`, `dsp.*`, `window_rule`, `layer_rule`,
+  `workspace_rule`, `device`, `env`, `monitor`, `curve`, `animation`,
+  `on("hyprland.start")`, `exec_cmd`, `define_submap`, `load`, `require`).
+  Each call becomes a hyprlang line fed to the normal parser. `hyprland.lua`
+  wins over `hyprland.conf` in the default path; `hyprctl dispatch
+  'hl.dsp.exit()'` is evaluated as Lua. No Lua state survives the load, so
+  function binds, other `hl.on` events, timers and queries are config errors.
 - Parity table: `docs/PARITY.md` (per config option, keyword, dispatcher,
   hyprctl command, IPC event, Wayland protocol).
 - Layouts: dwindle (`layout.rs`) and master (`master.rs`), chosen per
@@ -63,10 +70,10 @@ Turkish; reply in Turkish. Code, docs, commits and this file stay in English
   clients, workspaces, monitors, activewindow, layers, binds, devices,
   getoption, keyword, reload, configerrors, dispatch, `[[BATCH]]`.
   `src/bin/hyprctl.rs` is a std-only client.
-- Tests: unit tests for all pure modules plus eight shell tests in `tests/`
+- Tests: unit tests for all pure modules plus nine shell tests in `tests/`
   run by CI: keybinds (Xvfb + xdotool), headless smoke, IPC, layer-shell
   (waybar), window rules, master layout + groups, protocols (wl-clipboard),
-  dispatchers.
+  dispatchers, Lua config.
 - Smoke-tested in Xvfb with 3 `weston-terminal`s (`docs/screenshot.png`).
 
 ## Roadmap
@@ -87,8 +94,9 @@ Phase 0, infrastructure
 - [ ] Run the TTY backend on real hardware and fix what breaks.
 - [ ] Split into a cargo workspace: `hypr-config`, `hypr-layout`, `hypr-ipc`,
       `hyprctl`, `compositor`.
-- [ ] Decide config target (Lua v0.57 vs hyprlang <= v0.56), then keep
-      `docs/PARITY.md` current.
+- [ ] Keep `docs/PARITY.md` current (it predates Lua support).
+- [ ] Lua runtime state: function binds, `hl.on` events, `hl.timer`, query
+      API (`hl.get_*`), `hl.dsp.send_shortcut`/`fullscreen_state`/`global`.
 
 TTY backend known gaps
 - [ ] Never run on real hardware.
@@ -150,6 +158,7 @@ Open decisions for the owner
 | `src/selectors.rs` | workspace/window selector parsing and resolution (pure) |
 | `src/rules.rs` | windowrule/layerrule parsing and matching (pure) |
 | `src/wm/window_rules.rs` | applying window rules to windows (static + dynamic) |
+| `src/lua_config.rs` | hyprland.lua: `hl.*` API translated to hyprlang (pure, unit-tested) |
 | `src/reload.rs` | config reload, autoreload, `keyword` |
 | `src/options.rs` | `getoption` lookup and formatting |
 | `src/ipc_cmds.rs` | non-snapshot hyprctl requests (devices, notify, ...) |
@@ -174,9 +183,10 @@ Open decisions for the owner
 | `tests/window-rules.sh` | float/size/center, workspace silent, regex matchers |
 | `tests/master-groups.sh` | master geometry, layoutmsg, groups |
 | `tests/protocols.sh` | wl-copy/wl-paste incl. primary selection (headless) |
+| `tests/lua-config.sh` | hyprland.lua options, binds, rules, exec-once, Lua dispatch |
 | `tests/dispatchers.sh` | renameworkspace, togglepseudo, movecursor, event, dpms |
 | `docs/ROADMAP.md` | Turkish roadmap, phases 0-9 |
-| `.github/workflows/ci.yml` | fmt, build, test, clippy, check-config, the 8 shell tests |
+| `.github/workflows/ci.yml` | fmt, build, test, clippy, check-config, the 9 shell tests |
 
 `state.rs`, `winit.rs`, `input.rs`, `grabs/`, `handlers/` started from
 Smithay's `smallvil` example (MIT, see `docs/SMITHAY-LICENSE`); `tty.rs` is
@@ -267,6 +277,11 @@ Use a test config with `exec-once = weston-terminal` lines to open windows.
 - Never call `space.element_geometry()` (or anything else that locks surface
   data) inside `toplevel.with_pending_state(..)`: it deadlocks.
 - waybar in CI needs `dbus-run-session`.
+- `lua_config.rs` only needs mlua + std, so it can be unit-tested on Windows:
+  copy it as `src/lib.rs` into a scratch crate with the same mlua dependency
+  and run `cargo test` / `cargo clippy`. mlua `bool` from Lua is truthiness
+  (nil = false), so check for `Value::Nil` when a missing field must default
+  to true; Lua table iteration order is unspecified (sort output lines).
 - While `session_locked`, `focus_window`, layer focus and `forward_key` are
   no-ops so keys never reach a hidden window; the lock surface gets focus
   directly in `new_surface`.
