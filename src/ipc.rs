@@ -1038,7 +1038,7 @@ fn snapshot(h: &Hypr) -> Snapshot {
                 scale: o.current_scale().fractional_scale(),
                 transform: 0,
                 focused: true,
-                dpms_status: true,
+                dpms_status: h.wm.dpms_on,
                 vrr: false,
                 solitary: "0".into(),
                 solitary_blocked_by: None,
