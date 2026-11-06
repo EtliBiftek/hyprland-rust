@@ -164,11 +164,12 @@ struct Devices {
 fn keymap_info(h: &mut Hypr) -> Option<(usize, String, usize)> {
     let kb = h.seat.get_keyboard()?;
     Some(kb.with_xkb_state(h, |ctx| {
-        let active = ctx.active_layout();
+        let xkb = ctx.xkb().lock().unwrap();
+        let active = xkb.active_layout();
         (
             active.0 as usize,
-            ctx.layout_name(active).to_string(),
-            ctx.layouts().count(),
+            xkb.layout_name(active).to_string(),
+            xkb.layouts().count(),
         )
     }))
 }
