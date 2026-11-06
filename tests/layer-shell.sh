@@ -15,7 +15,7 @@ cat > "$T/waybar.json" <<CONF
 CONF
 : > "$T/waybar.css"
 cat > "$T/test.conf" <<CONF
-exec-once = GDK_BACKEND=wayland NO_AT_BRIDGE=1 waybar -c $T/waybar.json -s $T/waybar.css
+exec-once = GDK_BACKEND=wayland NO_AT_BRIDGE=1 dbus-run-session -- waybar -l debug -c $T/waybar.json -s $T/waybar.css >$T/waybar.log 2>&1
 exec-once = weston-simple-shm
 CONF
 
@@ -33,6 +33,8 @@ fail() {
     echo "FAIL: $1"
     echo "--- compositor log ---"
     cat "$T/log"
+    echo "--- waybar log ---"
+    cat "$T/waybar.log" 2>/dev/null || true
     exit 1
 }
 
