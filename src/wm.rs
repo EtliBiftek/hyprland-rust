@@ -334,6 +334,9 @@ impl Hypr {
         let (id, name) = (self.workspaces[idx].id, self.workspaces[idx].name.clone());
         self.ipc.emit("workspace", &name);
         self.ipc.emit("workspacev2", &format!("{id},{name}"));
+        // shortcut: single monitor, so emit on every workspace switch; only emit
+        // when the focused monitor changes once multi-monitor exists.
+        self.emit_focused_mon();
         self.relayout();
         let focus = self.workspaces[idx].last_focused.clone();
         self.focus_window(focus);
@@ -358,16 +361,6 @@ impl Hypr {
         let target = self
             .focused_window()
             .filter(|w| self.workspaces[idx].contains(w));
-        let (class, title) = class_title(&window);
-        let addr = window_addr(&window);
-        let ws_name = self.workspaces[idx].name.clone();
-        self.ipc.emit(
-            "openwindow",
-            &format!(
-                "{},{ws_name},{class},{title}",
-                addr.trim_start_matches("0x")
-            ),
-        );
         self.workspaces[idx]
             .tiled
             .insert(window.clone(), target.as_ref(), area);
@@ -380,8 +373,12 @@ impl Hypr {
         let Some((idx, window)) = self.window_for_surface(surface) else {
             return;
         };
-        self.ipc
-            .emit("closewindow", window_addr(&window).trim_start_matches("0x"));
+        if crate::ipc::is_mapped(&window) {
+            self.ipc.emit(
+                "closewindow",
+                crate::ipc::window_addr(&window).trim_start_matches("0x"),
+            );
+        }
         self.workspaces[idx].remove(&window);
         self.wm.pinned.retain(|w| w != &window);
         self.space.unmap_elem(&window);

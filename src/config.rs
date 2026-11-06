@@ -10,7 +10,7 @@
 //! - `source = path` (relative to the including file)
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
 };
 
@@ -530,8 +530,18 @@ impl Input {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Misc {
+    pub disable_autoreload: bool,
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Config {
+    pub misc: Misc,
+    /// Config file plus every `source`d file that was read (for autoreload).
+    pub files: Vec<PathBuf>,
+    /// Option keys (lowercase `cat:key`) the user set explicitly (`getoption` `set`).
+    pub set_options: HashSet<String>,
     pub general: General,
     pub decoration: Decoration,
     pub dwindle: Dwindle,
@@ -579,6 +589,22 @@ impl Config {
     }
 
     /// Bindings used when no config file exists.
+    /// Applies one config line at runtime (`hyprctl keyword <key> <value>`).
+    /// On error the config may be partially changed only for `source`.
+    pub fn apply_keyword(&mut self, key: &str, value: &str) -> Result<(), String> {
+        let mut parser = Parser {
+            config: std::mem::take(self),
+            ..Default::default()
+        };
+        let r = parser.apply(
+            &key.trim().to_ascii_lowercase(),
+            value.trim(),
+            Path::new("."),
+        );
+        *self = parser.config;
+        r
+    }
+
     pub fn with_default_binds() -> Config {
         let (config, errors) = Config::parse_str(DEFAULT_CONFIG);
         debug_assert!(errors.is_empty(), "{errors:?}");
@@ -635,6 +661,9 @@ struct Parser {
 
 impl Parser {
     fn parse(&mut self, text: &str, file: &Path) {
+        if !self.config.files.iter().any(|f| f == file) && file != Path::new("<string>") {
+            self.config.files.push(file.to_path_buf());
+        }
         let mut categories: Vec<String> = Vec::new();
 
         for (idx, raw_line) in text.lines().enumerate() {
@@ -715,6 +744,12 @@ impl Parser {
     }
 
     fn apply(&mut self, key: &str, value: &str, file: &Path) -> Result<(), String> {
+        self.apply_inner(key, value, file)?;
+        self.config.set_options.insert(key.to_string());
+        Ok(())
+    }
+
+    fn apply_inner(&mut self, key: &str, value: &str, file: &Path) -> Result<(), String> {
         let cfg = &mut self.config;
         match key {
             k if BindFlags::from_keyword(k).is_some() => {
@@ -770,6 +805,7 @@ impl Parser {
             "general:col.inactive_border" => {
                 cfg.general.inactive_border_color = parse_color(value)?
             }
+            "misc:disable_autoreload" => cfg.misc.disable_autoreload = parse_bool(value)?,
             "decoration:rounding" => cfg.decoration.rounding = parse_int(value)?,
             "dwindle:preserve_split" => cfg.dwindle.preserve_split = parse_bool(value)?,
             "dwindle:default_split_ratio" => {
@@ -1101,6 +1137,31 @@ mod tests {
             0x33 as f32 / 255.0
         );
         assert!(parse_color("blue").is_err());
+    }
+
+    #[test]
+    fn keyword_applies_one_line() {
+        let mut cfg = Config::with_default_binds();
+        cfg.apply_keyword("general:gaps_in", "10").unwrap();
+        assert_eq!(cfg.general.gaps_in, 10);
+        assert!(cfg.set_options.contains("general:gaps_in"));
+        let n = cfg.binds.len();
+        cfg.apply_keyword("bind", "SUPER,X,exec,foo").unwrap();
+        assert_eq!(cfg.binds.len(), n + 1);
+        assert!(cfg.apply_keyword("general:gaps_in", "x").is_err());
+        assert!(cfg.apply_keyword("nope:nope", "1").is_err());
+        assert_eq!(cfg.general.gaps_in, 10);
+    }
+
+    #[test]
+    fn tracks_misc_and_files() {
+        let (cfg, e) = Config::parse_str(
+            "misc {
+ disable_autoreload = true
+}",
+        );
+        assert!(e.is_empty());
+        assert!(cfg.misc.disable_autoreload);
     }
 
     #[test]

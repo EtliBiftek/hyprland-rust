@@ -17,7 +17,10 @@ use smithay::wayland::selection::data_device::{
     ServerDndGrabHandler,
 };
 use smithay::wayland::selection::SelectionHandler;
-use smithay::{delegate_data_device, delegate_output, delegate_seat};
+use smithay::wayland::xdg_activation::{
+    XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
+};
+use smithay::{delegate_data_device, delegate_output, delegate_seat, delegate_xdg_activation};
 
 impl SeatHandler for Hypr {
     type KeyboardFocus = WlSurface;
@@ -69,3 +72,29 @@ delegate_data_device!(Hypr);
 
 impl OutputHandler for Hypr {}
 delegate_output!(Hypr);
+
+//
+// Xdg Activation: a request to activate an unfocused window marks it urgent.
+//
+
+impl XdgActivationHandler for Hypr {
+    fn activation_state(&mut self) -> &mut XdgActivationState {
+        &mut self.xdg_activation_state
+    }
+
+    fn request_activation(
+        &mut self,
+        _token: XdgActivationToken,
+        _data: XdgActivationTokenData,
+        surface: WlSurface,
+    ) {
+        if let Some((_, window)) = self.window_for_surface(&surface) {
+            if self.focused_window().as_ref() != Some(&window) {
+                let addr = crate::ipc::window_addr(&window);
+                self.ipc.emit("urgent", addr.trim_start_matches("0x"));
+            }
+        }
+    }
+}
+
+delegate_xdg_activation!(Hypr);

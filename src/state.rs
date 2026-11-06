@@ -23,6 +23,7 @@ use smithay::{
         },
         shm::ShmState,
         socket::ListeningSocketSource,
+        xdg_activation::XdgActivationState,
     },
 };
 
@@ -47,6 +48,7 @@ pub struct Hypr {
     pub output_manager_state: OutputManagerState,
     pub seat_state: SeatState<Hypr>,
     pub data_device_state: DataDeviceState,
+    pub xdg_activation_state: XdgActivationState,
     pub popups: PopupManager,
 
     pub seat: Seat<Self>,
@@ -66,6 +68,9 @@ pub struct Hypr {
 
     /// Hyprland-compatible IPC sockets and event broadcast.
     pub ipc: crate::ipc::Ipc,
+
+    /// Config path, errors and autoreload bookkeeping.
+    pub reload: crate::reload::ReloadState,
 }
 
 impl Hypr {
@@ -86,6 +91,7 @@ impl Hypr {
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
         let mut seat_state = SeatState::new();
         let data_device_state = DataDeviceState::new::<Self>(&dh);
+        let xdg_activation_state = XdgActivationState::new::<Self>(&dh);
         let popups = PopupManager::default();
 
         // A seat is a group of keyboards, pointer and touch devices.
@@ -127,6 +133,7 @@ impl Hypr {
             output_manager_state,
             seat_state,
             data_device_state,
+            xdg_activation_state,
             popups,
             seat,
             layer_focus: None,
@@ -137,6 +144,7 @@ impl Hypr {
             wm: crate::wm::WmState::new(event_loop.handle()),
             session: None,
             ipc: crate::ipc::init(&event_loop.handle()),
+            reload: Default::default(),
         };
         hypr.apply_input_config();
         hypr
