@@ -11,6 +11,7 @@ mod headless;
 mod input;
 mod ipc;
 mod layout;
+mod selectors;
 mod state;
 mod tty;
 mod winit;

@@ -397,6 +397,7 @@ pub fn dispatcher_name_arg(d: &Dispatcher) -> (&'static str, String) {
         Dispatcher::MoveFocus(d) => ("movefocus", dir(d)),
         Dispatcher::CycleNext => ("cyclenext", String::new()),
         Dispatcher::ToggleSplit => ("togglesplit", String::new()),
+        other => other.name_arg(),
     }
 }
 
@@ -583,24 +584,23 @@ fn snapshot(h: &Hypr) -> Snapshot {
         .map(|o| o.name())
         .unwrap_or_else(|| "HEADLESS-1".into());
     let active = WsRef {
-        id: h.active_workspace as i32 + 1,
-        name: (h.active_workspace + 1).to_string(),
+        id: h.workspaces[h.active_workspace].id,
+        name: h.workspaces[h.active_workspace].name.clone(),
     };
 
     let mut clients = Vec::new();
     let mut workspaces = Vec::new();
     for (i, ws) in h.workspaces.iter().enumerate() {
         let wins = ws.windows();
-        let id = i as i32 + 1;
-        if wins.is_empty() && i != h.active_workspace {
+        let id = ws.id;
+        let shown = i == h.active_workspace || Some(id) == h.wm.special_shown;
+        if wins.is_empty() && !shown {
             continue;
         }
         for (n, w) in wins.iter().enumerate() {
             let (class, title) = class_title(w);
             let (at, size) = match h.space.element_location(w) {
-                Some(l) if i == h.active_workspace => {
-                    ([l.x, l.y], [w.geometry().size.w, w.geometry().size.h])
-                }
+                Some(l) if shown => ([l.x, l.y], [w.geometry().size.w, w.geometry().size.h]),
                 _ => ([0, 0], [0, 0]),
             };
             let pid = w
@@ -616,7 +616,7 @@ fn snapshot(h: &Hypr) -> Snapshot {
                 size,
                 workspace: WsRef {
                     id,
-                    name: id.to_string(),
+                    name: ws.name.clone(),
                 },
                 floating: ws.is_floating(w),
                 pseudo: false,
@@ -650,7 +650,7 @@ fn snapshot(h: &Hypr) -> Snapshot {
         let last = ws.last_focused.as_ref().filter(|w| ws.contains(w));
         workspaces.push(WorkspaceInfo {
             id,
-            name: id.to_string(),
+            name: ws.name.clone(),
             monitor: mon_name.clone(),
             monitor_id: 0,
             windows: wins.len() as i32,
@@ -714,22 +714,22 @@ fn snapshot(h: &Hypr) -> Snapshot {
             let (dispatcher, arg) = dispatcher_name_arg(&bd.dispatcher);
             let m = &bd.mods;
             BindInfo {
-                locked: false,
-                mouse: false,
-                release: false,
-                repeat: false,
-                long_press: false,
-                non_consuming: false,
-                has_description: false,
+                locked: bd.flags.locked,
+                mouse: bd.flags.mouse,
+                release: bd.flags.release,
+                repeat: bd.flags.repeat,
+                long_press: bd.flags.long_press,
+                non_consuming: bd.flags.non_consuming,
+                has_description: bd.flags.has_description,
                 modmask: m.shift as u32
                     | (m.ctrl as u32) << 2
                     | (m.alt as u32) << 3
                     | (m.logo as u32) << 6,
-                submap: String::new(),
+                submap: bd.submap.clone(),
                 key: bd.key.clone(),
                 keycode: 0,
                 catch_all: false,
-                description: String::new(),
+                description: bd.description.clone(),
                 dispatcher: dispatcher.into(),
                 arg,
             }
