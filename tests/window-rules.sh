@@ -24,6 +24,7 @@ fail() {
     echo "FAIL: $1"
     echo "--- compositor log ---"
     ps -o pid,stat,pcpu,wchan:20,args -p "$COMP" 2>&1 || true
+    sudo gdb -p "$COMP" -batch -ex "thread apply all bt 30" 2>&1 | grep -E "^(#|Thread)" | cut -c1-200 || true
     tail -n 60 "$T/log"
     exit 1
 }
