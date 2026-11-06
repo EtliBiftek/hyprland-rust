@@ -175,7 +175,7 @@ impl Hypr {
 
         let mut hypr = Self {
             start_time,
-            display_handle: dh,
+            display_handle: dh.clone(),
 
             space,
             loop_signal,

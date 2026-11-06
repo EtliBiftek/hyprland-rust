@@ -42,21 +42,13 @@ use smithay::{
     utils::{Logical, Point, SERIAL_COUNTER},
     wayland::{
         compositor::with_states,
-        content_type::ContentTypeState,
-        cursor_shape::CursorShapeManagerState,
-        fractional_scale::{
-            with_fractional_scale, FractionalScaleHandler, FractionalScaleManagerState,
-        },
-        idle_inhibit::{IdleInhibitHandler, IdleInhibitManagerState},
+        fractional_scale::{with_fractional_scale, FractionalScaleHandler},
+        idle_inhibit::IdleInhibitHandler,
         keyboard_shortcuts_inhibit::{
             KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState,
             KeyboardShortcutsInhibitor,
         },
-        pointer_constraints::{
-            with_pointer_constraint, PointerConstraintsHandler, PointerConstraintsState,
-        },
-        presentation::PresentationState,
-        relative_pointer::RelativePointerManagerState,
+        pointer_constraints::{with_pointer_constraint, PointerConstraintsHandler},
         selection::{
             ext_data_control::DataControlHandler as ExtDataControlHandler,
             ext_data_control::DataControlState as ExtDataControlState,
@@ -65,8 +57,7 @@ use smithay::{
             wlr_data_control::DataControlState as WlrDataControlState,
         },
         session_lock::{LockSurface, SessionLockHandler, SessionLockManagerState, SessionLocker},
-        single_pixel_buffer::SinglePixelBufferState,
-        viewporter::ViewporterState,
+        tablet_manager::TabletSeatHandler,
         xdg_foreign::{XdgForeignHandler, XdgForeignState},
     },
 };
@@ -114,6 +105,9 @@ impl FractionalScaleHandler for Hypr {
     }
 }
 delegate_fractional_scale!(Hypr);
+
+// cursor-shape requires the tablet seat handler (default methods only).
+impl TabletSeatHandler for Hypr {}
 
 delegate_presentation!(Hypr);
 delegate_single_pixel_buffer!(Hypr);
