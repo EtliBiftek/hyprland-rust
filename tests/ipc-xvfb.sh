@@ -169,9 +169,8 @@ for _ in $(seq 25); do
     sleep 0.2
 done
 grep -q '^configreloaded>>$' "$T/events" || { cat "$T/events"; fail "no configreloaded event"; }
-grep -q '^openwindow>>[0-9a-f]*,[0-9]*,[^,][^,]*,[^,][^,]*$' "$T/events" || { cat "$T/events"; fail "openwindow lacks class/title"; }
 grep -q '^focusedmon>>' "$T/events" || fail "no focusedmon event"
-echo "ok: events configreloaded, openwindow, focusedmon"
+echo "ok: events configreloaded, focusedmon"
 
 # ---- extra requests ----------------------------------------------------------
 "$CTL" -j devices | grep -q '"keyboards"' || fail "devices"
@@ -200,4 +199,6 @@ done
 grep -q '^windowtitlev2>>[0-9a-f]*,hypr-title-test$' "$T/events" || { cat "$T/events"; fail "no windowtitlev2 event"; }
 grep -q '^windowtitle>>[0-9a-f]*$' "$T/events" || fail "no windowtitle event"
 "$CTL" -j clients | grep -q '"title":"hypr-title-test"' || fail "clients lacks the new title"
-echo "ok: windowtitle events"
+# The terminal opened after the event reader connected: openwindow must carry class and title.
+grep -q '^openwindow>>[0-9a-f]*,[0-9]*,[^,][^,]*,[^,][^,]*$' "$T/events" || { cat "$T/events"; fail "openwindow lacks class/title"; }
+echo "ok: windowtitle events, openwindow"
