@@ -12,13 +12,24 @@ owner writes in Turkish; reply in Turkish.
 
 ## Current status (milestone 1 done, milestone 2 started)
 
-- Two backends, chosen with `--backend winit|tty` (default: winit if
-  `WAYLAND_DISPLAY` or `DISPLAY` is set, else tty):
+- Three backends, chosen with `--backend winit|tty|headless` (default: winit
+  if `WAYLAND_DISPLAY` or `DISPLAY` is set, else tty):
   - winit: nested window inside an X11 or Wayland session.
   - tty (`src/tty.rs`): DRM/KMS + GBM/EGL + libinput + libseat, simplified
     from anvil. Single GPU, **first connected monitor only**, no hotplug,
     cursor is an 8x8 white square, Ctrl+Alt+F<n> switches VT. **Compiles in
     CI but has NOT been run on real hardware yet.**
+  - headless (`src/headless.rs`): one virtual output `HEADLESS-1`
+    (`HYPR_HEADLESS_SIZE=WxH`, default 1920x1080), no rendering, no input,
+    frame callbacks every 16 ms. For CI integration tests.
+- IPC (`src/ipc.rs`): `$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/`
+  with `.socket.sock` (requests: version, monitors, workspaces,
+  activeworkspace, clients, activewindow, binds, dispatch, `[[BATCH]]`, `j/`
+  JSON flag) and `.socket2.sock` (events: workspace(v2), activewindow(v2),
+  openwindow, closewindow, movewindow(v2), changefloatingmode, fullscreen).
+  `hyprctl` binary in `src/bin/hyprctl.rs` (std only). JSON field names are
+  from memory of Hyprland, NOT checked against a real instance; many fields
+  are placeholders (listed in `ipc.rs`).
 - Dwindle tiling (`src/layout.rs`), 10 workspaces, floating and fullscreen
   windows, borders (solid color, active/inactive), gaps.
 - hyprlang config subset (`src/config.rs`): `$vars`, `category { }`,
@@ -26,7 +37,7 @@ owner writes in Turkish; reply in Turkish.
   but well-known Hyprland options are ignored with a debug log, not errors.
 - Dispatchers: exec, killactive, exit, workspace, movetoworkspace,
   togglefloating, fullscreen, movefocus, cyclenext, togglesplit.
-- 15 unit tests (config, layout, workspace, spawn reaping), all passing.
+- 19 unit tests (config, layout, workspace, spawn reaping, IPC), all passing.
 - Smoke-tested in Xvfb with 3 `weston-terminal`s: tiling, gaps and borders
   render correctly (`docs/screenshot.png`).
 - Keybindings tested with real key presses: `tests/keybinds-xvfb.sh` runs the
@@ -34,14 +45,17 @@ owner writes in Turkish; reply in Turkish.
   (exit) with xdotool (XTEST). Runs in CI.
 - `exec`/`exec-once` children are reaped (double fork via `sh`), no zombies.
 - CI: `.github/workflows/ci.yml` on GitHub Actions (ubuntu-24.04): fmt,
-  build, test, clippy `-D warnings`, `--check-config`, Xvfb keybind test.
+  build, test, clippy `-D warnings`, `--check-config`, Xvfb keybind test,
+  `tests/headless-smoke.sh` (2 windows tiled, checked with `hyprctl -j
+  clients`), `tests/ipc-xvfb.sh` (clients, dispatch, events, batch).
 
 ## Roadmap
 
 Goal: a full drop-in replacement for Hyprland. The phased plan (phases 0-9,
-each with exit criteria) is in `docs/ROADMAP.md` (Turkish). Next up is
-phase 0: run the TTY backend on real hardware, fix idle redraws, split into a
-cargo workspace, add a headless test backend, write `docs/PARITY.md`.
+each with exit criteria) is in `docs/ROADMAP.md` (Turkish). Phase 0 left:
+run the TTY backend on real hardware, fix idle redraws, split into a cargo
+workspace, write `docs/PARITY.md` (needs a pinned Hyprland version). Phase 2
+(IPC) is partly done.
 Smithay's `anvil/src/udev.rs` (tag v0.7.0) is the TTY reference.
 
 ## Code map
@@ -124,6 +138,10 @@ and reading the GitHub Actions run (`gh run watch`, `gh run view --log-failed`).
 - `spawn` runs `sh -c 'eval "$1" &' sh <cmd>` and waits for that `sh`: the
   program is re-parented to init, so no SIGCHLD handler is needed. Do not
   ignore SIGCHLD globally (children would inherit `SIG_IGN`).
+- Agent worktrees live in `.claude/worktrees/`; keep that path out of git
+  (it is in `.git/info/exclude` locally) or `git add -A` commits them.
+- `openwindow` IPC event fires before the client sets app_id/title, so CLASS
+  and TITLE are usually empty there.
 - `render_elements!` with a generic `R` needs `ImportMemWl + ImportDmaWl`
   bounds for wayland surface elements; `tty.rs` uses the concrete form
   `pub TtyElement<=GlesRenderer>;` instead.
