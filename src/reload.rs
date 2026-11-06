@@ -98,6 +98,7 @@ impl Hypr {
                     spawn(&cmd);
                 }
                 self.relayout();
+                self.refresh_all_rules();
                 // Runtime settings that live outside `Config` get re-applied here.
                 self.apply_input_config();
             }
@@ -124,6 +125,7 @@ impl Hypr {
                     spawn(value);
                 }
                 self.relayout();
+                self.refresh_all_rules();
                 if key.starts_with("input") || key.starts_with("device") {
                     self.apply_input_config();
                 }

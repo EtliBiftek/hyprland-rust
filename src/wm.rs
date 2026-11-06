@@ -30,6 +30,8 @@ use crate::{
     CalloopData,
 };
 
+mod window_rules;
+
 /// Window-management state that is not part of a workspace.
 pub struct WmState {
     pub loop_handle: LoopHandle<'static, CalloopData>,
@@ -533,9 +535,12 @@ impl Hypr {
         for (window, rect, is_fullscreen) in placements {
             if let Some(toplevel) = window.toplevel() {
                 let is_floating = floating.contains(&window);
+                // Not inside `with_pending_state`: it holds the surface lock that
+                // `element_geometry` takes (deadlock otherwise).
+                let keep_size = is_floating && self.space.element_geometry(&window).is_some();
                 toplevel.with_pending_state(|state| {
                     // Floating windows pick their own size after the first configure.
-                    if !is_floating || self.space.element_geometry(&window).is_none() {
+                    if !keep_size {
                         state.size = Some(rect.size);
                     }
                     if is_fullscreen {
@@ -629,6 +634,7 @@ impl Hypr {
             .or_else(|| window.as_ref().and_then(wl_surface).cloned());
         keyboard.set_focus(self, target, serial);
         self.ipc.emit_active(window.as_ref());
+        self.refresh_rules_on_focus();
     }
 
     /// `movetoworkspace` (follows the window) and `movetoworkspacesilent`.
@@ -1103,7 +1109,10 @@ impl Hypr {
                 self.wm.submap = name.clone();
                 self.ipc.emit("submap", name);
             }
+            Dispatcher::TagWindow(tag, sel) => self.tag_window(tag, sel.as_ref()),
         }
+        // Floating, fullscreen, pin or tags may have changed: dynamic rules.
+        self.refresh_all_rules();
     }
 
     /// Border render elements (outside each window). Each side keeps a
@@ -1111,10 +1120,6 @@ impl Hypr {
     /// their element id and commit counter and are not redrawn.
     pub fn border_elements(&self) -> Vec<SolidColorRenderElement> {
         let g = &self.config.general;
-        let b = g.border_size;
-        if b <= 0 {
-            return self.groupbar_elements();
-        }
         let focused = self.focused_window();
         let mut out = Vec::new();
         for i in self.visible_ws() {
@@ -1127,16 +1132,27 @@ impl Hypr {
                     continue;
                 };
                 let size = w.geometry().size;
+                let (rule_size, rule_color) = self.rule_border(&w);
+                let b = rule_size.unwrap_or(g.border_size);
+                if b <= 0 {
+                    continue;
+                }
                 let is_focused = focused.as_ref() == Some(&w);
                 let gc = &self.config.group;
-                let color = match (ws.groups.group_of(&w), is_focused) {
+                let rule = if is_focused {
+                    rule_color.active
+                } else {
+                    rule_color.inactive
+                };
+                // Window-rule colors win over group and general colors.
+                let color = rule.unwrap_or(match (ws.groups.group_of(&w), is_focused) {
                     (None, true) => g.active_border_color,
                     (None, false) => g.inactive_border_color,
                     (Some(grp), true) if grp.locked => gc.border_locked_active,
                     (Some(_), true) => gc.border_active,
                     (Some(grp), false) if grp.locked => gc.border_locked_inactive,
                     (Some(_), false) => gc.border_inactive,
-                };
+                });
                 let bufs = w
                     .user_data()
                     .get_or_insert(|| RefCell::new(<[SolidColorBuffer; 4]>::default()));

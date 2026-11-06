@@ -16,6 +16,7 @@ mod layout;
 mod master;
 mod options;
 mod reload;
+mod rules;
 mod selectors;
 mod state;
 mod tiling;
