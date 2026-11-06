@@ -56,6 +56,9 @@ pub struct Hypr {
 
     /// libseat session on the TTY backend, used for VT switching.
     pub session: Option<LibSeatSession>,
+
+    /// Hyprland-compatible IPC sockets and event broadcast.
+    pub ipc: crate::ipc::Ipc,
 }
 
 impl Hypr {
@@ -120,6 +123,7 @@ impl Hypr {
             workspaces: (0..MAX_WORKSPACES).map(|_| Workspace::default()).collect(),
             active_workspace: 0,
             session: None,
+            ipc: crate::ipc::init(&event_loop.handle()),
         }
     }
 

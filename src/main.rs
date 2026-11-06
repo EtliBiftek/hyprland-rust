@@ -7,7 +7,9 @@
 mod config;
 mod grabs;
 mod handlers;
+mod headless;
 mod input;
+mod ipc;
 mod layout;
 mod state;
 mod tty;
@@ -37,7 +39,8 @@ Usage: hyprland-rust [OPTIONS]
 
 Options:
   -c, --config <FILE>    Config file (default: $XDG_CONFIG_HOME/hypr/hyprland.conf)
-      --backend <NAME>   `winit` (nested window) or `tty` (DRM/KMS, run from a VT).
+      --backend <NAME>   `winit` (nested window), `tty` (DRM/KMS, run from a VT)
+                         or `headless` (virtual output, no rendering, for CI).
                          Default: winit if WAYLAND_DISPLAY or DISPLAY is set, else tty
       --check-config     Parse the config, print errors and exit
   -h, --help             Show this help
@@ -123,8 +126,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match backend.as_str() {
         "winit" => crate::winit::init_winit(&mut event_loop, &mut data)?,
         "tty" => crate::tty::init_tty(&mut event_loop, &mut data)?,
+        "headless" => crate::headless::init_headless(&mut event_loop, &mut data)?,
         other => {
-            eprintln!("unknown backend `{other}` (expected winit or tty)");
+            eprintln!("unknown backend `{other}` (expected winit, tty or headless)");
             std::process::exit(2);
         }
     }
