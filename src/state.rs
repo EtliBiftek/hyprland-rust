@@ -61,7 +61,7 @@ pub struct Hypr {
 
 impl Hypr {
     pub fn new(
-        event_loop: &mut EventLoop<CalloopData>,
+        event_loop: &mut EventLoop<'static, CalloopData>,
         display: Display<Self>,
         config: Config,
     ) -> Self {
