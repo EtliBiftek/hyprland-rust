@@ -80,13 +80,13 @@ pub enum GroupStep {
 pub enum Toggle {
     Enable,
     Disable,
-    Toggle,
+    Flip,
 }
 
 impl Toggle {
     fn parse(s: &str) -> Result<Self, String> {
         match s.trim() {
-            "" | "toggle" => Ok(Toggle::Toggle),
+            "" | "toggle" => Ok(Toggle::Flip),
             "lock" | "enable" | "on" | "1" | "true" => Ok(Toggle::Enable),
             "unlock" | "disable" | "off" | "0" | "false" => Ok(Toggle::Disable),
             other => Err(format!("invalid argument `{other}`")),
@@ -97,7 +97,7 @@ impl Toggle {
         match self {
             Toggle::Enable => "lock",
             Toggle::Disable => "unlock",
-            Toggle::Toggle => "toggle",
+            Toggle::Flip => "toggle",
         }
     }
 
@@ -106,7 +106,7 @@ impl Toggle {
         match self {
             Toggle::Enable => true,
             Toggle::Disable => false,
-            Toggle::Toggle => !cur,
+            Toggle::Flip => !cur,
         }
     }
 }
@@ -1608,7 +1608,7 @@ binds {
         );
         assert_eq!(
             p("lockgroups", "toggle"),
-            Ok(Dispatcher::LockGroups(Toggle::Toggle))
+            Ok(Dispatcher::LockGroups(Toggle::Flip))
         );
         assert_eq!(
             p("lockactivegroup", "unlock"),
@@ -1620,6 +1620,6 @@ binds {
             Ok(Dispatcher::LayoutMsg("mfact +0.1".into()))
         );
         assert!(p("layoutmsg", "").is_err());
-        assert!(!Toggle::Toggle.apply(true));
+        assert!(!Toggle::Flip.apply(true));
     }
 }
