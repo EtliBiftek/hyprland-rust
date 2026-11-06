@@ -98,11 +98,11 @@ echo "ok: batch"
 echo "ok: getoption"
 
 AT=$("$CTL" -j clients | grep -o '"at":\[[-0-9,]*\]' | head -n1)
-R=$("$CTL" keyword general:gaps_out 0)
+R=$("$CTL" keyword general:gaps_out 8)
 [ "$R" = ok ] || fail "keyword replied '$R'"
 AT2=$("$CTL" -j clients | grep -o '"at":\[[-0-9,]*\]' | head -n1)
-[ "$AT2" = '"at":[0,0]' ] || fail "keyword gaps_out 0: at was $AT, now $AT2"
-"$CTL" -j getoption general:gaps_out | grep -q '"int": 0, "set": true' || fail "getoption after keyword"
+[ "$AT2" = '"at":[8,8]' ] || fail "keyword gaps_out 8: at was $AT, now $AT2"
+"$CTL" -j getoption general:gaps_out | grep -q '"int": 8, "set": true' || fail "getoption after keyword"
 R=$("$CTL" keyword nope:nope 1)
 [ "$R" != ok ] || fail "keyword accepted an unknown option"
 echo "ok: keyword changes layout ($AT -> $AT2)"
