@@ -41,3 +41,6 @@ jobs:
       - name: Protocols test (headless + wl-clipboard)
         timeout-minutes: 3
         run: sh tests/protocols.sh
+      - name: Dispatchers test (headless + hyprctl)
+        timeout-minutes: 3
+        run: sh tests/dispatchers.sh
