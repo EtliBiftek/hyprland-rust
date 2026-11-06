@@ -36,17 +36,13 @@ owner writes in Turkish; reply in Turkish.
 - CI: `.github/workflows/ci.yml` on GitHub Actions (ubuntu-24.04): fmt,
   build, test, clippy `-D warnings`, `--check-config`, Xvfb keybind test.
 
-## Roadmap (next milestones)
+## Roadmap
 
-2. TTY backend (started): test on real hardware, then multi-monitor (one
-   `DrmOutput` per CRTC, workspaces per monitor), udev hotplug, `monitor=`
-   rules, real cursor images (xcursor / client cursor surfaces), dmabuf.
-   Smithay's `anvil/src/udev.rs` (tag v0.7.0) is the reference.
-3. `hyprctl`-style IPC over a UNIX socket (`$XDG_RUNTIME_DIR/hypr/...`).
-4. wlr-layer-shell (waybar, rofi), `windowrulev2`, master layout.
-5. Animations with Bézier curves, rounded corners, blur, shadows (custom GLES
-   shaders / render elements).
-6. XWayland, input options (`input { kb_layout = tr }`), gestures.
+Goal: a full drop-in replacement for Hyprland. The phased plan (phases 0-9,
+each with exit criteria) is in `docs/ROADMAP.md` (Turkish). Next up is
+phase 0: run the TTY backend on real hardware, fix idle redraws, split into a
+cargo workspace, add a headless test backend, write `docs/PARITY.md`.
+Smithay's `anvil/src/udev.rs` (tag v0.7.0) is the TTY reference.
 
 ## Code map
 
