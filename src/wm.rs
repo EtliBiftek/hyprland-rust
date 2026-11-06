@@ -61,6 +61,7 @@ impl Hypr {
 
     /// Called when a client creates a new toplevel window.
     pub fn add_window(&mut self, window: Window) {
+        tracing::info!("window mapped on workspace {}", self.active_workspace + 1);
         let area = self.tiling_area();
         let target = self.focused_window();
         let ws = &mut self.workspaces[self.active_workspace];
