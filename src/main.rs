@@ -14,6 +14,7 @@ mod ipc_cmds;
 mod layout;
 mod options;
 mod reload;
+mod rules;
 mod selectors;
 mod state;
 mod tty;

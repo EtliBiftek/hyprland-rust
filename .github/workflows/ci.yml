@@ -32,3 +32,5 @@ jobs:
         run: sh tests/ipc-xvfb.sh
       - name: Layer-shell test (headless + waybar)
         run: sh tests/layer-shell.sh
+      - name: Window rules test (headless + hyprctl)
+        run: sh tests/window-rules.sh

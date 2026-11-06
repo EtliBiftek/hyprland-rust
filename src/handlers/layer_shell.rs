@@ -50,6 +50,10 @@ impl WlrLayerShellHandler for Hypr {
             return;
         };
         let layer = LayerSurface::new(surface, namespace.clone());
+        // shortcut: layer rules are parsed and matched but have no effect yet.
+        for (k, v) in crate::rules::layer_effects(&self.config.rules.layer, &namespace) {
+            tracing::debug!("layer `{namespace}`: rule {k} {v}");
+        }
         if layer_map_for_output(&output).map_layer(&layer).is_ok() {
             self.ipc.emit("openlayer", &namespace);
         }

@@ -949,6 +949,7 @@ fn snapshot(h: &Hypr) -> Snapshot {
                 0
             };
             let addr = window_addr(w);
+            let (initial_class, initial_title) = h.window_initial(w);
             clients.push(ClientInfo {
                 mapped: is_mapped(w),
                 hidden: false,
@@ -959,20 +960,20 @@ fn snapshot(h: &Hypr) -> Snapshot {
                 workspace: WsRef::of(id, &ws.name),
                 floating: ws.is_floating(w),
                 monitor: 0,
-                initial_class: class.clone(),
-                initial_title: title.clone(),
+                initial_class,
+                initial_title,
                 class,
                 title,
                 pid,
                 xwayland: false,
-                pinned: false,
+                pinned: h.wm.pinned.contains(w),
                 pin_fullscreened: false,
                 fullscreen: fs,
                 fullscreen_client: fs,
                 fullscreen_handler: "none".into(),
                 allowed_over_fullscreen: false,
                 grouped: Vec::new(),
-                tags: Vec::new(),
+                tags: h.window_tags(w),
                 swallowing: "0x0".into(),
                 focus_history_id: if focused.as_ref() == Some(w) {
                     0

@@ -102,6 +102,8 @@ pub enum Dispatcher {
     ToggleSpecialWorkspace(String),
     /// Empty name resets to the global submap.
     Submap(String),
+    /// `tagwindow, +tag [window]`: add, remove (`-`) or toggle a static tag.
+    TagWindow(String, Option<WinSel>),
     /// `bindm ... movewindow`: drag the window under the pointer.
     MouseMove,
     /// `bindm ... resizewindow`: resize the window under the pointer.
@@ -184,6 +186,8 @@ impl Dispatcher {
             Dispatcher::ToggleSpecialWorkspace(n) => ("togglespecialworkspace", n.clone()),
             Dispatcher::Submap(n) if n.is_empty() => ("submap", "reset".into()),
             Dispatcher::Submap(n) => ("submap", n.clone()),
+            Dispatcher::TagWindow(t, None) => ("tagwindow", t.clone()),
+            Dispatcher::TagWindow(t, Some(s)) => ("tagwindow", format!("{t} {}", sel(s))),
             Dispatcher::MouseMove => ("movewindow", String::new()),
             Dispatcher::MouseResize => ("resizewindow", String::new()),
         }
@@ -230,6 +234,21 @@ impl Dispatcher {
             } else {
                 arg.to_string()
             }),
+            "tagwindow" => {
+                let (tag, rest) = match arg.split_once(char::is_whitespace) {
+                    Some((t, r)) => (t, r.trim()),
+                    None => (arg, ""),
+                };
+                if tag.trim_start_matches(['+', '-']).is_empty() {
+                    return Err("tagwindow: missing tag".into());
+                }
+                let sel = if rest.is_empty() {
+                    None
+                } else {
+                    Some(rest.parse()?)
+                };
+                Dispatcher::TagWindow(tag.to_string(), sel)
+            }
             other => return Err(format!("unknown dispatcher `{other}`")),
         })
     }
@@ -549,6 +568,8 @@ pub struct Config {
     pub binds: Vec<Bind>,
     pub exec_once: Vec<String>,
     pub exec: Vec<String>,
+    /// `windowrule` / `layerrule` (see `rules.rs`).
+    pub rules: crate::rules::Rules,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -657,6 +678,8 @@ struct Parser {
     depth: usize,
     /// Current `submap = name` block; binds are tagged with it.
     submap: String,
+    /// `(key, value)` lines of the open `windowrule { }` / `layerrule { }` block.
+    block: Vec<(String, String)>,
 }
 
 impl Parser {
@@ -670,6 +693,18 @@ impl Parser {
             let line_no = idx + 1;
             let line = strip_comment(raw_line).trim();
             if line.is_empty() {
+                continue;
+            }
+
+            // End of a rule block: build the rule from the collected lines.
+            if line == "}"
+                && matches!(
+                    categories.last().map(String::as_str),
+                    Some("windowrule" | "layerrule")
+                )
+            {
+                let kind = categories.pop().unwrap_or_default();
+                self.finish_block(&kind, file, line_no);
                 continue;
             }
 
@@ -731,6 +766,23 @@ impl Parser {
         }
     }
 
+    fn finish_block(&mut self, kind: &str, file: &Path, line: usize) {
+        let pairs = std::mem::take(&mut self.block);
+        let rules = &mut self.config.rules;
+        let r = if kind == "windowrule" {
+            crate::rules::parse_window_pairs(&pairs).map(|r| rules.window.push(r))
+        } else {
+            crate::rules::parse_layer_pairs(&pairs).map(|r| rules.layer.push(r))
+        };
+        if let Err(message) = r {
+            self.errors.push(ConfigError {
+                file: file.to_path_buf(),
+                line,
+                message,
+            });
+        }
+    }
+
     /// Replaces `$name` with variable values, longest names first so that
     /// `$mainMod` isn't clobbered by `$main`.
     fn expand(&self, value: &str) -> String {
@@ -779,6 +831,19 @@ impl Parser {
             }
             k if k.starts_with("input:") || k.starts_with("device:") => {
                 cfg.input.apply(k, value)?
+            }
+            "windowrule" | "windowrulev2" => cfg
+                .rules
+                .window
+                .push(crate::rules::parse_inline_window(value)?),
+            "layerrule" => cfg
+                .rules
+                .layer
+                .push(crate::rules::parse_inline_layer(value)?),
+            k if k.starts_with("windowrule:") || k.starts_with("layerrule:") => {
+                // Line inside a `windowrule { }` block.
+                let (_, key) = k.split_once(':').unwrap_or_default();
+                self.block.push((key.to_string(), value.to_string()));
             }
             "exec-once" => cfg.exec_once.push(value.to_string()),
             "exec" => cfg.exec.push(value.to_string()),
@@ -840,9 +905,6 @@ fn is_known_unimplemented(key: &str) -> bool {
         "cursor:",
         "monitor",
         "env",
-        "windowrule",
-        "windowrulev2",
-        "layerrule",
         "workspace",
     ];
     PREFIXES.iter().any(|p| key.starts_with(p))

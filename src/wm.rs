@@ -29,6 +29,8 @@ use crate::{
     CalloopData,
 };
 
+mod window_rules;
+
 /// Window-management state that is not part of a workspace.
 pub struct WmState {
     pub loop_handle: LoopHandle<'static, CalloopData>,
@@ -546,6 +548,7 @@ impl Hypr {
             .or_else(|| window.as_ref().and_then(wl_surface).cloned());
         keyboard.set_focus(self, target, serial);
         self.ipc.emit_active(window.as_ref());
+        self.refresh_rules_on_focus();
     }
 
     /// `movetoworkspace` (follows the window) and `movetoworkspacesilent`.
@@ -1003,7 +1006,10 @@ impl Hypr {
                 self.wm.submap = name.clone();
                 self.ipc.emit("submap", name);
             }
+            Dispatcher::TagWindow(tag, sel) => self.tag_window(tag, sel.as_ref()),
         }
+        // Floating, fullscreen, pin or tags may have changed: dynamic rules.
+        self.refresh_all_rules();
     }
 
     /// Border render elements (outside each window). Each side keeps a
@@ -1011,10 +1017,6 @@ impl Hypr {
     /// their element id and commit counter and are not redrawn.
     pub fn border_elements(&self) -> Vec<SolidColorRenderElement> {
         let g = &self.config.general;
-        let b = g.border_size;
-        if b <= 0 {
-            return Vec::new();
-        }
         let focused = self.focused_window();
         let mut out = Vec::new();
         for i in self.visible_ws() {
@@ -1027,10 +1029,15 @@ impl Hypr {
                     continue;
                 };
                 let size = w.geometry().size;
+                let (rule_size, rule_color) = self.rule_border(&w);
+                let b = rule_size.unwrap_or(g.border_size);
+                if b <= 0 {
+                    continue;
+                }
                 let color = if focused.as_ref() == Some(&w) {
-                    g.active_border_color
+                    rule_color.active.unwrap_or(g.active_border_color)
                 } else {
-                    g.inactive_border_color
+                    rule_color.inactive.unwrap_or(g.inactive_border_color)
                 };
                 let bufs = w
                     .user_data()
