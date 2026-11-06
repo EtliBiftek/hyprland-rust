@@ -171,6 +171,10 @@ impl Hypr {
     /// Gives focus to an exclusive layer, or hands it back to the last window
     /// once the layer that held it is gone.
     pub fn refresh_layer_focus(&mut self) {
+        // Locked: keyboard focus stays on the lock surface.
+        if self.session_locked {
+            return;
+        }
         let keyboard = self.seat.get_keyboard().unwrap();
         if let Some(s) = self.exclusive_layer() {
             if keyboard.current_focus().as_ref() != Some(&s) {

@@ -13,6 +13,7 @@ mod input;
 mod ipc;
 mod ipc_cmds;
 mod layout;
+mod lua_config;
 mod master;
 mod options;
 mod reload;

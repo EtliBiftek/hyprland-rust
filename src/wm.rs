@@ -8,7 +8,7 @@ use smithay::{
         Kind,
     },
     desktop::{layer_map_for_output, Window},
-    input::pointer::{Focus, GrabStartData as PointerGrabStartData},
+    input::pointer::{Focus, GrabStartData as PointerGrabStartData, MotionEvent},
     reexports::{
         calloop::{LoopHandle, RegistrationToken},
         input,
@@ -60,6 +60,13 @@ pub struct WmState {
     pub libinput_devices: Vec<input::Device>,
     /// `lockgroups`: no window may enter or leave groups.
     pub groups_locked: bool,
+    /// `togglepseudo`: tiled windows that keep their own size.
+    pub pseudo: Vec<Window>,
+    /// `setprop`: (window, prop, value). shortcut: stored only, nothing
+    /// reads them yet.
+    pub props: Vec<(Window, String, String)>,
+    /// `dpms`: false while the output is switched off.
+    pub dpms_on: bool,
 }
 
 impl WmState {
@@ -78,6 +85,9 @@ impl WmState {
             passed_keys: Vec::new(),
             libinput_devices: Vec::new(),
             groups_locked: false,
+            pseudo: Vec::new(),
+            props: Vec::new(),
+            dpms_on: true,
         }
     }
 }
@@ -446,6 +456,8 @@ impl Hypr {
     /// Positions every visible window and sends configures.
     pub fn relayout(&mut self) {
         self.sync_layouts();
+        let open: Vec<Window> = self.workspaces.iter().flat_map(|ws| ws.windows()).collect();
+        self.wm.pseudo.retain(|p| open.contains(p));
         self.layout_ws(self.active_workspace);
         if let Some(i) = self.special_index() {
             self.layout_ws(i);
@@ -473,12 +485,23 @@ impl Hypr {
             let (x0, y0) = (f(r.x, cx), f(r.y, cy));
             Rect::new(x0, y0, f(r.x + r.w, cx) - x0, f(r.y + r.h, cy) - y0)
         };
+        let pseudo = self.wm.pseudo.clone();
 
         let mut placements: Vec<(Window, Rectangle<i32, Logical>, bool)> = ws
             .tiled
             .layout(area, gaps_in)
             .into_iter()
-            .map(|(w, r)| (w, from_rect(scaled(r)), false))
+            .map(|(w, r)| {
+                let mut r = scaled(r);
+                // Pseudotiled: keep the client's own size, centered in its slot.
+                if pseudo.contains(&w) {
+                    if let Some(g) = self.space.element_geometry(&w) {
+                        let (x, y) = (r.x + (r.w - g.size.w) / 2, r.y + (r.h - g.size.h) / 2);
+                        r = Rect::new(x, y, g.size.w, g.size.h);
+                    }
+                }
+                (w, from_rect(r), false)
+            })
             .collect();
 
         for w in &ws.floating {
@@ -537,7 +560,8 @@ impl Hypr {
                 let is_floating = floating.contains(&window);
                 // Not inside `with_pending_state`: it holds the surface lock that
                 // `element_geometry` takes (deadlock otherwise).
-                let keep_size = is_floating && self.space.element_geometry(&window).is_some();
+                let keep_size = (is_floating || pseudo.contains(&window))
+                    && self.space.element_geometry(&window).is_some();
                 toplevel.with_pending_state(|state| {
                     // Floating windows pick their own size after the first configure.
                     if !keep_size {
@@ -592,6 +616,10 @@ impl Hypr {
 
     /// Gives keyboard focus to `window` (or clears focus) and raises it.
     pub fn focus_window(&mut self, window: Option<Window>) {
+        // Locked: keyboard focus stays on the lock surface.
+        if self.session_locked {
+            return;
+        }
         let serial = SERIAL_COUNTER.next_serial();
         let keyboard = self.seat.get_keyboard().unwrap();
 
@@ -983,6 +1011,106 @@ impl Hypr {
         }
     }
 
+    /// The window a dispatcher acts on: the selector's match, else the focused one.
+    fn target_window(&self, sel: Option<&WinSel>) -> Option<Window> {
+        match sel {
+            Some(s) => self.find_window(s).map(|(_, w)| w),
+            None => self.focused_window(),
+        }
+    }
+
+    fn rename_workspace(&mut self, id: i32, name: &str) {
+        let Some(i) = self.ws_index(id) else {
+            return;
+        };
+        self.workspaces[i].name = name.to_string();
+        self.ipc.emit("renameworkspace", &format!("{id},{name}"));
+    }
+
+    /// `alterzorder`. shortcut: smithay 0.7 has no `lower_element`, so bottom
+    /// raises every other window; relayout re-raises floating windows.
+    fn alter_zorder(&mut self, top: bool, sel: Option<&WinSel>) {
+        let Some(w) = self.target_window(sel) else {
+            return;
+        };
+        if top {
+            self.space.raise_element(&w, false);
+            return;
+        }
+        let others: Vec<Window> = self
+            .space
+            .elements()
+            .filter(|e| *e != &w)
+            .cloned()
+            .collect();
+        for o in &others {
+            self.space.raise_element(o, false);
+        }
+    }
+
+    /// `movecursortocorner`: pointer to a corner of the focused window.
+    fn move_cursor_to_corner(&mut self, corner: u8) {
+        let Some(w) = self.focused_window() else {
+            return;
+        };
+        let Some(g) = self.space.element_geometry(&w) else {
+            return;
+        };
+        let (l, t) = (g.loc.x as f64, g.loc.y as f64);
+        let (r, b) = (
+            (g.loc.x + g.size.w - 1) as f64,
+            (g.loc.y + g.size.h - 1) as f64,
+        );
+        let pos = match corner {
+            0 => (l, b),
+            1 => (r, b),
+            2 => (r, t),
+            _ => (l, t),
+        };
+        self.warp_pointer(pos.into());
+    }
+
+    /// Moves the pointer with a real motion event, so enter and leave are sent.
+    fn warp_pointer(&mut self, pos: Point<f64, Logical>) {
+        let Some(pointer) = self.seat.get_pointer() else {
+            return;
+        };
+        let under = self.surface_under(pos);
+        let time = self.start_time.elapsed().as_millis() as u32;
+        pointer.motion(
+            self,
+            under,
+            &MotionEvent {
+                location: pos,
+                serial: SERIAL_COUNTER.next_serial(),
+                time,
+            },
+        );
+        pointer.frame(self);
+    }
+
+    /// `signal`. shortcut: shells out to kill(1), like `kill_window`.
+    fn signal_window(&self, sig: i32, sel: Option<&WinSel>) {
+        let Some(w) = self.target_window(sel) else {
+            return;
+        };
+        let pid = self.window_pid(&w);
+        if pid > 0 {
+            let _ = std::process::Command::new("kill")
+                .args([format!("-{sig}"), pid.to_string()])
+                .status();
+        }
+    }
+
+    /// `setprop`. shortcut: stored only, no rendering or rule reads it yet.
+    fn set_prop(&mut self, sel: Option<&WinSel>, prop: &str, value: &str) {
+        let Some(w) = self.target_window(sel) else {
+            return;
+        };
+        self.wm.props.retain(|(x, p, _)| !(x == &w && p == prop));
+        self.wm.props.push((w, prop.to_string(), value.to_string()));
+    }
+
     /// Starts an interactive move/resize of the window under the pointer
     /// (`bindm`). Dragging a tiled window with `movewindow` makes it floating
     /// first; `resizewindow` on a tiled window is ignored.
@@ -1110,6 +1238,37 @@ impl Hypr {
                 self.ipc.emit("submap", name);
             }
             Dispatcher::TagWindow(tag, sel) => self.tag_window(tag, sel.as_ref()),
+            Dispatcher::RenameWorkspace(id, name) => self.rename_workspace(*id, name),
+            Dispatcher::BringActiveToTop => {
+                if let Some(w) = self.focused_window() {
+                    if self
+                        .ws_of(&w)
+                        .is_some_and(|i| self.workspaces[i].is_floating(&w))
+                    {
+                        self.space.raise_element(&w, true);
+                    }
+                }
+            }
+            Dispatcher::AlterZOrder(top, sel) => self.alter_zorder(*top, sel.as_ref()),
+            Dispatcher::MoveCursorToCorner(c) => self.move_cursor_to_corner(*c),
+            Dispatcher::MoveCursor(x, y) => self.warp_pointer((*x as f64, *y as f64).into()),
+            Dispatcher::TogglePseudo => {
+                if let Some(w) = self.focused_window() {
+                    match self.wm.pseudo.iter().position(|p| p == &w) {
+                        Some(i) => {
+                            self.wm.pseudo.remove(i);
+                        }
+                        None => self.wm.pseudo.push(w),
+                    }
+                    self.relayout();
+                }
+            }
+            Dispatcher::SetProp(sel, prop, value) => self.set_prop(sel.as_ref(), prop, value),
+            Dispatcher::KillWindow(sel) => self.kill_window(sel.as_ref(), true),
+            Dispatcher::Signal(sig, sel) => self.signal_window(*sig, sel.as_ref()),
+            Dispatcher::Event(data) => self.ipc.emit("custom", data),
+            Dispatcher::Dpms(t) => self.wm.dpms_on = t.apply(self.wm.dpms_on),
+            Dispatcher::Noop(..) => {}
         }
         // Floating, fullscreen, pin or tags may have changed: dynamic rules.
         self.refresh_all_rules();

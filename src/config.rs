@@ -170,6 +170,30 @@ pub enum Dispatcher {
     MouseMove,
     /// `bindm ... resizewindow`: resize the window under the pointer.
     MouseResize,
+    /// `renameworkspace, ID NAME`.
+    RenameWorkspace(i32, String),
+    /// `bringactivetotop`: raise the focused floating window.
+    BringActiveToTop,
+    /// `alterzorder top|bottom [window]`; `true` for top.
+    AlterZOrder(bool, Option<WinSel>),
+    /// `movecursortocorner N`: 0 bottom-left, 1 bottom-right, 2 top-right, 3 top-left.
+    MoveCursorToCorner(u8),
+    /// `movecursor X Y` (absolute, layout coordinates).
+    MoveCursor(i32, i32),
+    /// `togglepseudo`: keep the window's own size, centered in its slot.
+    TogglePseudo,
+    /// `setprop [window|active] PROP VALUE`; `None` is the focused window.
+    SetProp(Option<WinSel>, String, String),
+    /// `killwindow [window]`: kill the client process.
+    KillWindow(Option<WinSel>),
+    /// `signal N [window]`: send a signal to a window's process.
+    Signal(i32, Option<WinSel>),
+    /// `event DATA`: emits `custom>>DATA` on the event socket.
+    Event(String),
+    /// `dpms on|off|toggle`.
+    Dpms(Toggle),
+    /// Accepted for compatibility, no effect on a single monitor or yet.
+    Noop(&'static str, String),
 }
 
 /// Strips the `[rule; rule]` prefix of `exec`. Rules are accepted but ignored.
@@ -275,6 +299,33 @@ impl Dispatcher {
             Dispatcher::TagWindow(t, Some(s)) => ("tagwindow", format!("{t} {}", sel(s))),
             Dispatcher::MouseMove => ("movewindow", String::new()),
             Dispatcher::MouseResize => ("resizewindow", String::new()),
+            Dispatcher::RenameWorkspace(id, n) => ("renameworkspace", format!("{id} {n}")),
+            Dispatcher::BringActiveToTop => ("bringactivetotop", String::new()),
+            Dispatcher::AlterZOrder(top, s) => (
+                "alterzorder",
+                format!(
+                    "{}{}",
+                    if *top { "top" } else { "bottom" },
+                    s.as_ref()
+                        .map_or_else(String::new, |s| format!(", {}", sel(s)))
+                ),
+            ),
+            Dispatcher::MoveCursorToCorner(c) => ("movecursortocorner", c.to_string()),
+            Dispatcher::MoveCursor(x, y) => ("movecursor", format!("{x} {y}")),
+            Dispatcher::TogglePseudo => ("togglepseudo", String::new()),
+            Dispatcher::SetProp(s, p, v) => (
+                "setprop",
+                format!(
+                    "{} {p} {v}",
+                    s.as_ref().map_or_else(|| "active".into(), sel)
+                ),
+            ),
+            Dispatcher::KillWindow(s) => ("killwindow", s.as_ref().map_or_else(String::new, sel)),
+            Dispatcher::Signal(n, Some(s)) => ("signalwindow", format!("{n}, {}", sel(s))),
+            Dispatcher::Signal(n, None) => ("signal", n.to_string()),
+            Dispatcher::Event(d) => ("event", d.clone()),
+            Dispatcher::Dpms(t) => ("dpms", t.name().into()),
+            Dispatcher::Noop(name, arg) => (*name, arg.clone()),
         }
     }
 
@@ -286,7 +337,7 @@ impl Dispatcher {
             "killactive" => Dispatcher::KillActive,
             "forcekillactive" => Dispatcher::ForceKillActive,
             "exit" => Dispatcher::Exit,
-            "workspace" => Dispatcher::Workspace(arg.parse()?),
+            "workspace" | "focusworkspaceoncurrentmonitor" => Dispatcher::Workspace(arg.parse()?),
             "movetoworkspace" => Dispatcher::MoveToWorkspace(arg.parse()?),
             "movetoworkspacesilent" => Dispatcher::MoveToWorkspaceSilent(arg.parse()?),
             "togglefloating" => Dispatcher::ToggleFloating,
@@ -352,8 +403,94 @@ impl Dispatcher {
                 };
                 Dispatcher::TagWindow(tag.to_string(), sel)
             }
+            "renameworkspace" => {
+                let (id, name) = split_word(arg);
+                let id = id
+                    .parse::<i32>()
+                    .map_err(|_| format!("renameworkspace: invalid id `{id}`"))?;
+                if name.is_empty() {
+                    return Err("renameworkspace: missing name".into());
+                }
+                Dispatcher::RenameWorkspace(id, name.to_string())
+            }
+            "bringactivetotop" => Dispatcher::BringActiveToTop,
+            "alterzorder" => {
+                let (mode, rest) = split_word(arg);
+                let top = match mode {
+                    "top" => true,
+                    "bottom" => false,
+                    other => return Err(format!("alterzorder: invalid mode `{other}`")),
+                };
+                Dispatcher::AlterZOrder(top, opt_sel(rest)?)
+            }
+            "movecursortocorner" => match arg.parse::<u8>() {
+                Ok(c @ 0..=3) => Dispatcher::MoveCursorToCorner(c),
+                _ => return Err(format!("movecursortocorner: invalid corner `{arg}`")),
+            },
+            "movecursor" => {
+                let (x, rest) = split_word(arg);
+                let (y, _) = split_word(rest);
+                match (x.parse::<i32>(), y.parse::<i32>()) {
+                    (Ok(x), Ok(y)) => Dispatcher::MoveCursor(x, y),
+                    _ => return Err(format!("movecursor: expected `X Y`, got `{arg}`")),
+                }
+            }
+            "togglepseudo" => Dispatcher::TogglePseudo,
+            "setprop" => {
+                let (sel, rest) = split_word(arg);
+                let (prop, value) = split_word(rest);
+                if prop.is_empty() || value.is_empty() {
+                    return Err("setprop: expected `[window] PROP VALUE`".into());
+                }
+                let sel = if sel == "active" {
+                    None
+                } else {
+                    Some(sel.parse::<WinSel>()?)
+                };
+                Dispatcher::SetProp(sel, prop.to_string(), value.to_string())
+            }
+            "killwindow" => Dispatcher::KillWindow(opt_sel(arg)?),
+            "signal" | "signalwindow" => {
+                let (sig, rest) = split_word(arg);
+                let sig: i32 = sig
+                    .parse()
+                    .map_err(|_| format!("{name}: invalid signal `{sig}`"))?;
+                Dispatcher::Signal(sig, opt_sel(rest)?)
+            }
+            "event" => Dispatcher::Event(arg.to_string()),
+            "dpms" => Dispatcher::Dpms(Toggle::parse(split_word(arg).0)?),
+            "focusmonitor" => Dispatcher::Noop("focusmonitor", arg.to_string()),
+            "movecurrentworkspacetomonitor" => {
+                Dispatcher::Noop("movecurrentworkspacetomonitor", arg.to_string())
+            }
+            "moveworkspacetomonitor" => Dispatcher::Noop("moveworkspacetomonitor", arg.to_string()),
+            "swapactiveworkspaces" => Dispatcher::Noop("swapactiveworkspaces", arg.to_string()),
+            "toggleswallow" => Dispatcher::Noop("toggleswallow", arg.to_string()),
+            "forcerendererreload" => Dispatcher::Noop("forcerendererreload", arg.to_string()),
             other => return Err(format!("unknown dispatcher `{other}`")),
         })
+    }
+}
+
+/// Splits off the first word; commas and spaces both separate arguments.
+fn split_word(s: &str) -> (&str, &str) {
+    let s = s.trim();
+    match s.find(|c: char| c.is_whitespace() || c == ',') {
+        Some(i) => (
+            &s[..i],
+            s[i..].trim_matches(|c: char| c.is_whitespace() || c == ','),
+        ),
+        None => (s, ""),
+    }
+}
+
+/// Optional window selector argument; empty means the focused window.
+fn opt_sel(s: &str) -> Result<Option<WinSel>, String> {
+    let s = s.trim_matches(|c: char| c.is_whitespace() || c == ',');
+    if s.is_empty() {
+        Ok(None)
+    } else {
+        s.parse().map(Some)
     }
 }
 
@@ -789,7 +926,14 @@ impl Config {
         let base = std::env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
-        Some(base.join("hypr").join("hyprland.conf"))
+        // Like Hyprland 0.55-0.56: hyprland.lua wins over hyprland.conf.
+        let dir = base.join("hypr");
+        let lua = dir.join("hyprland.lua");
+        Some(if lua.exists() {
+            lua
+        } else {
+            dir.join("hyprland.conf")
+        })
     }
 
     /// Loads a config file. Errors on individual lines are collected and
@@ -797,7 +941,29 @@ impl Config {
     pub fn load(path: &Path) -> std::io::Result<(Config, Vec<ConfigError>)> {
         let text = std::fs::read_to_string(path)?;
         let mut parser = Parser::default();
-        parser.parse(&text, path);
+        if path.extension().is_some_and(|e| e == "lua") {
+            let dir = path.parent().unwrap_or(Path::new("."));
+            let name = path.display().to_string();
+            match crate::lua_config::to_hyprlang(&text, dir, &name) {
+                Ok((hyprlang, lua_errors)) => {
+                    parser.parse(&hyprlang, path);
+                    parser
+                        .errors
+                        .extend(lua_errors.into_iter().map(|message| ConfigError {
+                            file: path.to_path_buf(),
+                            line: 0,
+                            message,
+                        }));
+                }
+                Err(message) => parser.errors.push(ConfigError {
+                    file: path.to_path_buf(),
+                    line: 0,
+                    message,
+                }),
+            }
+        } else {
+            parser.parse(&text, path);
+        }
         Ok((parser.config, parser.errors))
     }
 
@@ -1618,6 +1784,62 @@ workspace = r[1-3], layout:master",
 dwindle:nope = 1",
         );
         assert_eq!(e.len(), 2);
+    }
+
+    #[test]
+    fn window_and_monitor_dispatchers_parse() {
+        let p = |n: &str, a: &str| Dispatcher::parse(n, a);
+        assert_eq!(
+            p("renameworkspace", "2 work area"),
+            Ok(Dispatcher::RenameWorkspace(2, "work area".into()))
+        );
+        assert!(p("renameworkspace", "x name").is_err());
+        assert!(p("renameworkspace", "2").is_err());
+        assert_eq!(
+            p("movecursor", "100, 200"),
+            Ok(Dispatcher::MoveCursor(100, 200))
+        );
+        assert!(p("movecursor", "100").is_err());
+        assert_eq!(
+            p("movecursortocorner", "3"),
+            Ok(Dispatcher::MoveCursorToCorner(3))
+        );
+        assert!(p("movecursortocorner", "4").is_err());
+        assert_eq!(
+            p("alterzorder", "top"),
+            Ok(Dispatcher::AlterZOrder(true, None))
+        );
+        assert_eq!(
+            p("alterzorder", "bottom, class:^(foo)$"),
+            Ok(Dispatcher::AlterZOrder(
+                false,
+                Some(WinSel::Class("^(foo)$".into()))
+            ))
+        );
+        assert!(p("alterzorder", "middle").is_err());
+        assert_eq!(p("togglepseudo", ""), Ok(Dispatcher::TogglePseudo));
+        assert_eq!(p("bringactivetotop", ""), Ok(Dispatcher::BringActiveToTop));
+        assert_eq!(p("dpms", "toggle"), Ok(Dispatcher::Dpms(Toggle::Flip)));
+        assert_eq!(p("dpms", "off"), Ok(Dispatcher::Dpms(Toggle::Disable)));
+        assert_eq!(
+            p("event", "hello world"),
+            Ok(Dispatcher::Event("hello world".into()))
+        );
+        assert_eq!(p("signal", "9"), Ok(Dispatcher::Signal(9, None)));
+        assert!(p("signal", "kill").is_err());
+        assert_eq!(
+            p("setprop", "active bordersize 4"),
+            Ok(Dispatcher::SetProp(None, "bordersize".into(), "4".into()))
+        );
+        assert_eq!(
+            p("focusworkspaceoncurrentmonitor", "2"),
+            Ok(Dispatcher::Workspace(WsSel::Id(2)))
+        );
+        assert_eq!(
+            p("focusmonitor", "DP-1"),
+            Ok(Dispatcher::Noop("focusmonitor", "DP-1".into()))
+        );
+        assert!(p("nosuchthing", "").is_err());
     }
 
     #[test]

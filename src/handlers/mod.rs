@@ -1,5 +1,6 @@
 mod compositor;
 pub mod layer_shell;
+pub mod protocols;
 mod xdg_shell;
 
 use crate::Hypr;
@@ -34,8 +35,10 @@ impl SeatHandler for Hypr {
     fn cursor_image(
         &mut self,
         _seat: &Seat<Self>,
-        _image: smithay::input::pointer::CursorImageStatus,
+        image: smithay::input::pointer::CursorImageStatus,
     ) {
+        // Stored only: the cursor is still drawn as a plain square.
+        self.cursor_status = image;
     }
 
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {

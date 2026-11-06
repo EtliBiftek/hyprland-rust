@@ -895,7 +895,19 @@ fn handle_one(h: &mut Hypr, req: &Request) -> String {
     }
     let reply = if let Some(args) = req.cmd.strip_prefix("dispatch") {
         let args = args.trim();
-        let (name, arg) = args.split_once(char::is_whitespace).unwrap_or((args, ""));
+        // Hyprland >= 0.57 takes Lua here: `hyprctl dispatch 'hl.dsp.exit()'`.
+        let lua;
+        let (name, arg) = if args.starts_with("hl.") {
+            match crate::lua_config::eval_dispatch(args) {
+                Ok(p) => {
+                    lua = p;
+                    (lua.0.as_str(), lua.1.as_str())
+                }
+                Err(e) => return e,
+            }
+        } else {
+            args.split_once(char::is_whitespace).unwrap_or((args, ""))
+        };
         match Dispatcher::parse(name, arg) {
             Ok(d) => {
                 h.dispatch(&d);
@@ -1038,7 +1050,7 @@ fn snapshot(h: &Hypr) -> Snapshot {
                 scale: o.current_scale().fractional_scale(),
                 transform: 0,
                 focused: true,
-                dpms_status: true,
+                dpms_status: h.wm.dpms_on,
                 vrr: false,
                 solitary: "0".into(),
                 solitary_blocked_by: None,

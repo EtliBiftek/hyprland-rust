@@ -3,9 +3,10 @@ use std::{ffi::OsString, sync::Arc};
 use smithay::{
     backend::session::libseat::LibSeatSession,
     desktop::{PopupManager, Space, Window, WindowSurfaceType},
-    input::{Seat, SeatState},
+    input::{pointer::CursorImageStatus, Seat, SeatState},
     reexports::{
         calloop::{generic::Generic, EventLoop, Interest, LoopSignal, Mode, PostAction},
+        wayland_protocols::ext::idle_notify::v1::server::ext_idle_notifier_v1::ExtIdleNotifierV1,
         wayland_server::{
             backend::{ClientData, ClientId, DisconnectReason},
             protocol::wl_surface::WlSurface,
@@ -15,21 +16,36 @@ use smithay::{
     utils::{Logical, Point},
     wayland::{
         compositor::{CompositorClientState, CompositorState},
+        content_type::ContentTypeState,
+        cursor_shape::CursorShapeManagerState,
+        fractional_scale::FractionalScaleManagerState,
+        idle_inhibit::IdleInhibitManagerState,
+        keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState,
         output::OutputManagerState,
-        selection::data_device::DataDeviceState,
+        pointer_constraints::PointerConstraintsState,
+        presentation::PresentationState,
+        relative_pointer::RelativePointerManagerState,
+        selection::{
+            data_device::DataDeviceState, ext_data_control,
+            primary_selection::PrimarySelectionState, wlr_data_control,
+        },
+        session_lock::{LockSurface, SessionLockManagerState},
         shell::{
             wlr_layer::WlrLayerShellState,
             xdg::{decoration::XdgDecorationState, XdgShellState},
         },
         shm::ShmState,
+        single_pixel_buffer::SinglePixelBufferState,
         socket::ListeningSocketSource,
+        viewporter::ViewporterState,
         xdg_activation::XdgActivationState,
+        xdg_foreign::XdgForeignState,
     },
 };
 
 use smithay::wayland::shell::wlr_layer::Layer;
 
-use crate::{config::Config, workspace::Workspace, CalloopData};
+use crate::{config::Config, handlers::protocols::IdleState, workspace::Workspace, CalloopData};
 
 pub struct Hypr {
     pub start_time: std::time::Instant,
@@ -50,6 +66,30 @@ pub struct Hypr {
     pub data_device_state: DataDeviceState,
     pub xdg_activation_state: XdgActivationState,
     pub popups: PopupManager,
+
+    // Protocol states from `handlers/protocols.rs`.
+    pub primary_selection_state: PrimarySelectionState,
+    pub wlr_data_control_state: wlr_data_control::DataControlState,
+    pub ext_data_control_state: ext_data_control::DataControlState,
+    pub viewporter_state: ViewporterState,
+    pub fractional_scale_state: FractionalScaleManagerState,
+    pub presentation_state: PresentationState,
+    pub single_pixel_buffer_state: SinglePixelBufferState,
+    pub content_type_state: ContentTypeState,
+    pub cursor_shape_state: CursorShapeManagerState,
+    pub idle_inhibit_state: IdleInhibitManagerState,
+    pub keyboard_shortcuts_inhibit_state: KeyboardShortcutsInhibitState,
+    pub pointer_constraints_state: PointerConstraintsState,
+    pub relative_pointer_state: RelativePointerManagerState,
+    pub xdg_foreign_state: XdgForeignState,
+    pub session_lock_state: SessionLockManagerState,
+    /// ext-idle-notify timers and idle-inhibit surfaces.
+    pub idle: IdleState,
+    /// Last cursor image requested by a client (`cursor-shape` or a surface).
+    pub cursor_status: CursorImageStatus,
+    /// Session lock held: only `lock_surfaces` are drawn and get input.
+    pub session_locked: bool,
+    pub lock_surfaces: Vec<LockSurface>,
 
     pub seat: Seat<Self>,
     /// Layer surface that currently holds keyboard focus (exclusive or clicked).
@@ -94,6 +134,22 @@ impl Hypr {
         let xdg_activation_state = XdgActivationState::new::<Self>(&dh);
         let popups = PopupManager::default();
 
+        let primary_selection_state = PrimarySelectionState::new::<Self>(&dh);
+        let wlr_data_control_state = wlr_data_control::DataControlState::new::<Self, _>(
+            &dh,
+            Some(&primary_selection_state),
+            |_| true,
+        );
+        let ext_data_control_state = ext_data_control::DataControlState::new::<Self, _>(
+            &dh,
+            Some(&primary_selection_state),
+            |_| true,
+        );
+        // Presentation clock: 1 is CLOCK_MONOTONIC on Linux.
+        let presentation_state = PresentationState::new::<Self>(&dh, 1);
+        let session_lock_state = SessionLockManagerState::new::<Self, _>(&dh, |_| true);
+        dh.create_global::<Self, ExtIdleNotifierV1, _>(2, ());
+
         // A seat is a group of keyboards, pointer and touch devices.
         // A seat typically has a pointer and maintains a keyboard focus and a pointer focus.
         let mut seat: Seat<Self> = seat_state.new_wl_seat(&dh, "seat0");
@@ -119,7 +175,7 @@ impl Hypr {
 
         let mut hypr = Self {
             start_time,
-            display_handle: dh,
+            display_handle: dh.clone(),
 
             space,
             loop_signal,
@@ -135,6 +191,25 @@ impl Hypr {
             data_device_state,
             xdg_activation_state,
             popups,
+            primary_selection_state,
+            wlr_data_control_state,
+            ext_data_control_state,
+            viewporter_state: ViewporterState::new::<Self>(&dh),
+            fractional_scale_state: FractionalScaleManagerState::new::<Self>(&dh),
+            presentation_state,
+            single_pixel_buffer_state: SinglePixelBufferState::new::<Self>(&dh),
+            content_type_state: ContentTypeState::new::<Self>(&dh),
+            cursor_shape_state: CursorShapeManagerState::new::<Self>(&dh),
+            idle_inhibit_state: IdleInhibitManagerState::new::<Self>(&dh),
+            keyboard_shortcuts_inhibit_state: KeyboardShortcutsInhibitState::new::<Self>(&dh),
+            pointer_constraints_state: PointerConstraintsState::new::<Self>(&dh),
+            relative_pointer_state: RelativePointerManagerState::new::<Self>(&dh),
+            xdg_foreign_state: XdgForeignState::new::<Self>(&dh),
+            session_lock_state,
+            idle: IdleState::default(),
+            cursor_status: CursorImageStatus::default_named(),
+            session_locked: false,
+            lock_surfaces: Vec::new(),
             seat,
             layer_focus: None,
 
@@ -200,6 +275,13 @@ impl Hypr {
         &self,
         pos: Point<f64, Logical>,
     ) -> Option<(WlSurface, Point<f64, Logical>)> {
+        if self.session_locked {
+            return self
+                .lock_surfaces
+                .iter()
+                .find(|s| s.alive())
+                .map(|s| (s.wl_surface().clone(), Point::from((0.0, 0.0))));
+        }
         self.layer_at(pos, [Layer::Overlay, Layer::Top])
             .map(|(_, s, p)| (s, p))
             .or_else(|| {

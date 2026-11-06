@@ -11,7 +11,7 @@ use smithay::{
     },
     input::{
         keyboard::{xkb, Keycode, KeysymHandle, ModifiersState, XkbConfig},
-        pointer::{AxisFrame, ButtonEvent, MotionEvent},
+        pointer::{AxisFrame, ButtonEvent, MotionEvent, RelativeMotionEvent},
     },
     reexports::{
         calloop::timer::{TimeoutAction, Timer},
@@ -19,6 +19,7 @@ use smithay::{
         wayland_server::protocol::wl_surface::WlSurface,
     },
     utils::{Logical, Point, SERIAL_COUNTER},
+    wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitorSeat,
 };
 
 use crate::{
@@ -120,6 +121,7 @@ impl Hypr {
     }
 
     pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
+        self.notify_idle_activity();
         match event {
             InputEvent::Keyboard { event, .. } => {
                 self.on_key(event.key_code(), event.state(), Event::time_msec(&event));
@@ -135,6 +137,16 @@ impl Hypr {
                 }
                 self.follow_mouse(pos);
                 let under = self.surface_under(pos);
+                // Relative motion goes to the client even when the pointer is clamped.
+                pointer.relative_motion(
+                    self,
+                    under.clone(),
+                    &RelativeMotionEvent {
+                        delta: event.delta(),
+                        delta_unaccel: event.delta(),
+                        utime: event.time(),
+                    },
+                );
                 pointer.motion(
                     self,
                     under,
@@ -180,7 +192,10 @@ impl Hypr {
 
                 let button_state = event.state();
 
-                if ButtonState::Pressed == button_state && !pointer.is_grabbed() {
+                if ButtonState::Pressed == button_state
+                    && !pointer.is_grabbed()
+                    && !self.session_locked
+                {
                     // `bindm`: start dragging instead of clicking.
                     if let Some(resize) = self.mouse_bind(button) {
                         if self.start_mouse_grab(resize, button) {
@@ -258,7 +273,7 @@ impl Hypr {
 
     /// `follow_mouse = 1`: keyboard focus follows the window under the pointer.
     fn follow_mouse(&mut self, pos: Point<f64, Logical>) {
-        if self.config.input.follow_mouse != 1 {
+        if self.config.input.follow_mouse != 1 || self.session_locked {
             return;
         }
         if self.seat.get_pointer().is_some_and(|p| p.is_grabbed()) {
@@ -375,6 +390,10 @@ impl Hypr {
         }
         // Match on the unshifted key so `SUPER SHIFT, 1` works
         // regardless of keyboard layout's shifted symbol.
+        // Lock screen and inhibited shortcuts: keys go straight to the client.
+        if self.session_locked || self.seat.keyboard_shortcuts_inhibited() {
+            return out;
+        }
         let syms: Vec<String> = handle
             .raw_syms()
             .into_iter()
@@ -452,6 +471,10 @@ impl Hypr {
 
     /// Delivers a key event to `surface` without changing the focus for good.
     fn forward_key(&mut self, surface: WlSurface, code: Keycode, state: KeyState, time: u32) {
+        // Locked: keyboard focus stays on the lock surface.
+        if self.session_locked {
+            return;
+        }
         let kb = self.seat.get_keyboard().unwrap();
         let prev = kb.current_focus();
         kb.set_focus(self, Some(surface), SERIAL_COUNTER.next_serial());
