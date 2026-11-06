@@ -291,6 +291,10 @@ impl SessionLockHandler for Hypr {
 
     fn lock(&mut self, confirmation: SessionLocker) {
         self.session_locked = true;
+        // No key may reach a window between lock() and the lock surface.
+        if let Some(kb) = self.seat.get_keyboard() {
+            kb.set_focus(self, None, SERIAL_COUNTER.next_serial());
+        }
         confirmation.lock();
     }
 
@@ -308,6 +312,7 @@ impl SessionLockHandler for Hypr {
             });
         }
         surface.send_configure();
+        // focus_window() is a no-op while locked, so set the focus directly.
         if let Some(kb) = self.seat.get_keyboard() {
             kb.set_focus(
                 self,

@@ -471,6 +471,10 @@ impl Hypr {
 
     /// Delivers a key event to `surface` without changing the focus for good.
     fn forward_key(&mut self, surface: WlSurface, code: Keycode, state: KeyState, time: u32) {
+        // Locked: keyboard focus stays on the lock surface.
+        if self.session_locked {
+            return;
+        }
         let kb = self.seat.get_keyboard().unwrap();
         let prev = kb.current_focus();
         kb.set_focus(self, Some(surface), SERIAL_COUNTER.next_serial());

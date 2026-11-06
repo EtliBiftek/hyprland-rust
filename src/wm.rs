@@ -592,6 +592,10 @@ impl Hypr {
 
     /// Gives keyboard focus to `window` (or clears focus) and raises it.
     pub fn focus_window(&mut self, window: Option<Window>) {
+        // Locked: keyboard focus stays on the lock surface.
+        if self.session_locked {
+            return;
+        }
         let serial = SERIAL_COUNTER.next_serial();
         let keyboard = self.seat.get_keyboard().unwrap();
 
