@@ -207,7 +207,7 @@ impl Hypr {
     /// Click-to-focus: layers above windows first, then windows, then layers
     /// below; `OnDemand`/`Exclusive` layers take keyboard focus.
     pub fn click_focus(&mut self, pos: Point<f64, Logical>) {
-        let window = self.window_under(pos);
+        let window = self.groupbar_tab_at(pos).or_else(|| self.window_under(pos));
         let layer = self
             .layer_at(pos, [Layer::Overlay, Layer::Top])
             .or_else(|| {

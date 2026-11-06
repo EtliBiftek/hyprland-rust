@@ -11,10 +11,10 @@
 //! here, Hyprland pretty-prints it; field names, order and types match.
 //!
 //! Placeholder fields (always a constant): clients `pinned`, `xwayland`,
-//! `pinFullscreened`, `fullscreenHandler`, `allowedOverFullscreen`, `grouped`,
+//! `pinFullscreened`, `fullscreenHandler`, `allowedOverFullscreen`,
 //! `tags`, `swallowing`, `inhibitingIdle`, `xdgTag`, `xdgDescription`,
 //! `contentType`, `tearingHint`, `initialClass`/`initialTitle` (current
-//! values), `hidden`; workspaces `ispersistent`, `tiledLayout`; monitors
+//! values); workspaces `ispersistent`; monitors
 //! `description`, `make`, `model`, `serial`, `physicalWidth/Height`,
 //! `specialWorkspace`, `reserved`, `transform`, `vrr`, `solitary*`,
 //! `activelyTearing`, `tearingBlockedBy`, `directScanout*`, `disabled`,
@@ -934,8 +934,10 @@ fn snapshot(h: &Hypr) -> Snapshot {
         }
         for (n, w) in wins.iter().enumerate() {
             let (class, title) = class_title(w);
-            let (at, size) = match h.space.element_location(w) {
-                Some(l) if shown => ([l.x, l.y], [w.geometry().size.w, w.geometry().size.h]),
+            // A hidden group member reports the place of the visible one.
+            let rep = ws.groups.rep(w);
+            let (at, size) = match h.space.element_location(rep) {
+                Some(l) if shown => ([l.x, l.y], [rep.geometry().size.w, rep.geometry().size.h]),
                 _ => ([0, 0], [0, 0]),
             };
             let pid = w
@@ -949,9 +951,15 @@ fn snapshot(h: &Hypr) -> Snapshot {
                 0
             };
             let addr = window_addr(w);
+            let hidden = ws.groups.is_hidden(w);
+            let grouped = ws
+                .groups
+                .group_of(w)
+                .map(|g| g.members.iter().map(window_addr).collect())
+                .unwrap_or_default();
             clients.push(ClientInfo {
                 mapped: is_mapped(w),
-                hidden: false,
+                hidden,
                 visible: i == h.active_workspace,
                 accepts_input: true,
                 at,
@@ -971,7 +979,7 @@ fn snapshot(h: &Hypr) -> Snapshot {
                 fullscreen_client: fs,
                 fullscreen_handler: "none".into(),
                 allowed_over_fullscreen: false,
-                grouped: Vec::new(),
+                grouped,
                 tags: Vec::new(),
                 swallowing: "0x0".into(),
                 focus_history_id: if focused.as_ref() == Some(w) {
@@ -998,7 +1006,7 @@ fn snapshot(h: &Hypr) -> Snapshot {
             last_window: last.map_or("0x0".into(), window_addr),
             last_window_title: last.map(|w| class_title(w).1).unwrap_or_default(),
             is_persistent: false,
-            tiled_layout: "dwindle".into(),
+            tiled_layout: ws.tiled.kind.name().into(),
         });
     }
 

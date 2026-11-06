@@ -6,19 +6,23 @@
 
 mod config;
 mod grabs;
+mod groups;
 mod handlers;
 mod headless;
 mod input;
 mod ipc;
 mod ipc_cmds;
 mod layout;
+mod master;
 mod options;
 mod reload;
 mod selectors;
 mod state;
+mod tiling;
 mod tty;
 mod winit;
 mod wm;
+mod wm_groups;
 mod workspace;
 
 use std::path::PathBuf;

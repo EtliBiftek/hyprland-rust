@@ -2,15 +2,16 @@
 //!
 //! To expose a new config option, add a match arm to `get_option`.
 
-use crate::config::Config;
+use crate::{
+    config::Config,
+    master::{NewOnActive, NewStatus},
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum OptValue {
     Int(i64),
     Bool(bool),
     Float(f64),
-    /// Unused until a string option exists (e.g. `input:kb_layout`).
-    #[allow(dead_code)]
     Str(String),
     /// Complex value printed by `toString()` in Hyprland (gradients etc.).
     Custom(String),
@@ -34,6 +35,59 @@ pub fn get_option(cfg: &Config, key: &str) -> Option<OptValue> {
         "dwindle:preserve_split" => Bool(cfg.dwindle.preserve_split),
         "dwindle:default_split_ratio" => Float(cfg.dwindle.default_split_ratio.into()),
         "misc:disable_autoreload" => Bool(cfg.misc.disable_autoreload),
+        "general:layout" => Str(cfg.general.layout.clone()),
+        "dwindle:force_split" => Int(cfg.dwindle.force_split.into()),
+        "dwindle:smart_split" => Bool(cfg.dwindle.smart_split),
+        "dwindle:smart_resizing" => Bool(cfg.dwindle.smart_resizing),
+        "dwindle:permanent_direction_override" => Bool(cfg.dwindle.permanent_direction_override),
+        "dwindle:special_scale_factor" => Float(cfg.dwindle.special_scale_factor.into()),
+        "dwindle:split_width_multiplier" => Float(cfg.dwindle.split_width_multiplier.into()),
+        "dwindle:use_active_for_splits" => Bool(cfg.dwindle.use_active_for_splits),
+        "master:allow_small_split" => Bool(cfg.master.allow_small_split),
+        "master:special_scale_factor" => Float(cfg.master.special_scale_factor.into()),
+        "master:mfact" => Float(cfg.master.mfact.into()),
+        "master:new_status" => Str(match cfg.master.new_status {
+            NewStatus::Master => "master",
+            NewStatus::Slave => "slave",
+            NewStatus::Inherit => "inherit",
+        }
+        .into()),
+        "master:new_on_top" => Bool(cfg.master.new_on_top),
+        "master:new_on_active" => Str(match cfg.master.new_on_active {
+            NewOnActive::None => "none",
+            NewOnActive::Before => "before",
+            NewOnActive::After => "after",
+        }
+        .into()),
+        "master:orientation" => Str(cfg.master.orientation.name().into()),
+        "master:slave_count_for_center_master" => {
+            Int(cfg.master.slave_count_for_center_master.into())
+        }
+        "master:center_master_fallback" => Str(cfg.master.center_master_fallback.name().into()),
+        "master:smart_resizing" => Bool(cfg.master.smart_resizing),
+        "master:drop_at_cursor" => Bool(cfg.master.drop_at_cursor),
+        "master:always_keep_position" => Bool(cfg.master.always_keep_position),
+        "master:focus_master_on_close" => Bool(cfg.master.focus_master_on_close),
+        "group:auto_group" => Bool(cfg.group.auto_group),
+        "group:insert_after_current" => Bool(cfg.group.insert_after_current),
+        "group:focus_removed_window" => Bool(cfg.group.focus_removed_window),
+        "group:col.border_active" => Custom(gradient(cfg.group.border_active)),
+        "group:col.border_inactive" => Custom(gradient(cfg.group.border_inactive)),
+        "group:col.border_locked_active" => Custom(gradient(cfg.group.border_locked_active)),
+        "group:col.border_locked_inactive" => Custom(gradient(cfg.group.border_locked_inactive)),
+        "group:groupbar:enabled" => Bool(cfg.group.groupbar.enabled),
+        "group:groupbar:height" => Int(cfg.group.groupbar.height.into()),
+        "group:groupbar:gaps_in" => Int(cfg.group.groupbar.gaps_in.into()),
+        "group:groupbar:disable_when_only" => Bool(cfg.group.groupbar.disable_when_only),
+        "group:groupbar:col.active" => Custom(gradient(cfg.group.groupbar.col_active)),
+        "group:groupbar:col.inactive" => Custom(gradient(cfg.group.groupbar.col_inactive)),
+        "group:groupbar:col.locked_active" => {
+            Custom(gradient(cfg.group.groupbar.col_locked_active))
+        }
+        "group:groupbar:col.locked_inactive" => {
+            Custom(gradient(cfg.group.groupbar.col_locked_inactive))
+        }
+        "binds:ignore_group_lock" => Bool(cfg.ignore_group_lock),
         _ => return None,
     })
 }
@@ -98,6 +152,60 @@ mod tests {
             r#"{"option": "k", "custom": "ffffffff 0deg", "set": false }"#
         );
         assert!(get_option(&cfg, "nope:nope").is_none());
+    }
+
+    #[test]
+    fn getoption_layout_and_group_options() {
+        let (cfg, _) = Config::parse_str(
+            "general:layout = master
+master:orientation = top
+master:new_status = master
+group:groupbar:height = 9
+group:auto_group = false",
+        );
+        let get = |k: &str| format_option(k, &get_option(&cfg, k).unwrap(), false, false);
+        assert_eq!(
+            get("general:layout"),
+            "str: master
+set: false"
+        );
+        assert_eq!(
+            get("master:orientation"),
+            "str: top
+set: false"
+        );
+        assert_eq!(
+            get("master:new_status"),
+            "str: master
+set: false"
+        );
+        assert_eq!(
+            get("master:mfact"),
+            "float: 0.550000
+set: false"
+        );
+        assert_eq!(
+            get("group:groupbar:height"),
+            "int: 9
+set: false"
+        );
+        assert_eq!(
+            get("group:auto_group"),
+            "bool: false
+set: false"
+        );
+        assert_eq!(
+            get("group:col.border_active"),
+            "custom type: 66ffff00 0deg
+set: false"
+        );
+        for k in [
+            "dwindle:force_split",
+            "binds:ignore_group_lock",
+            "master:slave_count_for_center_master",
+        ] {
+            assert!(get_option(&cfg, k).is_some(), "{k}");
+        }
     }
 
     #[test]

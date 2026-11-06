@@ -1,7 +1,7 @@
 //! Workspaces: each one owns a dwindle tree of tiled windows plus a list of
 //! floating windows.
 
-use crate::layout::Dwindle;
+use crate::{groups::Groups, tiling::Tiling};
 
 /// Id of the default special workspace (`special`); named ones count down.
 pub const SPECIAL_ID: i32 = -98;
@@ -13,7 +13,9 @@ pub struct Workspace<W> {
     pub id: i32,
     /// `1`, `foo` for `name:foo`, `special` / `special:foo` for special ones.
     pub name: String,
-    pub tiled: Dwindle<W>,
+    pub tiled: Tiling<W>,
+    /// Groups; only the active member of each is in `tiled`/`floating`.
+    pub groups: Groups<W>,
     /// Floating windows, bottom to top.
     pub floating: Vec<W>,
     pub fullscreen: Option<W>,
@@ -33,7 +35,8 @@ impl<W> Workspace<W> {
         Self {
             id,
             name,
-            tiled: Dwindle::default(),
+            tiled: Tiling::default(),
+            groups: Groups::default(),
             floating: Vec::new(),
             fullscreen: None,
             maximized: None,
@@ -65,22 +68,60 @@ pub fn new_named_id(existing: impl Iterator<Item = i32>) -> i32 {
 
 impl<W: PartialEq + Clone> Workspace<W> {
     pub fn contains(&self, w: &W) -> bool {
-        self.tiled.contains(w) || self.floating.contains(w)
+        self.tiled.contains(w) || self.floating.contains(w) || self.groups.is_hidden(w)
     }
 
+    /// A hidden group member counts as floating if its group is.
     pub fn is_floating(&self, w: &W) -> bool {
-        self.floating.contains(w)
+        self.floating.contains(self.groups.rep(w))
     }
 
-    /// All windows, tiled first, then floating bottom to top.
-    pub fn windows(&self) -> Vec<W> {
+    /// Windows that take part in the layout: tiled first, then floating
+    /// bottom to top. One window per group.
+    pub fn visible_windows(&self) -> Vec<W> {
         let mut v = self.tiled.windows();
         v.extend(self.floating.iter().cloned());
         v
     }
 
+    /// All windows, including hidden group members.
+    pub fn windows(&self) -> Vec<W> {
+        let mut v = self.visible_windows();
+        v.extend(self.groups.hidden());
+        v
+    }
+
+    /// Puts `new` in the layout slot (and focus/fullscreen role) of `old`.
+    pub fn replace_in_layout(&mut self, old: &W, new: &W) {
+        if !self.tiled.replace(old, new) {
+            for f in self.floating.iter_mut().filter(|f| *f == old) {
+                *f = new.clone();
+            }
+        }
+        for slot in [
+            &mut self.fullscreen,
+            &mut self.maximized,
+            &mut self.last_focused,
+        ] {
+            if slot.as_ref() == Some(old) {
+                *slot = Some(new.clone());
+            }
+        }
+    }
+
     /// Removes a window from the workspace, fixing up focus/fullscreen state.
+    /// A group member leaves its group; the group's next member takes the slot.
     pub fn remove(&mut self, w: &W) -> bool {
+        if let Some(gi) = self.groups.find(w) {
+            let succ = self.groups.list[gi].remove(w);
+            if self.groups.list[gi].members.is_empty() {
+                self.groups.list.remove(gi);
+            } else {
+                let to = succ.unwrap_or_else(|| self.groups.list[gi].active().clone());
+                self.replace_in_layout(w, &to);
+                return true;
+            }
+        }
         let removed = self.tiled.remove(w) || {
             let before = self.floating.len();
             self.floating.retain(|f| f != w);

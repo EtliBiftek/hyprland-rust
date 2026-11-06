@@ -26,7 +26,7 @@ impl Rect {
         Rect::new(self.x + by, self.y + by, w, h)
     }
 
-    fn center(self) -> (i32, i32) {
+    pub fn center(self) -> (i32, i32) {
         (self.x + self.w / 2, self.y + self.h / 2)
     }
 
@@ -79,13 +79,32 @@ impl<T: PartialEq + Clone> Node<T> {
     }
 }
 
+/// Per-layout switches that decide a split's orientation.
+#[derive(Debug, Clone, Copy)]
+pub struct Opt {
+    preserve: bool,
+    /// `split_width_multiplier`: width is multiplied before comparing to height.
+    mult: f32,
+}
+
 /// Decides orientation for a split node occupying `area`.
-fn orientation(side_by_side: bool, locked: bool, preserve: bool, area: Rect) -> bool {
-    if locked || preserve {
+fn orientation(side_by_side: bool, locked: bool, opt: Opt, area: Rect) -> bool {
+    if locked || opt.preserve {
         side_by_side
     } else {
-        area.w >= area.h
+        area.w as f32 * opt.mult >= area.h as f32
     }
+}
+
+struct Ins<'a, T> {
+    target: &'a T,
+    new: &'a T,
+    opt: Opt,
+    ratio: f32,
+    pre: Option<Direction>,
+    smart: bool,
+    force: i32,
+    cursor: Option<(i32, i32)>,
 }
 
 #[derive(Debug, Clone)]
@@ -93,6 +112,16 @@ pub struct Dwindle<T> {
     root: Option<Node<T>>,
     pub preserve_split: bool,
     pub split_ratio: f32,
+    /// `force_split`: 0 follows the cursor, 1 new window first, 2 second.
+    pub force_split: i32,
+    /// `smart_split`: the cursor's triangle in the target picks the side.
+    pub smart_split: bool,
+    pub split_width_multiplier: f32,
+    pub permanent_direction_override: bool,
+    /// `layoutmsg preselect`: side for the next opened window.
+    pub preselect: Option<Direction>,
+    /// Cursor position used by `force_split = 0` and `smart_split`.
+    pub cursor: Option<(i32, i32)>,
 }
 
 impl<T> Default for Dwindle<T> {
@@ -101,6 +130,12 @@ impl<T> Default for Dwindle<T> {
             root: None,
             preserve_split: false,
             split_ratio: 1.0,
+            force_split: 0,
+            smart_split: false,
+            split_width_multiplier: 1.0,
+            permanent_direction_override: false,
+            preselect: None,
+            cursor: None,
         }
     }
 }
@@ -128,6 +163,13 @@ impl<T: PartialEq + Clone> Dwindle<T> {
         out
     }
 
+    fn opt(&self) -> Opt {
+        Opt {
+            preserve: self.preserve_split || self.smart_split,
+            mult: self.split_width_multiplier,
+        }
+    }
+
     /// Inserts `new` by splitting `target` (or the most recently added window
     /// if `target` is `None` or not in the tree). `area` is the space the
     /// layout covers, needed to pick the split orientation.
@@ -143,24 +185,64 @@ impl<T: PartialEq + Clone> Dwindle<T> {
             Some(t) if root.contains(t) => t.clone(),
             _ => root.last_leaf().clone(),
         };
-        let preserve = self.preserve_split;
-        let ratio = self.split_ratio;
+        let pre = self.preselect;
+        if !self.permanent_direction_override {
+            self.preselect = None;
+        }
+        let ins = Ins {
+            target: &target,
+            new: &new,
+            opt: self.opt(),
+            ratio: self.split_ratio,
+            pre,
+            smart: self.smart_split,
+            force: self.force_split,
+            cursor: self.cursor,
+        };
 
-        fn go<T: PartialEq + Clone>(
-            node: Node<T>,
-            area: Rect,
-            target: &T,
-            new: &T,
-            preserve: bool,
-            ratio: f32,
-        ) -> Node<T> {
+        fn go<T: PartialEq + Clone>(node: Node<T>, area: Rect, i: &Ins<T>) -> Node<T> {
             match node {
-                Node::Leaf(l) if &l == target => Node::Split {
-                    side_by_side: area.w >= area.h,
-                    locked: false,
-                    ratio,
-                    children: Box::new([Node::Leaf(l), Node::Leaf(new.clone())]),
-                },
+                Node::Leaf(l) if &l == i.target => {
+                    let inside = i.cursor.filter(|&(cx, cy)| {
+                        cx >= area.x && cx < area.x + area.w && cy >= area.y && cy < area.y + area.h
+                    });
+                    let mut side = area.w as f32 * i.opt.mult >= area.h as f32;
+                    let mut locked = false;
+                    let new_first;
+                    if let Some(d) = i.pre {
+                        side = matches!(d, Direction::Left | Direction::Right);
+                        new_first = matches!(d, Direction::Left | Direction::Up);
+                        locked = true;
+                    } else if let Some((cx, cy)) = inside.filter(|_| i.smart) {
+                        let (mx, my) = area.center();
+                        let (dx, dy) = ((cx - mx) as f32, (cy - my) as f32);
+                        side = dy.abs() * (area.w as f32) < dx.abs() * (area.h as f32);
+                        new_first = if side { dx <= 0.0 } else { dy <= 0.0 };
+                        locked = true;
+                    } else {
+                        // shortcut: the cursor only counts while it is inside the
+                        // target (Hyprland compares even outside); fine until pointer
+                        // warping on focus exists.
+                        new_first = match (i.force, inside) {
+                            (1, _) => true,
+                            (0, Some((cx, cy))) => {
+                                if side {
+                                    cx < area.x + area.w / 2
+                                } else {
+                                    cy < area.y + area.h / 2
+                                }
+                            }
+                            _ => false,
+                        };
+                    }
+                    let (a, b) = (Node::Leaf(l), Node::Leaf(i.new.clone()));
+                    Node::Split {
+                        side_by_side: side,
+                        locked,
+                        ratio: i.ratio,
+                        children: Box::new(if new_first { [b, a] } else { [a, b] }),
+                    }
+                }
                 leaf @ Node::Leaf(_) => leaf,
                 Node::Split {
                     side_by_side,
@@ -168,13 +250,13 @@ impl<T: PartialEq + Clone> Dwindle<T> {
                     ratio: r,
                     children,
                 } => {
-                    let o = orientation(side_by_side, locked, preserve, area);
+                    let o = orientation(side_by_side, locked, i.opt, area);
                     let (a1, a2) = area.split(o, r);
                     let [c1, c2] = *children;
-                    let (c1, c2) = if c1.contains(target) {
-                        (go(c1, a1, target, new, preserve, ratio), c2)
+                    let (c1, c2) = if c1.contains(i.target) {
+                        (go(c1, a1, i), c2)
                     } else {
-                        (c1, go(c2, a2, target, new, preserve, ratio))
+                        (c1, go(c2, a2, i))
                     };
                     Node::Split {
                         side_by_side,
@@ -186,7 +268,7 @@ impl<T: PartialEq + Clone> Dwindle<T> {
             }
         }
 
-        self.root = Some(go(root, area, &target, &new, preserve, ratio));
+        self.root = Some(go(root, area, &ins));
     }
 
     /// Removes a window; its sibling takes over the freed space.
@@ -228,10 +310,22 @@ impl<T: PartialEq + Clone> Dwindle<T> {
         true
     }
 
-    /// Flips the orientation of the split containing `w` (Hyprland's `togglesplit`).
-    pub fn toggle_split(&mut self, w: &T, area: Rect) {
-        let preserve = self.preserve_split;
-        fn go<T: PartialEq + Clone>(node: &mut Node<T>, area: Rect, w: &T, preserve: bool) -> bool {
+    /// Runs `f(node, side_by_side)` on the split that directly contains leaf
+    /// `w`; `side_by_side` is the split's current orientation for `area`.
+    fn with_parent(
+        &mut self,
+        w: &T,
+        area: Rect,
+        f: &mut dyn FnMut(&mut Node<T>, bool) -> bool,
+    ) -> bool {
+        let opt = self.opt();
+        fn go<T: PartialEq + Clone>(
+            node: &mut Node<T>,
+            area: Rect,
+            w: &T,
+            opt: Opt,
+            f: &mut dyn FnMut(&mut Node<T>, bool) -> bool,
+        ) -> bool {
             let Node::Split {
                 side_by_side,
                 locked,
@@ -241,21 +335,129 @@ impl<T: PartialEq + Clone> Dwindle<T> {
             else {
                 return false;
             };
-            let o = orientation(*side_by_side, *locked, preserve, area);
+            let o = orientation(*side_by_side, *locked, opt, area);
             let (a1, a2) = area.split(o, *ratio);
-            let direct_child = children
+            if children
                 .iter()
-                .any(|c| matches!(c, Node::Leaf(l) if l == w));
-            if direct_child {
+                .any(|c| matches!(c, Node::Leaf(l) if l == w))
+            {
+                return f(node, o);
+            }
+            go(&mut children[0], a1, w, opt, f) || go(&mut children[1], a2, w, opt, f)
+        }
+        self.root.as_mut().is_some_and(|r| go(r, area, w, opt, f))
+    }
+
+    /// Flips the orientation of the split containing `w` (Hyprland's `togglesplit`).
+    pub fn toggle_split(&mut self, w: &T, area: Rect) -> bool {
+        self.with_parent(w, area, &mut |n, o| {
+            if let Node::Split {
+                side_by_side,
+                locked,
+                ..
+            } = n
+            {
                 *side_by_side = !o;
                 *locked = true;
-                return true;
             }
-            go(&mut children[0], a1, w, preserve) || go(&mut children[1], a2, w, preserve)
+            true
+        })
+    }
+
+    /// `swapsplit`: swaps the two halves of the split containing `w`.
+    pub fn swap_split(&mut self, w: &T, area: Rect) -> bool {
+        self.with_parent(w, area, &mut |n, _| {
+            if let Node::Split { children, .. } = n {
+                children.swap(0, 1);
+            }
+            true
+        })
+    }
+
+    /// `rotatesplit`: rotates the split containing `w` by a multiple of 90 degrees.
+    pub fn rotate_split(&mut self, w: &T, angle: i32, area: Rect) -> bool {
+        let turns = (angle / 90).rem_euclid(4);
+        self.with_parent(w, area, &mut |n, o| {
+            if let Node::Split {
+                side_by_side,
+                locked,
+                children,
+                ..
+            } = n
+            {
+                // `o` true means side by side, i.e. not Hyprland's `splitTop`.
+                let swap = match turns {
+                    1 => !o,
+                    2 => true,
+                    3 => o,
+                    _ => false,
+                };
+                if turns == 1 || turns == 3 {
+                    *side_by_side = !o;
+                    *locked = true;
+                }
+                if swap {
+                    children.swap(0, 1);
+                }
+            }
+            true
+        })
+    }
+
+    /// `movetoroot`: makes `w` a direct child of the root. `stable` keeps it
+    /// on the same side of the screen. False if it already is one (or alone).
+    pub fn move_to_root(&mut self, w: &T, stable: bool) -> bool {
+        fn slot<'a, T: PartialEq>(n: &'a mut Node<T>, w: &T) -> Option<&'a mut Node<T>> {
+            match n {
+                Node::Leaf(l) if l == w => Some(n),
+                Node::Leaf(_) => None,
+                Node::Split { children, .. } => {
+                    let [a, b] = &mut **children;
+                    slot(a, w).or_else(|| slot(b, w))
+                }
+            }
         }
-        if let Some(root) = &mut self.root {
-            go(root, area, w, preserve);
+        let Some(Node::Split { children, .. }) = &mut self.root else {
+            return false;
+        };
+        if children
+            .iter()
+            .any(|c| matches!(c, Node::Leaf(l) if l == w))
+        {
+            return false;
         }
+        let idx = if children[0].contains(w) { 0 } else { 1 };
+        if !children[idx].contains(w) {
+            return false;
+        }
+        let (a, b) = children.split_at_mut(1);
+        let (anc, other) = if idx == 0 {
+            (&mut a[0], &mut b[0])
+        } else {
+            (&mut b[0], &mut a[0])
+        };
+        if let Some(s) = slot(anc, w) {
+            std::mem::swap(s, other);
+        }
+        if stable {
+            children.swap(0, 1);
+        }
+        true
+    }
+
+    /// Puts `new` where `old` is (`old` must be in the tree, `new` not).
+    pub fn replace(&mut self, old: &T, new: &T) -> bool {
+        fn go<T: PartialEq + Clone>(n: &mut Node<T>, old: &T, new: &T) -> bool {
+            match n {
+                Node::Leaf(l) if l == old => {
+                    *l = new.clone();
+                    true
+                }
+                Node::Leaf(_) => false,
+                Node::Split { children, .. } => children.iter_mut().any(|c| go(c, old, new)),
+            }
+        }
+        self.root.as_mut().is_some_and(|r| go(r, old, new))
     }
 
     /// Swaps the positions of two windows in the tree.
@@ -303,13 +505,13 @@ impl<T: PartialEq + Clone> Dwindle<T> {
     /// moving the edge of the split that directly contains it. Only the axis
     /// of that split has an effect. `area` is the area passed to `layout`.
     pub fn resize(&mut self, w: &T, dx: i32, dy: i32, area: Rect) -> bool {
-        let preserve = self.preserve_split;
+        let preserve = self.opt();
         fn go<T: PartialEq>(
             n: &mut Node<T>,
             area: Rect,
             w: &T,
             d: (i32, i32),
-            preserve: bool,
+            preserve: Opt,
         ) -> bool {
             let Node::Split {
                 side_by_side,
@@ -350,7 +552,7 @@ impl<T: PartialEq + Clone> Dwindle<T> {
             n: &Node<T>,
             area: Rect,
             gaps_in: i32,
-            preserve: bool,
+            preserve: Opt,
             out: &mut Vec<(T, Rect)>,
         ) {
             match n {
@@ -369,7 +571,7 @@ impl<T: PartialEq + Clone> Dwindle<T> {
             }
         }
         if let Some(root) = &self.root {
-            go(root, area, gaps_in, self.preserve_split, &mut out);
+            go(root, area, gaps_in, self.opt(), &mut out);
         }
         out
     }

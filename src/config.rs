@@ -14,7 +14,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::selectors::{Amount, RatioArg, Vec2Arg, WinSel, WsSel};
+use crate::{
+    master::{MasterCfg, NewOnActive, NewStatus, Orientation},
+    selectors::{Amount, RatioArg, Vec2Arg, WinSel, WsSel},
+};
 
 /// Modifier mask used by key bindings.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
@@ -63,6 +66,51 @@ impl Direction {
     }
 }
 
+/// Argument of `changegroupactive`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroupStep {
+    Forward,
+    Backward,
+    /// 1-based; 0 or below selects the last member.
+    Index(i32),
+}
+
+/// `lock` / `unlock` / `toggle` argument of the group lock dispatchers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Toggle {
+    Enable,
+    Disable,
+    Toggle,
+}
+
+impl Toggle {
+    fn parse(s: &str) -> Result<Self, String> {
+        match s.trim() {
+            "" | "toggle" => Ok(Toggle::Toggle),
+            "lock" | "enable" | "on" | "1" | "true" => Ok(Toggle::Enable),
+            "unlock" | "disable" | "off" | "0" | "false" => Ok(Toggle::Disable),
+            other => Err(format!("invalid argument `{other}`")),
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Toggle::Enable => "lock",
+            Toggle::Disable => "unlock",
+            Toggle::Toggle => "toggle",
+        }
+    }
+
+    /// New value of a flag currently `cur`.
+    pub fn apply(self, cur: bool) -> bool {
+        match self {
+            Toggle::Enable => true,
+            Toggle::Disable => false,
+            Toggle::Toggle => !cur,
+        }
+    }
+}
+
 /// Actions a key binding can trigger (named after Hyprland's dispatchers).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Dispatcher {
@@ -92,6 +140,20 @@ pub enum Dispatcher {
     FocusCurrentOrLast,
     FocusUrgentOrLast,
     SplitRatio(RatioArg),
+    /// `layoutmsg <message> [args]` for the layout of the focused workspace.
+    LayoutMsg(String),
+    ToggleGroup,
+    ChangeGroupActive(GroupStep),
+    MoveIntoGroup(Direction),
+    /// Direction is optional.
+    MoveOutOfGroup(Option<Direction>),
+    MoveWindowOrGroup(Direction),
+    /// `true` moves the window backward (`movegroupwindow, b`).
+    MoveGroupWindow(bool),
+    LockGroups(Toggle),
+    LockActiveGroup(Toggle),
+    DenyWindowFromGroup(Toggle),
+    SetIgnoreGroupLock(Toggle),
     /// `swapnext`; `true` for `swapnext prev`.
     SwapNext(bool),
     CloseWindow(WinSel),
@@ -177,6 +239,29 @@ impl Dispatcher {
                 "splitratio",
                 format!("{}{}", if r.exact { "exact " } else { "" }, r.value),
             ),
+            Dispatcher::LayoutMsg(m) => ("layoutmsg", m.clone()),
+            Dispatcher::ToggleGroup => ("togglegroup", String::new()),
+            Dispatcher::ChangeGroupActive(s) => (
+                "changegroupactive",
+                match s {
+                    GroupStep::Forward => "f".into(),
+                    GroupStep::Backward => "b".into(),
+                    GroupStep::Index(i) => i.to_string(),
+                },
+            ),
+            Dispatcher::MoveIntoGroup(d) => ("moveintogroup", dir(d)),
+            Dispatcher::MoveOutOfGroup(d) => {
+                ("moveoutofgroup", d.as_ref().map_or_else(String::new, dir))
+            }
+            Dispatcher::MoveWindowOrGroup(d) => ("movewindoworgroup", dir(d)),
+            Dispatcher::MoveGroupWindow(back) => (
+                "movegroupwindow",
+                if *back { "b".into() } else { String::new() },
+            ),
+            Dispatcher::LockGroups(t) => ("lockgroups", t.name().into()),
+            Dispatcher::LockActiveGroup(t) => ("lockactivegroup", t.name().into()),
+            Dispatcher::DenyWindowFromGroup(t) => ("denywindowfromgroup", t.name().into()),
+            Dispatcher::SetIgnoreGroupLock(t) => ("setignoregrouplock", t.name().into()),
             Dispatcher::SwapNext(p) => ("swapnext", if *p { "prev".into() } else { String::new() }),
             Dispatcher::CloseWindow(s) => ("closewindow", sel(s)),
             Dispatcher::FocusWindow(s) => ("focuswindow", sel(s)),
@@ -220,6 +305,24 @@ impl Dispatcher {
             "focuscurrentorlast" => Dispatcher::FocusCurrentOrLast,
             "focusurgentorlast" => Dispatcher::FocusUrgentOrLast,
             "splitratio" => Dispatcher::SplitRatio(arg.parse()?),
+            "layoutmsg" if arg.is_empty() => return Err("layoutmsg: missing message".into()),
+            "layoutmsg" => Dispatcher::LayoutMsg(arg.to_string()),
+            "togglegroup" => Dispatcher::ToggleGroup,
+            "changegroupactive" => Dispatcher::ChangeGroupActive(match arg {
+                "" | "f" | "forward" => GroupStep::Forward,
+                "b" | "back" | "backward" => GroupStep::Backward,
+                n => GroupStep::Index(n.parse().map_err(|_| format!("invalid index `{n}`"))?),
+            }),
+            "moveintogroup" => Dispatcher::MoveIntoGroup(dir()?),
+            "moveoutofgroup" => {
+                Dispatcher::MoveOutOfGroup(if arg.is_empty() { None } else { Some(dir()?) })
+            }
+            "movewindoworgroup" => Dispatcher::MoveWindowOrGroup(dir()?),
+            "movegroupwindow" => Dispatcher::MoveGroupWindow(matches!(arg, "b" | "back")),
+            "lockgroups" => Dispatcher::LockGroups(Toggle::parse(arg)?),
+            "lockactivegroup" => Dispatcher::LockActiveGroup(Toggle::parse(arg)?),
+            "denywindowfromgroup" => Dispatcher::DenyWindowFromGroup(Toggle::parse(arg)?),
+            "setignoregrouplock" => Dispatcher::SetIgnoreGroupLock(Toggle::parse(arg)?),
             "swapnext" => Dispatcher::SwapNext(matches!(arg, "prev" | "p" | "previous")),
             "closewindow" => Dispatcher::CloseWindow(arg.parse()?),
             "focuswindow" => Dispatcher::FocusWindow(arg.parse()?),
@@ -303,6 +406,8 @@ pub struct General {
     /// RGBA, 0.0-1.0
     pub active_border_color: [f32; 4],
     pub inactive_border_color: [f32; 4],
+    /// `general:layout`: `dwindle` or `master`.
+    pub layout: String,
 }
 
 impl Default for General {
@@ -314,6 +419,78 @@ impl Default for General {
             border_size: 1,
             active_border_color: [1.0, 1.0, 1.0, 1.0],
             inactive_border_color: [0.27, 0.27, 0.27, 1.0],
+            layout: "dwindle".into(),
+        }
+    }
+}
+
+/// `workspace = <id|name:x>, layout:master, layoutopt:orientation:top`.
+/// Only the parts that matter for layout are kept.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorkspaceRule {
+    /// Workspace name: `3` or `foo` (for `name:foo`).
+    pub workspace: String,
+    pub layout: Option<String>,
+    pub orientation: Option<Orientation>,
+}
+
+/// Hyprland's `0xAARRGGBB` as RGBA floats.
+const fn argb(v: u32) -> [f32; 4] {
+    [
+        ((v >> 16) & 0xff) as f32 / 255.0,
+        ((v >> 8) & 0xff) as f32 / 255.0,
+        (v & 0xff) as f32 / 255.0,
+        (v >> 24) as f32 / 255.0,
+    ]
+}
+
+/// `group:groupbar { }`. Titles are not rendered (no text rendering yet), so
+/// the font options are accepted and ignored.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Groupbar {
+    pub enabled: bool,
+    pub height: i32,
+    pub gaps_in: i32,
+    pub disable_when_only: bool,
+    pub col_active: [f32; 4],
+    pub col_inactive: [f32; 4],
+    pub col_locked_active: [f32; 4],
+    pub col_locked_inactive: [f32; 4],
+}
+
+/// `group { }`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GroupCfg {
+    pub auto_group: bool,
+    pub insert_after_current: bool,
+    pub focus_removed_window: bool,
+    pub border_active: [f32; 4],
+    pub border_inactive: [f32; 4],
+    pub border_locked_active: [f32; 4],
+    pub border_locked_inactive: [f32; 4],
+    pub groupbar: Groupbar,
+}
+
+impl Default for GroupCfg {
+    fn default() -> Self {
+        Self {
+            auto_group: true,
+            insert_after_current: true,
+            focus_removed_window: true,
+            border_active: argb(0x66ffff00),
+            border_inactive: argb(0x66777700),
+            border_locked_active: argb(0x66ff5500),
+            border_locked_inactive: argb(0x66775500),
+            groupbar: Groupbar {
+                enabled: true,
+                height: 14,
+                gaps_in: 2,
+                disable_when_only: false,
+                col_active: argb(0x66ffff00),
+                col_inactive: argb(0x66777700),
+                col_locked_active: argb(0x66ff5500),
+                col_locked_inactive: argb(0x66775500),
+            },
         }
     }
 }
@@ -330,6 +507,15 @@ pub struct Dwindle {
     pub preserve_split: bool,
     /// Split ratio, 0.1-1.9 like Hyprland (1.0 = half).
     pub default_split_ratio: f32,
+    /// 0: new window goes where the cursor is, 1: first, 2: second.
+    pub force_split: i32,
+    pub smart_split: bool,
+    /// Accepted; only matters for mouse resizing, which tiled windows lack.
+    pub smart_resizing: bool,
+    pub permanent_direction_override: bool,
+    pub special_scale_factor: f32,
+    pub split_width_multiplier: f32,
+    pub use_active_for_splits: bool,
 }
 
 impl Default for Dwindle {
@@ -337,6 +523,13 @@ impl Default for Dwindle {
         Self {
             preserve_split: false,
             default_split_ratio: 1.0,
+            force_split: 0,
+            smart_split: false,
+            smart_resizing: true,
+            permanent_direction_override: false,
+            special_scale_factor: 1.0,
+            split_width_multiplier: 1.0,
+            use_active_for_splits: true,
         }
     }
 }
@@ -545,6 +738,11 @@ pub struct Config {
     pub general: General,
     pub decoration: Decoration,
     pub dwindle: Dwindle,
+    pub master: MasterCfg,
+    pub group: GroupCfg,
+    /// `binds:ignore_group_lock`.
+    pub ignore_group_lock: bool,
+    pub workspace_rules: Vec<WorkspaceRule>,
     pub input: Input,
     pub binds: Vec<Bind>,
     pub exec_once: Vec<String>,
@@ -814,6 +1012,94 @@ impl Parser {
                     .map_err(|_| format!("invalid float `{value}`"))?;
                 cfg.dwindle.default_split_ratio = r.clamp(0.1, 1.9);
             }
+            "general:layout" => cfg.general.layout = value.to_string(),
+            "dwindle:force_split" => cfg.dwindle.force_split = parse_int(value)?.clamp(0, 2),
+            "dwindle:smart_split" => cfg.dwindle.smart_split = parse_bool(value)?,
+            "dwindle:smart_resizing" => cfg.dwindle.smart_resizing = parse_bool(value)?,
+            "dwindle:permanent_direction_override" => {
+                cfg.dwindle.permanent_direction_override = parse_bool(value)?
+            }
+            "dwindle:special_scale_factor" => {
+                cfg.dwindle.special_scale_factor = parse_float(value)?.clamp(0.0, 1.0)
+            }
+            "dwindle:split_width_multiplier" => {
+                cfg.dwindle.split_width_multiplier = parse_float(value)?.clamp(0.1, 3.0)
+            }
+            "dwindle:use_active_for_splits" => {
+                cfg.dwindle.use_active_for_splits = parse_bool(value)?
+            }
+            "master:allow_small_split" => cfg.master.allow_small_split = parse_bool(value)?,
+            "master:special_scale_factor" => {
+                cfg.master.special_scale_factor = parse_float(value)?.clamp(0.0, 1.0)
+            }
+            "master:mfact" => cfg.master.mfact = parse_float(value)?.clamp(0.0, 1.0),
+            "master:new_status" => {
+                cfg.master.new_status = match value {
+                    "master" => NewStatus::Master,
+                    "slave" => NewStatus::Slave,
+                    "inherit" => NewStatus::Inherit,
+                    other => return Err(format!("invalid new_status `{other}`")),
+                }
+            }
+            "master:new_on_top" => cfg.master.new_on_top = parse_bool(value)?,
+            "master:new_on_active" => {
+                cfg.master.new_on_active = match value {
+                    "none" => NewOnActive::None,
+                    "before" => NewOnActive::Before,
+                    "after" => NewOnActive::After,
+                    other => return Err(format!("invalid new_on_active `{other}`")),
+                }
+            }
+            "master:orientation" => {
+                cfg.master.orientation =
+                    Orientation::parse(value).ok_or(format!("invalid orientation `{value}`"))?
+            }
+            "master:slave_count_for_center_master" => {
+                cfg.master.slave_count_for_center_master = parse_int(value)?.clamp(0, 10)
+            }
+            "master:center_master_fallback" => {
+                cfg.master.center_master_fallback = Orientation::parse(value)
+                    .filter(|o| *o != Orientation::Center)
+                    .ok_or(format!("invalid center_master_fallback `{value}`"))?
+            }
+            "master:smart_resizing" => cfg.master.smart_resizing = parse_bool(value)?,
+            "master:drop_at_cursor" => cfg.master.drop_at_cursor = parse_bool(value)?,
+            "master:always_keep_position" => cfg.master.always_keep_position = parse_bool(value)?,
+            "master:focus_master_on_close" => cfg.master.focus_master_on_close = parse_bool(value)?,
+            "group:auto_group" => cfg.group.auto_group = parse_bool(value)?,
+            "group:insert_after_current" => cfg.group.insert_after_current = parse_bool(value)?,
+            "group:focus_removed_window" => cfg.group.focus_removed_window = parse_bool(value)?,
+            "group:col.border_active" => cfg.group.border_active = parse_color(value)?,
+            "group:col.border_inactive" => cfg.group.border_inactive = parse_color(value)?,
+            "group:col.border_locked_active" => {
+                cfg.group.border_locked_active = parse_color(value)?
+            }
+            "group:col.border_locked_inactive" => {
+                cfg.group.border_locked_inactive = parse_color(value)?
+            }
+            "group:groupbar:enabled" => cfg.group.groupbar.enabled = parse_bool(value)?,
+            "group:groupbar:height" => cfg.group.groupbar.height = parse_int(value)?.clamp(0, 64),
+            "group:groupbar:gaps_in" => cfg.group.groupbar.gaps_in = parse_int(value)?.max(0),
+            "group:groupbar:disable_when_only" => {
+                cfg.group.groupbar.disable_when_only = parse_bool(value)?
+            }
+            "group:groupbar:col.active" => cfg.group.groupbar.col_active = parse_color(value)?,
+            "group:groupbar:col.inactive" => cfg.group.groupbar.col_inactive = parse_color(value)?,
+            "group:groupbar:col.locked_active" => {
+                cfg.group.groupbar.col_locked_active = parse_color(value)?
+            }
+            "group:groupbar:col.locked_inactive" => {
+                cfg.group.groupbar.col_locked_inactive = parse_color(value)?
+            }
+            "binds:ignore_group_lock" => cfg.ignore_group_lock = parse_bool(value)?,
+            "workspace" => {
+                if let Some(rule) = parse_workspace_rule(value) {
+                    // A later rule for the same workspace replaces the earlier one.
+                    cfg.workspace_rules
+                        .retain(|r| r.workspace != rule.workspace);
+                    cfg.workspace_rules.push(rule);
+                }
+            }
             // Accept but ignore well-known options that aren't implemented yet,
             // so real Hyprland configs load without a flood of errors.
             k if is_known_unimplemented(k) => {
@@ -834,8 +1120,18 @@ fn is_known_unimplemented(key: &str) -> bool {
         "bezier",
         "gestures:",
         "misc:",
-        "dwindle:",
-        "master:",
+        // Options of implemented categories that have no effect yet (the
+        // implemented ones are matched before this list is consulted).
+        "dwindle:pseudotile",
+        "dwindle:no_gaps_when_only",
+        "dwindle:split_bias",
+        "dwindle:precise_mouse_move",
+        "master:no_gaps_when_only",
+        "master:new_is_master",
+        "master:inherit_fullscreen",
+        "master:center_ignores_reserved",
+        "group:",
+        "binds:",
         "xwayland:",
         "cursor:",
         "monitor",
@@ -904,6 +1200,37 @@ fn parse_int(value: &str) -> Result<i32, String> {
     value
         .parse()
         .map_err(|_| format!("invalid integer `{value}`"))
+}
+
+fn parse_float(value: &str) -> Result<f32, String> {
+    value
+        .parse()
+        .map_err(|_| format!("invalid float `{value}`"))
+}
+
+/// `workspace = 2, layout:master, layoutopt:orientation:top, ...`. Returns
+/// `None` for rules without a plain id/`name:` selector or without layout bits.
+fn parse_workspace_rule(value: &str) -> Option<WorkspaceRule> {
+    let mut parts = value.split(',').map(str::trim);
+    let sel = parts.next()?;
+    let workspace = match sel.strip_prefix("name:") {
+        Some(n) => n.to_string(),
+        None if sel.parse::<i32>().is_ok() => sel.to_string(),
+        None => return None,
+    };
+    let mut rule = WorkspaceRule {
+        workspace,
+        layout: None,
+        orientation: None,
+    };
+    for p in parts {
+        if let Some(l) = p.strip_prefix("layout:") {
+            rule.layout = Some(l.trim().to_string());
+        } else if let Some(o) = p.strip_prefix("layoutopt:orientation:") {
+            rule.orientation = Orientation::parse(o);
+        }
+    }
+    (rule.layout.is_some() || rule.orientation.is_some()).then_some(rule)
 }
 
 fn parse_bool(value: &str) -> Result<bool, String> {
@@ -1170,5 +1497,129 @@ mod tests {
             "animations {\n enabled = yes\n bezier = a, 0.05, 0.9, 0.1, 1.05\n}\nmonitor = ,preferred,auto,1\ninput {\n kb_layout = tr\n}",
         );
         assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    #[test]
+    fn layout_options_parse() {
+        let (cfg, e) = Config::parse_str(
+            "general {
+ layout = master
+}
+master {
+ mfact = 0.7
+ new_status = inherit
+ new_on_top = true
+ new_on_active = before
+ orientation = center
+ slave_count_for_center_master = 3
+ center_master_fallback = right
+ always_keep_position = yes
+ allow_small_split = true
+}
+dwindle {
+ force_split = 2
+ smart_split = true
+ split_width_multiplier = 1.5
+ use_active_for_splits = false
+ permanent_direction_override = true
+ pseudotile = true
+}
+master:inherit_fullscreen = true
+workspace = 2, layout:master, layoutopt:orientation:top
+workspace = name:web, layout:dwindle, rounding:false
+workspace = r[1-3], layout:master",
+        );
+        assert!(e.is_empty(), "{e:?}");
+        assert_eq!(cfg.general.layout, "master");
+        let m = &cfg.master;
+        assert_eq!(m.mfact, 0.7);
+        assert_eq!(m.new_status, NewStatus::Inherit);
+        assert!(m.new_on_top && m.always_keep_position && m.allow_small_split);
+        assert_eq!(m.new_on_active, NewOnActive::Before);
+        assert_eq!(m.orientation, Orientation::Center);
+        assert_eq!(m.slave_count_for_center_master, 3);
+        assert_eq!(m.center_master_fallback, Orientation::Right);
+        let d = &cfg.dwindle;
+        assert_eq!(d.force_split, 2);
+        assert!(d.smart_split && !d.use_active_for_splits && d.permanent_direction_override);
+        assert_eq!(d.split_width_multiplier, 1.5);
+        assert_eq!(cfg.workspace_rules.len(), 2);
+        assert_eq!(cfg.workspace_rules[0].workspace, "2");
+        assert_eq!(cfg.workspace_rules[0].orientation, Some(Orientation::Top));
+        assert_eq!(cfg.workspace_rules[1].workspace, "web");
+        assert_eq!(cfg.workspace_rules[1].layout.as_deref(), Some("dwindle"));
+
+        let (_, e) = Config::parse_str(
+            "master {
+ new_status = nope
+}
+dwindle:nope = 1",
+        );
+        assert_eq!(e.len(), 2);
+    }
+
+    #[test]
+    fn group_options_and_dispatchers_parse() {
+        let (cfg, e) = Config::parse_str(
+            "group {
+ auto_group = false
+ insert_after_current = false
+ focus_removed_window = false
+ col.border_active = rgba(ff000080)
+ groupbar {
+  enabled = true
+  height = 20
+  col.active = rgb(00ff00)
+  render_titles = false
+ }
+}
+binds {
+ ignore_group_lock = true
+}",
+        );
+        assert!(e.is_empty(), "{e:?}");
+        assert!(!cfg.group.auto_group && !cfg.group.insert_after_current);
+        assert_eq!(cfg.group.border_active, [1.0, 0.0, 0.0, 128.0 / 255.0]);
+        assert_eq!(cfg.group.groupbar.height, 20);
+        assert_eq!(cfg.group.groupbar.col_active, [0.0, 1.0, 0.0, 1.0]);
+        assert!(cfg.ignore_group_lock);
+
+        let p = |n: &str, a: &str| Dispatcher::parse(n, a);
+        assert_eq!(p("togglegroup", ""), Ok(Dispatcher::ToggleGroup));
+        assert_eq!(
+            p("changegroupactive", "b"),
+            Ok(Dispatcher::ChangeGroupActive(GroupStep::Backward))
+        );
+        assert_eq!(
+            p("changegroupactive", "2"),
+            Ok(Dispatcher::ChangeGroupActive(GroupStep::Index(2)))
+        );
+        assert_eq!(
+            p("moveintogroup", "l"),
+            Ok(Dispatcher::MoveIntoGroup(Direction::Left))
+        );
+        assert_eq!(
+            p("moveoutofgroup", ""),
+            Ok(Dispatcher::MoveOutOfGroup(None))
+        );
+        assert_eq!(
+            p("movegroupwindow", "b"),
+            Ok(Dispatcher::MoveGroupWindow(true))
+        );
+        assert_eq!(
+            p("lockgroups", "toggle"),
+            Ok(Dispatcher::LockGroups(Toggle::Toggle))
+        );
+        assert_eq!(
+            p("lockactivegroup", "unlock"),
+            Ok(Dispatcher::LockActiveGroup(Toggle::Disable))
+        );
+        assert!(p("lockgroups", "maybe").is_err());
+        assert_eq!(
+            p("layoutmsg", "mfact +0.1"),
+            Ok(Dispatcher::LayoutMsg("mfact +0.1".into()))
+        );
+        assert!(p("layoutmsg", "").is_err());
+        assert!(!Toggle::Toggle.apply(true));
     }
 }
