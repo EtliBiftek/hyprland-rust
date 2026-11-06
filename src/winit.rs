@@ -1,18 +1,15 @@
-use std::time::Duration;
-
 use smithay::{
     backend::{
         renderer::{
-            damage::OutputDamageTracker,
-            element::{solid::SolidColorRenderElement, Id, Kind},
+            damage::OutputDamageTracker, element::solid::SolidColorRenderElement,
             gles::GlesRenderer,
-            utils::CommitCounter,
         },
         winit::{self, WinitEvent},
     },
+    desktop::layer_map_for_output,
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::calloop::EventLoop,
-    utils::{Rectangle, Transform},
+    utils::Transform,
 };
 
 use crate::{CalloopData, Hypr};
@@ -72,52 +69,34 @@ pub fn init_winit(
                         None,
                         None,
                     );
+                    layer_map_for_output(&output).arrange();
                     state.relayout();
                 }
                 WinitEvent::Input(event) => state.process_input_event(event),
                 WinitEvent::Redraw => {
-                    let size = backend.window_size();
-                    let damage = Rectangle::from_size(size);
-
-                    let borders: Vec<SolidColorRenderElement> = state
-                        .borders()
-                        .into_iter()
-                        .map(|(rect, color)| {
-                            SolidColorRenderElement::new(
-                                Id::new(),
-                                rect.to_physical(1),
-                                CommitCounter::default(),
-                                color,
-                                Kind::Unspecified,
-                            )
-                        })
-                        .collect();
-
-                    {
+                    let borders = state.border_elements();
+                    let age = backend.buffer_age().unwrap_or(0);
+                    let result = {
                         let (renderer, mut framebuffer) = backend.bind().unwrap();
                         smithay::desktop::space::render_output::<_, SolidColorRenderElement, _, _>(
                             &output,
                             renderer,
                             &mut framebuffer,
                             1.0,
-                            0,
+                            age,
                             [&state.space],
                             &borders,
                             &mut damage_tracker,
                             [0.1, 0.1, 0.1, 1.0],
                         )
-                        .unwrap();
+                        .unwrap()
+                    };
+                    // Nothing changed: skip the swap.
+                    if let Some(damage) = result.damage {
+                        backend.submit(Some(damage)).unwrap();
                     }
-                    backend.submit(Some(&[damage])).unwrap();
 
-                    state.space.elements().for_each(|window| {
-                        window.send_frame(
-                            &output,
-                            state.start_time.elapsed(),
-                            Some(Duration::ZERO),
-                            |_, _| Some(output.clone()),
-                        )
-                    });
+                    state.send_frames(&output);
 
                     state.space.refresh();
                     state.popups.cleanup();

@@ -134,8 +134,7 @@ impl Hypr {
 
                 // Click to focus.
                 if ButtonState::Pressed == button_state && !pointer.is_grabbed() {
-                    let window = self.window_under(pointer.current_location());
-                    self.focus_window(window);
+                    self.click_focus(pointer.current_location());
                 }
 
                 pointer.button(

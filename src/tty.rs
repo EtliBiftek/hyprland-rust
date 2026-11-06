@@ -22,10 +22,11 @@ use smithay::{
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             element::{
-                solid::SolidColorRenderElement, surface::WaylandSurfaceRenderElement, Id, Kind,
+                solid::{SolidColorBuffer, SolidColorRenderElement},
+                surface::WaylandSurfaceRenderElement,
+                Kind,
             },
             gles::GlesRenderer,
-            utils::CommitCounter,
         },
         session::{libseat::LibSeatSession, Event as SessionEvent, Session},
         udev::{all_gpus, primary_gpu},
@@ -41,7 +42,7 @@ use smithay::{
         input::Libinput,
         rustix::fs::OFlags,
     },
-    utils::{DeviceFd, Logical, Rectangle},
+    utils::DeviceFd,
 };
 
 use crate::{CalloopData, Hypr};
@@ -61,6 +62,8 @@ pub struct Tty {
     surface: DrmOutput<Allocator, Exporter, (), DrmDeviceFd>,
     renderer: GlesRenderer,
     output: Output,
+    /// Persistent cursor buffer so the cursor keeps its element id.
+    cursor: SolidColorBuffer,
     /// False while another VT is active.
     active: bool,
     /// A frame is queued and we are waiting for its vblank.
@@ -85,16 +88,6 @@ fn find_connector(drm: &DrmDevice) -> Option<(connector::Info, crtc::Handle)> {
                 .next()?;
             Some((c, crtc))
         })
-}
-
-fn solid(rect: Rectangle<i32, Logical>, color: [f32; 4]) -> TtyElement {
-    TtyElement::Solid(SolidColorRenderElement::new(
-        Id::new(),
-        rect.to_physical(1),
-        CommitCounter::default(),
-        color,
-        Kind::Unspecified,
-    ))
 }
 
 pub fn init_tty(
@@ -239,6 +232,7 @@ pub fn init_tty(
         surface,
         renderer,
         output,
+        cursor: SolidColorBuffer::new((8, 8), [1.0, 1.0, 1.0, 1.0]),
         active: true,
         frame_pending: false,
         timer_armed: false,
@@ -262,11 +256,14 @@ fn render(data: &mut CalloopData) {
 
     // Front to back: cursor, borders, windows.
     let pointer = state.seat.get_pointer().unwrap().current_location();
-    let mut elements = vec![solid(
-        Rectangle::new(pointer.to_i32_round(), (8, 8).into()),
-        [1.0, 1.0, 1.0, 1.0],
-    )];
-    elements.extend(state.borders().into_iter().map(|(r, c)| solid(r, c)));
+    let mut elements = vec![TtyElement::Solid(SolidColorRenderElement::from_buffer(
+        &tty.cursor,
+        pointer.to_i32_round::<i32>().to_physical(1),
+        1.0,
+        1.0,
+        Kind::Unspecified,
+    ))];
+    elements.extend(state.border_elements().into_iter().map(TtyElement::Solid));
     match space_render_elements(&mut tty.renderer, [&state.space], &tty.output, 1.0) {
         Ok(e) => elements.extend(e.into_iter().map(TtyElement::Space)),
         Err(e) => tracing::warn!("no output mode: {e:?}"),
@@ -303,15 +300,7 @@ fn render(data: &mut CalloopData) {
         });
     }
 
-    let output = &tty.output;
-    state.space.elements().for_each(|window| {
-        window.send_frame(
-            output,
-            state.start_time.elapsed(),
-            Some(Duration::ZERO),
-            |_, _| Some(output.clone()),
-        )
-    });
+    state.send_frames(&tty.output);
     state.space.refresh();
     state.popups.cleanup();
     let _ = display_handle.flush_clients();

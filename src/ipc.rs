@@ -562,6 +562,9 @@ pub fn handle_request(h: &mut Hypr, raw: &str) -> String {
 }
 
 fn handle_one(h: &mut Hypr, req: &Request) -> String {
+    if req.cmd.trim() == "layers" {
+        return h.layers_reply(req.json);
+    }
     if let Some(args) = req.cmd.strip_prefix("dispatch") {
         let args = args.trim();
         let (name, arg) = args.split_once(char::is_whitespace).unwrap_or((args, ""));

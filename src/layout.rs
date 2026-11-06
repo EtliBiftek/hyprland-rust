@@ -316,6 +316,17 @@ pub fn find_in_direction<T: PartialEq + Clone>(
         .map(|(w, _)| w.clone())
 }
 
+/// The four border rectangles (top, bottom, left, right) of width `b` drawn
+/// outside `r`; the top and bottom ones cover the corners.
+pub fn border_sides(r: Rect, b: i32) -> [Rect; 4] {
+    [
+        Rect::new(r.x - b, r.y - b, r.w + 2 * b, b),
+        Rect::new(r.x - b, r.y + r.h, r.w + 2 * b, b),
+        Rect::new(r.x - b, r.y, b, r.h),
+        Rect::new(r.x + r.w, r.y, b, r.h),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -402,5 +413,14 @@ mod tests {
         assert_eq!(find_in_direction(&rects, &2, Direction::Down), Some(3));
         assert_eq!(find_in_direction(&rects, &3, Direction::Up), Some(2));
         assert_eq!(find_in_direction(&rects, &1, Direction::Left), None);
+    }
+
+    #[test]
+    fn border_sides_surround_rect() {
+        let [t, b, l, r] = border_sides(Rect::new(10, 20, 100, 50), 2);
+        assert_eq!(t, Rect::new(8, 18, 104, 2));
+        assert_eq!(b, Rect::new(8, 70, 104, 2));
+        assert_eq!(l, Rect::new(8, 20, 2, 50));
+        assert_eq!(r, Rect::new(110, 20, 2, 50));
     }
 }

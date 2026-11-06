@@ -1,7 +1,13 @@
 //! Window management: workspaces, tiling, focus and dispatchers.
 
+use std::cell::RefCell;
+
 use smithay::{
-    desktop::Window,
+    backend::renderer::element::{
+        solid::{SolidColorBuffer, SolidColorRenderElement},
+        Kind,
+    },
+    desktop::{layer_map_for_output, Window},
     reexports::{
         wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::protocol::wl_surface::WlSurface,
@@ -11,7 +17,7 @@ use smithay::{
 
 use crate::{
     config::Dispatcher,
-    layout::{find_in_direction, Rect},
+    layout::{border_sides, find_in_direction, Rect},
     state::Hypr,
 };
 
@@ -33,13 +39,21 @@ impl Hypr {
         self.space.output_geometry(output)
     }
 
-    /// The area tiled windows may use: the output minus the outer gaps.
+    /// The output minus the exclusive zones of layer surfaces (bars, docks).
+    pub fn usable_geometry(&self) -> Option<Rectangle<i32, Logical>> {
+        let output = self.space.outputs().next()?;
+        let geo = self.space.output_geometry(output)?;
+        let zone = layer_map_for_output(output).non_exclusive_zone();
+        Some(Rectangle::new(geo.loc + zone.loc, zone.size))
+    }
+
+    /// The area tiled windows may use: the usable area minus the outer gaps.
     /// Window rects are later shrunk by `gaps_in`, so subtract that here to
     /// make the distance to the screen edge exactly `gaps_out`.
     pub fn tiling_area(&self) -> Rect {
         let g = &self.config.general;
         let out = self
-            .output_geometry()
+            .usable_geometry()
             .map(to_rect)
             .unwrap_or(Rect::new(0, 0, 1280, 800));
         out.shrink((g.gaps_out - g.gaps_in).max(0))
@@ -203,7 +217,13 @@ impl Hypr {
                 }
             }
         }
-        keyboard.set_focus(self, window.as_ref().and_then(wl_surface).cloned(), serial);
+        // An exclusive-keyboard layer surface (launcher, lock screen) keeps focus.
+        self.layer_focus = self.exclusive_layer();
+        let target = self
+            .layer_focus
+            .clone()
+            .or_else(|| window.as_ref().and_then(wl_surface).cloned());
+        keyboard.set_focus(self, target, serial);
         self.ipc.emit_active(window.as_ref());
     }
 
@@ -350,8 +370,10 @@ impl Hypr {
         }
     }
 
-    /// Border rectangles (outside each window) with their colors, for rendering.
-    pub fn borders(&self) -> Vec<(Rectangle<i32, Logical>, [f32; 4])> {
+    /// Border render elements (outside each window). Each side keeps a
+    /// `SolidColorBuffer` in the window's user data, so unchanged borders keep
+    /// their element id and commit counter and are not redrawn.
+    pub fn border_elements(&self) -> Vec<SolidColorRenderElement> {
         let g = &self.config.general;
         let b = g.border_size;
         if b <= 0 {
@@ -367,20 +389,28 @@ impl Hypr {
             let Some(loc) = self.space.element_location(&w) else {
                 continue;
             };
-            let r = Rectangle::new(loc, w.geometry().size);
+            let size = w.geometry().size;
             let color = if focused.as_ref() == Some(&w) {
                 g.active_border_color
             } else {
                 g.inactive_border_color
             };
-            let (x, y, ww, hh) = (r.loc.x, r.loc.y, r.size.w, r.size.h);
-            for rect in [
-                Rectangle::new((x - b, y - b).into(), (ww + 2 * b, b).into()), // top
-                Rectangle::new((x - b, y + hh).into(), (ww + 2 * b, b).into()), // bottom
-                Rectangle::new((x - b, y).into(), (b, hh).into()),             // left
-                Rectangle::new((x + ww, y).into(), (b, hh).into()),            // right
-            ] {
-                out.push((rect, color));
+            let bufs = w
+                .user_data()
+                .get_or_insert(|| RefCell::new(<[SolidColorBuffer; 4]>::default()));
+            let mut bufs = bufs.borrow_mut();
+            for (buf, side) in bufs
+                .iter_mut()
+                .zip(border_sides(Rect::new(loc.x, loc.y, size.w, size.h), b))
+            {
+                buf.update((side.w, side.h), color);
+                out.push(SolidColorRenderElement::from_buffer(
+                    buf,
+                    (side.x, side.y),
+                    1.0,
+                    1.0,
+                    Kind::Unspecified,
+                ));
             }
         }
         out

@@ -17,11 +17,16 @@ use smithay::{
         compositor::{CompositorClientState, CompositorState},
         output::OutputManagerState,
         selection::data_device::DataDeviceState,
-        shell::xdg::XdgShellState,
+        shell::{
+            wlr_layer::WlrLayerShellState,
+            xdg::{decoration::XdgDecorationState, XdgShellState},
+        },
         shm::ShmState,
         socket::ListeningSocketSource,
     },
 };
+
+use smithay::wayland::shell::wlr_layer::Layer;
 
 use crate::{
     config::Config,
@@ -40,6 +45,8 @@ pub struct Hypr {
     // Smithay State
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
+    pub layer_shell_state: WlrLayerShellState,
+    pub xdg_decoration_state: XdgDecorationState,
     pub shm_state: ShmState,
     pub output_manager_state: OutputManagerState,
     pub seat_state: SeatState<Hypr>,
@@ -47,6 +54,8 @@ pub struct Hypr {
     pub popups: PopupManager,
 
     pub seat: Seat<Self>,
+    /// Layer surface that currently holds keyboard focus (exclusive or clicked).
+    pub layer_focus: Option<WlSurface>,
 
     // Window management
     pub config: Config,
@@ -73,6 +82,8 @@ impl Hypr {
 
         let compositor_state = CompositorState::new::<Self>(&dh);
         let xdg_shell_state = XdgShellState::new::<Self>(&dh);
+        let layer_shell_state = WlrLayerShellState::new::<Self>(&dh);
+        let xdg_decoration_state = XdgDecorationState::new::<Self>(&dh);
         let shm_state = ShmState::new::<Self>(&dh, vec![]);
         let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&dh);
         let mut seat_state = SeatState::new();
@@ -112,12 +123,15 @@ impl Hypr {
 
             compositor_state,
             xdg_shell_state,
+            layer_shell_state,
+            xdg_decoration_state,
             shm_state,
             output_manager_state,
             seat_state,
             data_device_state,
             popups,
             seat,
+            layer_focus: None,
 
             config,
             workspaces: (0..MAX_WORKSPACES).map(|_| Workspace::default()).collect(),
@@ -172,16 +186,25 @@ impl Hypr {
         socket_name
     }
 
+    /// Overlay/top layers, then windows, then bottom/background layers.
     pub fn surface_under(
         &self,
         pos: Point<f64, Logical>,
     ) -> Option<(WlSurface, Point<f64, Logical>)> {
-        self.space
-            .element_under(pos)
-            .and_then(|(window, location)| {
-                window
-                    .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
-                    .map(|(s, p)| (s, (p + location).to_f64()))
+        self.layer_at(pos, [Layer::Overlay, Layer::Top])
+            .map(|(_, s, p)| (s, p))
+            .or_else(|| {
+                self.space
+                    .element_under(pos)
+                    .and_then(|(window, location)| {
+                        window
+                            .surface_under(pos - location.to_f64(), WindowSurfaceType::ALL)
+                            .map(|(s, p)| (s, (p + location).to_f64()))
+                    })
+            })
+            .or_else(|| {
+                self.layer_at(pos, [Layer::Bottom, Layer::Background])
+                    .map(|(_, s, p)| (s, p))
             })
     }
 }
