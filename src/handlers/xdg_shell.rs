@@ -53,6 +53,7 @@ impl XdgShellHandler for Hypr {
             if idx == self.active_workspace {
                 self.relayout();
             }
+            self.ipc.emit("fullscreen", "1");
         }
     }
 
@@ -63,8 +64,13 @@ impl XdgShellHandler for Hypr {
                 if idx == self.active_workspace {
                     self.relayout();
                 }
+                self.ipc.emit("fullscreen", "0");
             }
         }
+    }
+
+    fn title_changed(&mut self, surface: ToplevelSurface) {
+        self.on_title_changed(surface.wl_surface());
     }
 
     fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {

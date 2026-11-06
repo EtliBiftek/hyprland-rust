@@ -64,13 +64,6 @@ impl Hypr {
         tracing::info!("window mapped on workspace {}", self.active_workspace + 1);
         let area = self.tiling_area();
         let target = self.focused_window();
-        let (class, title) = crate::ipc::class_title(&window);
-        let addr = crate::ipc::window_addr(&window);
-        let ws_no = self.active_workspace + 1;
-        self.ipc.emit(
-            "openwindow",
-            &format!("{},{ws_no},{class},{title}", addr.trim_start_matches("0x")),
-        );
         let ws = &mut self.workspaces[self.active_workspace];
         ws.tiled.insert(window.clone(), target.as_ref(), area);
         self.relayout();
@@ -82,10 +75,12 @@ impl Hypr {
         let Some((idx, window)) = self.window_for_surface(surface) else {
             return;
         };
-        self.ipc.emit(
-            "closewindow",
-            crate::ipc::window_addr(&window).trim_start_matches("0x"),
-        );
+        if crate::ipc::is_mapped(&window) {
+            self.ipc.emit(
+                "closewindow",
+                crate::ipc::window_addr(&window).trim_start_matches("0x"),
+            );
+        }
         self.workspaces[idx].remove(&window);
         self.space.unmap_elem(&window);
         if idx == self.active_workspace {
@@ -218,6 +213,9 @@ impl Hypr {
         self.active_workspace = idx;
         self.ipc.emit("workspace", &number.to_string());
         self.ipc.emit("workspacev2", &format!("{number},{number}"));
+        // shortcut: single monitor, so emit on every workspace switch; only emit
+        // when the focused monitor changes once multi-monitor exists.
+        self.emit_focused_mon();
         self.relayout();
         let focus = self.workspaces[idx].last_focused.clone();
         self.focus_window(focus);

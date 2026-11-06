@@ -47,6 +47,7 @@ impl CompositorHandler for Hypr {
                 if window.geometry() != old_geo {
                     self.relayout();
                 }
+                self.check_window_mapped(&window);
             }
         };
 

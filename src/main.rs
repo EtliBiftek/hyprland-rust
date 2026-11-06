@@ -10,7 +10,10 @@ mod handlers;
 mod headless;
 mod input;
 mod ipc;
+mod ipc_cmds;
 mod layout;
+mod options;
+mod reload;
 mod state;
 mod tty;
 mod winit;
@@ -25,7 +28,7 @@ use smithay::reexports::{
 };
 pub use state::Hypr;
 
-use crate::config::Config;
+use crate::config::{Config, ConfigError};
 
 pub struct CalloopData {
     state: Hypr,
@@ -46,11 +49,13 @@ Options:
   -h, --help             Show this help
 ";
 
-fn load_config(path: Option<PathBuf>) -> (Config, usize) {
+/// Returns the config, its parse errors and the file it came from (kept for
+/// `hyprctl reload` and autoreload).
+fn load_config(path: Option<PathBuf>) -> (Config, Vec<ConfigError>, Option<PathBuf>) {
     let path = path.or_else(Config::default_path);
     let Some(path) = path.filter(|p| p.exists()) else {
         tracing::info!("no config file found, using built-in defaults");
-        return (Config::with_default_binds(), 0);
+        return (Config::with_default_binds(), Vec::new(), None);
     };
     match Config::load(&path) {
         Ok((config, errors)) => {
@@ -58,11 +63,16 @@ fn load_config(path: Option<PathBuf>) -> (Config, usize) {
                 tracing::warn!("config error: {e}");
             }
             tracing::info!("loaded config from {}", path.display());
-            (config, errors.len())
+            (config, errors, Some(path))
         }
         Err(e) => {
             tracing::error!("cannot read {}: {e}; using defaults", path.display());
-            (Config::with_default_binds(), 1)
+            let err = ConfigError {
+                file: path.clone(),
+                line: 0,
+                message: e.to_string(),
+            };
+            (Config::with_default_binds(), vec![err], Some(path))
         }
     }
 }
@@ -94,7 +104,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let (config, error_count) = load_config(config_path);
+    let (config, config_errors, loaded_from) = load_config(config_path);
+    let error_count = config_errors.len();
     if check_only {
         println!(
             "{} binds, {} config errors",
@@ -134,6 +145,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     tracing::info!("backend: {backend}");
     tracing::info!("listening on WAYLAND_DISPLAY={:?}", data.state.socket_name);
+    let wl_socket = data.state.socket_name.to_string_lossy().into_owned();
+    data.state.ipc.set_instance_info(&backend, &wl_socket);
+    reload::init(
+        &event_loop.handle(),
+        &mut data.state,
+        loaded_from,
+        &config_errors,
+    );
 
     for cmd in data
         .state
