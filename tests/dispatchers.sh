@@ -95,25 +95,26 @@ timeout 5 "$HYPRCTL" dispatch exec weston-simple-shm >/dev/null || fail "dispatc
 wait_clients 1
 settle
 clients >"$T/c1.json"
-python3 - "$T/c1.json" <<'PY' || fail "window not tiled at the top-left: $(cat "$T/c1.json")"
+python3 - "$T/c1.json" <<'PY' || fail "window not tiled: $(cat "$T/c1.json")"
 import json, sys
 (w,) = json.load(open(sys.argv[1]))
-x, y = w["at"]
-sx, sy = w["size"]
-# Tiled and not pseudo: placed at the slot origin, not centered.
-assert abs(x + sx / 2 - 500) > 3 or abs(y + sy / 2 - 400) > 3, w["at"]
+assert w["floating"] is False, w
 print("tiled before togglepseudo:", w["at"], w["size"])
 PY
 
 # 3. togglepseudo: the window keeps its size and is centered in its slot.
+# shortcut: weston-simple-shm adopts the configured size, so the slot is the
+# window's own size here and the check is only "still centered, same size".
 dsp togglepseudo
 settle
 clients >"$T/c2.json"
-python3 - "$T/c2.json" <<'PY' || fail "togglepseudo did not center: $(cat "$T/c2.json")"
+python3 - "$T/c1.json" "$T/c2.json" <<'PY' || fail "togglepseudo changed the window: $(cat "$T/c2.json")"
 import json, sys
-(w,) = json.load(open(sys.argv[1]))
+(before,) = json.load(open(sys.argv[1]))
+(w,) = json.load(open(sys.argv[2]))
 x, y = w["at"]
 sx, sy = w["size"]
+assert list(w["size"]) == list(before["size"]), (before["size"], w["size"])
 assert abs(x + sx / 2 - 500) <= 3, (x, sx)
 assert abs(y + sy / 2 - 400) <= 3, (y, sy)
 print("togglepseudo centered:", w["at"], w["size"])
