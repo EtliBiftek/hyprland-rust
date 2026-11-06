@@ -1,6 +1,7 @@
 use std::{ffi::OsString, sync::Arc};
 
 use smithay::{
+    backend::session::libseat::LibSeatSession,
     desktop::{PopupManager, Space, Window, WindowSurfaceType},
     input::{Seat, SeatState},
     reexports::{
@@ -52,6 +53,9 @@ pub struct Hypr {
     pub workspaces: Vec<Workspace<Window>>,
     /// Index into `workspaces` (workspace number - 1).
     pub active_workspace: usize,
+
+    /// libseat session on the TTY backend, used for VT switching.
+    pub session: Option<LibSeatSession>,
 }
 
 impl Hypr {
@@ -115,6 +119,7 @@ impl Hypr {
             config,
             workspaces: (0..MAX_WORKSPACES).map(|_| Workspace::default()).collect(),
             active_workspace: 0,
+            session: None,
         }
     }
 
