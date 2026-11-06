@@ -115,6 +115,20 @@ assert not w["visible"], "window should not be visible (silent)"
 print("workspace 3 silent ok")
 PY
 
+# The silently moved window must still get its initial configure: after
+# switching to workspace 3 it is mapped and has a real size.
+timeout 5 "$HYPRCTL" dispatch workspace 3 >/dev/null || fail "dispatch workspace 3"
+settle
+clients >"$T/c2b.json"
+python3 - "$T/c2b.json" <<'PY' || fail "silent window never mapped: $(cat "$T/c2b.json")"
+import json, sys
+(w,) = json.load(open(sys.argv[1]))
+assert w["mapped"], "window was never mapped (no initial configure?)"
+assert w["size"][0] > 0 and w["size"][1] > 0, w["size"]
+print("silent window mapped ok:", w["size"])
+PY
+timeout 5 "$HYPRCTL" dispatch workspace 1 >/dev/null || fail "dispatch workspace 1"
+
 # 4. tagwindow dispatcher: static tag shows up without `*`.
 timeout 5 "$HYPRCTL" dispatch tagwindow "+manual" >/dev/null || fail "tagwindow"
 timeout 5 "$HYPRCTL" dispatch tagwindow "+manual2 class:$CLASS" >/dev/null || fail "tagwindow with selector"

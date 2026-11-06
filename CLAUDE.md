@@ -125,6 +125,8 @@ Not started
       Groupbar has no titles and reserves no layout space; drag-into-group
       and group window rules are missing.
 - [ ] Per-device `kb_*` overrides are ignored (one keyboard per seat).
+- [ ] A toplevel unmapped with a null buffer keeps its layout slot (Hyprland
+      removes it until it maps again); needs an "unmapped windows" list.
 - [ ] Config error overlay; empty `is_known_unimplemented`; inotify instead
       of mtime polling.
 - [ ] Animations (Bézier), rounded corners, gradient borders, blur, shadows.
@@ -285,6 +287,19 @@ Use a test config with `exec-once = weston-terminal` lines to open windows.
 - While `session_locked`, `focus_window`, layer focus and `forward_key` are
   no-ops so keys never reach a hidden window; the lock surface gets focus
   directly in `new_surface`.
+- Look windows up with `window_for_surface` (all workspaces), not
+  `space.elements()`: windows on hidden workspaces are not in `Space`, but
+  their commits still need `on_commit()`, rules and the initial configure (a
+  `workspace N silent` rule once left such a window unmapped forever).
+- Never `unwrap()` a `Space` lookup in a client request handler: a client can
+  name a surface that is on a hidden workspace (move/resize once crashed).
+- `hyprctl dispatch 'hl...'` is sandboxed Lua (`lua_config::eval_dispatch`:
+  no os/io/package/file loading, instruction + memory limits); config scripts
+  run with the full stdlib but also under limits.
+- The pure modules (config, selectors, rules, layout, master, tiling, groups,
+  options, lua_config) build on Windows: copy them into a scratch lib crate
+  (deps: tracing, bitflags, mlua, serde, serde_json, regex) to run their unit
+  tests or fuzz them locally.
 - The owner does not want subagents (Pro plan limits); if one is
   unavoidable, use Haiku.
 

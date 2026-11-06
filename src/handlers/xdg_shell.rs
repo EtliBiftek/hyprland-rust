@@ -1,7 +1,7 @@
 use smithay::{
     delegate_xdg_shell,
     desktop::{
-        find_popup_root_surface, get_popup_toplevel_coords, PopupKind, PopupManager, Space, Window,
+        find_popup_root_surface, get_popup_toplevel_coords, PopupKind, PopupManager, Window,
     },
     input::{
         pointer::{Focus, GrabStartData as PointerGrabStartData},
@@ -14,13 +14,9 @@ use smithay::{
             Resource,
         },
     },
-    utils::{Rectangle, Serial},
-    wayland::{
-        compositor::with_states,
-        shell::xdg::{
-            PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
-            XdgToplevelSurfaceData,
-        },
+    utils::{Logical, Point, Rectangle, Serial},
+    wayland::shell::xdg::{
+        PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
     },
 };
 
@@ -112,13 +108,11 @@ impl XdgShellHandler for Hypr {
         if let Some(start_data) = check_grab(&seat, wl_surface, serial) {
             let pointer = seat.get_pointer().unwrap();
 
-            let window = self
-                .space
-                .elements()
-                .find(|w| w.toplevel().unwrap().wl_surface() == wl_surface)
-                .unwrap()
-                .clone();
-            let initial_window_location = self.space.element_location(&window).unwrap();
+            // Only a window that is on screen can be dragged; a client may
+            // ask for one on a hidden workspace with another window's serial.
+            let Some((window, initial_window_location)) = self.on_screen(wl_surface) else {
+                return;
+            };
 
             let grab = MoveSurfaceGrab {
                 start_data,
@@ -152,13 +146,11 @@ impl XdgShellHandler for Hypr {
         if let Some(start_data) = check_grab(&seat, wl_surface, serial) {
             let pointer = seat.get_pointer().unwrap();
 
-            let window = self
-                .space
-                .elements()
-                .find(|w| w.toplevel().unwrap().wl_surface() == wl_surface)
-                .unwrap()
-                .clone();
-            let initial_window_location = self.space.element_location(&window).unwrap();
+            // Only a window that is on screen can be dragged; a client may
+            // ask for one on a hidden workspace with another window's serial.
+            let Some((window, initial_window_location)) = self.on_screen(wl_surface) else {
+                return;
+            };
             let initial_window_size = window.geometry().size;
 
             surface.with_pending_state(|state| {
@@ -210,25 +202,17 @@ fn check_grab(
 }
 
 /// Should be called on `WlSurface::commit`
-pub fn handle_commit(popups: &mut PopupManager, space: &Space<Window>, surface: &WlSurface) {
-    // Handle toplevel commits.
-    if let Some(window) = space
-        .elements()
-        .find(|w| w.toplevel().unwrap().wl_surface() == surface)
-        .cloned()
-    {
-        let initial_configure_sent = with_states(surface, |states| {
-            states
-                .data_map
-                .get::<XdgToplevelSurfaceData>()
-                .unwrap()
-                .lock()
-                .unwrap()
-                .initial_configure_sent
-        });
-
-        if !initial_configure_sent {
-            window.toplevel().unwrap().send_configure();
+/// `toplevel` is the toplevel whose own surface is `surface`, on any
+/// workspace (a window moved off-screen by a rule before its first configure
+/// would otherwise never get one and never map).
+pub fn handle_commit(
+    popups: &mut PopupManager,
+    toplevel: Option<&ToplevelSurface>,
+    surface: &WlSurface,
+) {
+    if let Some(t) = toplevel {
+        if !t.is_initial_configure_sent() {
+            t.send_configure();
         }
     }
 
@@ -249,6 +233,17 @@ pub fn handle_commit(popups: &mut PopupManager, space: &Space<Window>, surface: 
 }
 
 impl Hypr {
+    /// The mapped window of a toplevel surface and its location.
+    fn on_screen(&self, surface: &WlSurface) -> Option<(Window, Point<i32, Logical>)> {
+        let window = self
+            .space
+            .elements()
+            .find(|w| w.toplevel().map(|t| t.wl_surface()) == Some(surface))?
+            .clone();
+        let loc = self.space.element_location(&window)?;
+        Some((window, loc))
+    }
+
     fn unconstrain_popup(&self, popup: &PopupSurface) {
         let Ok(root) = find_popup_root_surface(&PopupKind::Xdg(popup.clone())) else {
             return;
@@ -261,9 +256,17 @@ impl Hypr {
             return;
         };
 
-        let output = self.space.outputs().next().unwrap();
-        let output_geo = self.space.output_geometry(output).unwrap();
-        let window_geo = self.space.element_geometry(window).unwrap();
+        let Some(output_geo) = self
+            .space
+            .outputs()
+            .next()
+            .and_then(|o| self.space.output_geometry(o))
+        else {
+            return;
+        };
+        let Some(window_geo) = self.space.element_geometry(window) else {
+            return;
+        };
 
         // The target geometry for the positioner should be relative to its parent's geometry, so
         // we will compute that here.
