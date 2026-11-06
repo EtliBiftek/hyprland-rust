@@ -462,9 +462,12 @@ impl Hypr {
         for (window, rect, is_fullscreen) in placements {
             if let Some(toplevel) = window.toplevel() {
                 let is_floating = floating.contains(&window);
+                // Not inside `with_pending_state`: it holds the surface lock that
+                // `element_geometry` takes (deadlock otherwise).
+                let keep_size = is_floating && self.space.element_geometry(&window).is_some();
                 toplevel.with_pending_state(|state| {
                     // Floating windows pick their own size after the first configure.
-                    if !is_floating || self.space.element_geometry(&window).is_none() {
+                    if !keep_size {
                         state.size = Some(rect.size);
                     }
                     if is_fullscreen {
