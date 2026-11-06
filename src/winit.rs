@@ -1,12 +1,13 @@
 use smithay::{
     backend::{
         renderer::{
-            damage::OutputDamageTracker, element::solid::SolidColorRenderElement,
+            damage::OutputDamageTracker,
+            element::{solid::SolidColorRenderElement, surface::WaylandSurfaceRenderElement},
             gles::GlesRenderer,
         },
         winit::{self, WinitEvent},
     },
-    desktop::layer_map_for_output,
+    desktop::{layer_map_for_output, Space, Window},
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::calloop::EventLoop,
     utils::Transform,
@@ -78,18 +79,40 @@ pub fn init_winit(
                     let age = backend.buffer_age().unwrap_or(0);
                     let result = {
                         let (renderer, mut framebuffer) = backend.bind().unwrap();
-                        smithay::desktop::space::render_output::<_, SolidColorRenderElement, _, _>(
-                            &output,
-                            renderer,
-                            &mut framebuffer,
-                            1.0,
-                            age,
-                            [&state.space],
-                            &borders,
-                            &mut damage_tracker,
-                            [0.1, 0.1, 0.1, 1.0],
-                        )
-                        .unwrap()
+                        if state.session_locked {
+                            // Locked: only the lock surfaces, no windows or borders.
+                            let lock = state.lock_elements(renderer);
+                            smithay::desktop::space::render_output::<
+                                _,
+                                WaylandSurfaceRenderElement<GlesRenderer>,
+                                _,
+                                _,
+                            >(
+                                &output,
+                                renderer,
+                                &mut framebuffer,
+                                1.0,
+                                age,
+                                std::iter::empty::<&Space<Window>>(),
+                                &lock,
+                                &mut damage_tracker,
+                                [0.1, 0.1, 0.1, 1.0],
+                            )
+                            .unwrap()
+                        } else {
+                            smithay::desktop::space::render_output::<_, SolidColorRenderElement, _, _>(
+                                &output,
+                                renderer,
+                                &mut framebuffer,
+                                1.0,
+                                age,
+                                [&state.space],
+                                &borders,
+                                &mut damage_tracker,
+                                [0.1, 0.1, 0.1, 1.0],
+                            )
+                            .unwrap()
+                        }
                     };
                     // Nothing changed: skip the swap.
                     if let Some(damage) = result.damage {

@@ -51,6 +51,7 @@ smithay::backend::renderer::element::render_elements! {
     pub TtyElement<=GlesRenderer>;
     Space=SpaceRenderElements<GlesRenderer, WaylandSurfaceRenderElement<GlesRenderer>>,
     Solid=SolidColorRenderElement,
+    Lock=WaylandSurfaceRenderElement<GlesRenderer>,
 }
 
 type Allocator = GbmAllocator<DrmDeviceFd>;
@@ -257,7 +258,7 @@ fn render(data: &mut CalloopData) {
         return;
     }
 
-    // Front to back: cursor, borders, windows.
+    // Front to back: cursor, borders, windows. Locked: cursor and lock surfaces.
     let pointer = state.seat.get_pointer().unwrap().current_location();
     let mut elements = vec![TtyElement::Solid(SolidColorRenderElement::from_buffer(
         &tty.cursor,
@@ -266,10 +267,15 @@ fn render(data: &mut CalloopData) {
         1.0,
         Kind::Unspecified,
     ))];
-    elements.extend(state.border_elements().into_iter().map(TtyElement::Solid));
-    match space_render_elements(&mut tty.renderer, [&state.space], &tty.output, 1.0) {
-        Ok(e) => elements.extend(e.into_iter().map(TtyElement::Space)),
-        Err(e) => tracing::warn!("no output mode: {e:?}"),
+    if state.session_locked {
+        let lock = state.lock_elements(&mut tty.renderer);
+        elements.extend(lock.into_iter().map(TtyElement::Lock));
+    } else {
+        elements.extend(state.border_elements().into_iter().map(TtyElement::Solid));
+        match space_render_elements(&mut tty.renderer, [&state.space], &tty.output, 1.0) {
+            Ok(e) => elements.extend(e.into_iter().map(TtyElement::Space)),
+            Err(e) => tracing::warn!("no output mode: {e:?}"),
+        }
     }
 
     let rendered = match tty.surface.render_frame(
