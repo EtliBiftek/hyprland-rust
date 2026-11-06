@@ -18,7 +18,14 @@ Turkish; reply in Turkish. Code, docs, commits and this file stay in English
   for CI). Selected with `--backend`; default is winit if `WAYLAND_DISPLAY` or
   `DISPLAY` is set, else tty.
 - Target Hyprland release: **v0.57.1** (IPC JSON, rules, master layout and
-  dispatcher names were checked against that tag's source/wiki).
+  dispatcher names were checked against that tag's source/wiki). **Caveat:**
+  v0.57 reads only `hyprland.lua` (Lua 5.5, `src/config/lua/`); v0.55-0.56
+  read Lua plus a `legacy` hyprlang parser; v0.54.3 is the last
+  hyprlang-only release. This repo parses hyprlang (`hyprland.conf`) and has
+  no Lua runtime, so its config syntax matches <= v0.56, while IPC shapes
+  follow v0.57.1. Which to target is an open decision.
+- Parity table: `docs/PARITY.md` (per config option, keyword, dispatcher,
+  hyprctl command, IPC event, Wayland protocol).
 - Layouts: dwindle (`layout.rs`) and master (`master.rs`), chosen per
   workspace (`general:layout`, workspace rule `layout:`), wrapped in
   `tiling.rs`; `layoutmsg` for both. Groups (tabbed) with a solid-color
@@ -40,16 +47,26 @@ Turkish; reply in Turkish. Code, docs, commits and this file stay in English
   setfloating, settiled, fullscreen, pin, movefocus, movewindow, swapwindow,
   resizeactive, moveactive, centerwindow, cyclenext, swapnext,
   focuscurrentorlast, focusurgentorlast, focuswindow, splitratio,
-  togglesplit, layoutmsg, submap, pass, tagwindow, group dispatchers.
+  togglesplit, layoutmsg, submap, pass, tagwindow, group dispatchers,
+  renameworkspace, bringactivetotop, alterzorder, movecursor(tocorner),
+  togglepseudo, setprop (stored only), killwindow, signal, event, dpms,
+  monitor dispatchers as single-monitor no-ops.
+- Protocols (`handlers/protocols.rs`): primary selection, wlr/ext
+  data-control, viewporter, fractional-scale (1.0), presentation-time,
+  single-pixel-buffer, content-type, cursor-shape, idle-inhibit,
+  ext-idle-notify (hand-written timers), ext-session-lock,
+  keyboard-shortcuts-inhibit, relative-pointer, pointer-constraints,
+  xdg-foreign, xdg-activation.
 - IPC (`ipc.rs`, `ipc_cmds.rs`): async request socket `.socket.sock` and
   event socket `.socket2.sock` under
   `$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/`. Requests include
   clients, workspaces, monitors, activewindow, layers, binds, devices,
   getoption, keyword, reload, configerrors, dispatch, `[[BATCH]]`.
   `src/bin/hyprctl.rs` is a std-only client.
-- Tests: unit tests for all pure modules plus six shell tests in `tests/` run
-  by CI: keybinds (Xvfb + xdotool), headless smoke, IPC, layer-shell
-  (waybar), window rules, master layout + groups.
+- Tests: unit tests for all pure modules plus eight shell tests in `tests/`
+  run by CI: keybinds (Xvfb + xdotool), headless smoke, IPC, layer-shell
+  (waybar), window rules, master layout + groups, protocols (wl-clipboard),
+  dispatchers.
 - Smoke-tested in Xvfb with 3 `weston-terminal`s (`docs/screenshot.png`).
 
 ## Roadmap
@@ -70,8 +87,8 @@ Phase 0, infrastructure
 - [ ] Run the TTY backend on real hardware and fix what breaks.
 - [ ] Split into a cargo workspace: `hypr-config`, `hypr-layout`, `hypr-ipc`,
       `hyprctl`, `compositor`.
-- [ ] `docs/PARITY.md`: per-item table (config option, dispatcher, hyprctl
-      command, IPC event, protocol; none/partial/full/tested) for v0.57.1.
+- [ ] Decide config target (Lua v0.57 vs hyprlang <= v0.56), then keep
+      `docs/PARITY.md` current.
 
 TTY backend known gaps
 - [ ] Never run on real hardware.
@@ -103,8 +120,14 @@ Not started
 - [ ] Config error overlay; empty `is_known_unimplemented`; inotify instead
       of mtime polling.
 - [ ] Animations (Bézier), rounded corners, gradient borders, blur, shadows.
-- [ ] Remaining protocols: primary selection, data-control, ext-idle-notify,
-      ext-session-lock, wlr-screencopy, fractional-scale, etc.
+- [ ] Remaining protocols (see `docs/PARITY.md`): wlr-screencopy /
+      ext-image-copy-capture, output management, foreign-toplevel, gamma,
+      tablet, input-method/text-input, drm-lease, ...
+- [ ] Protocol shortcuts: pointer lock/confine not enforced; presentation
+      feedback not fed; fractional scale fixed at 1.0; no lock-screen test.
+- [ ] Dispatchers missing: `sendshortcut`, `sendkeystate`,
+      `fullscreenstate`; `setprop` values stored but not applied;
+      `alterzorder bottom` approximated.
 - [ ] Fractional scale, VRR, multi-GPU, explicit sync, HDR (phase 6).
 - [ ] Screen-sharing protocols for xdg-desktop-portal-hyprland (phase 7).
 - [ ] Fuzzing (config parser, IPC), packaging, migration guide (phase 9).
@@ -131,6 +154,8 @@ Open decisions for the owner
 | `src/options.rs` | `getoption` lookup and formatting |
 | `src/ipc_cmds.rs` | non-snapshot hyprctl requests (devices, notify, ...) |
 | `src/handlers/layer_shell.rs` | wlr-layer-shell and xdg-decoration |
+| `src/handlers/protocols.rs` | clipboard, idle, session-lock, pointer and misc protocols |
+| `docs/PARITY.md` | parity table against Hyprland v0.57.1 |
 | `src/workspace.rs` | `Workspace<W>`: tiled tree + floating stack + fullscreen + last focus |
 | `src/wm.rs` | `impl Hypr`: relayout, focus, workspaces, dispatchers, border rects |
 | `src/state.rs` | `Hypr` compositor state (Smithay states, seat, config, workspaces) |
@@ -148,8 +173,10 @@ Open decisions for the owner
 | `tests/layer-shell.sh` | waybar exclusive zone + `hyprctl layers` (headless) |
 | `tests/window-rules.sh` | float/size/center, workspace silent, regex matchers |
 | `tests/master-groups.sh` | master geometry, layoutmsg, groups |
+| `tests/protocols.sh` | wl-copy/wl-paste incl. primary selection (headless) |
+| `tests/dispatchers.sh` | renameworkspace, togglepseudo, movecursor, event, dpms |
 | `docs/ROADMAP.md` | Turkish roadmap, phases 0-9 |
-| `.github/workflows/ci.yml` | fmt, build, test, clippy, check-config, the 6 shell tests |
+| `.github/workflows/ci.yml` | fmt, build, test, clippy, check-config, the 8 shell tests |
 
 `state.rs`, `winit.rs`, `input.rs`, `grabs/`, `handlers/` started from
 Smithay's `smallvil` example (MIT, see `docs/SMITHAY-LICENSE`); `tty.rs` is
@@ -240,6 +267,9 @@ Use a test config with `exec-once = weston-terminal` lines to open windows.
 - Never call `space.element_geometry()` (or anything else that locks surface
   data) inside `toplevel.with_pending_state(..)`: it deadlocks.
 - waybar in CI needs `dbus-run-session`.
+- While `session_locked`, `focus_window`, layer focus and `forward_key` are
+  no-ops so keys never reach a hidden window; the lock surface gets focus
+  directly in `new_surface`.
 - The owner does not want subagents (Pro plan limits); if one is
   unavoidable, use Haiku.
 
