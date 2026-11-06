@@ -9,6 +9,7 @@ mod grabs;
 mod handlers;
 mod headless;
 mod input;
+mod ipc;
 mod layout;
 mod state;
 mod tty;

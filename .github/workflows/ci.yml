@@ -28,3 +28,5 @@ jobs:
         run: sh tests/keybinds-xvfb.sh
       - name: Headless backend smoke test
         run: sh tests/headless-smoke.sh
+      - name: IPC test (Xvfb + hyprctl)
+        run: sh tests/ipc-xvfb.sh
