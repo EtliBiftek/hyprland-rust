@@ -40,7 +40,7 @@ COMP=$!
 # Wait for the sockets and for the client window to be mapped.
 N=0
 for _ in $(seq 75); do
-    N=$("$CTL" -j clients 2>/dev/null | grep -o '"address"' | wc -l || true)
+    N=$("$CTL" -j clients 2>/dev/null | grep -o '"stableId"' | wc -l || true)
     [ "$N" = 1 ] && break
     sleep 0.2
 done
