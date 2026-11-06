@@ -10,6 +10,7 @@ mod handlers;
 mod input;
 mod layout;
 mod state;
+mod tty;
 mod winit;
 mod wm;
 mod workspace;
@@ -27,6 +28,8 @@ use crate::config::Config;
 pub struct CalloopData {
     state: Hypr,
     display_handle: DisplayHandle,
+    /// Only set when running on the TTY backend.
+    tty: Option<tty::Tty>,
 }
 
 const USAGE: &str = "\
@@ -34,6 +37,8 @@ Usage: hyprland-rust [OPTIONS]
 
 Options:
   -c, --config <FILE>    Config file (default: $XDG_CONFIG_HOME/hypr/hyprland.conf)
+      --backend <NAME>   `winit` (nested window) or `tty` (DRM/KMS, run from a VT).
+                         Default: winit if WAYLAND_DISPLAY or DISPLAY is set, else tty
       --check-config     Parse the config, print errors and exit
   -h, --help             Show this help
 ";
@@ -68,11 +73,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut config_path = None;
     let mut check_only = false;
+    let mut backend = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "-c" | "--config" => config_path = args.next().map(PathBuf::from),
             "--check-config" => check_only = true,
+            "--backend" => backend = args.next(),
             "-h" | "--help" => {
                 print!("{USAGE}");
                 return Ok(());
@@ -94,7 +101,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(if error_count == 0 { 0 } else { 1 });
     }
 
-    let mut event_loop: EventLoop<CalloopData> = EventLoop::try_new()?;
+    let backend = backend.unwrap_or_else(|| {
+        let nested = ["WAYLAND_DISPLAY", "DISPLAY"]
+            .iter()
+            .any(|v| std::env::var_os(v).is_some_and(|s| !s.is_empty()));
+        if nested { "winit" } else { "tty" }.to_string()
+    });
+
+    let mut event_loop: EventLoop<'static, CalloopData> = EventLoop::try_new()?;
 
     let display: Display<Hypr> = Display::new()?;
     let display_handle = display.handle();
@@ -103,9 +117,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut data = CalloopData {
         state,
         display_handle,
+        tty: None,
     };
 
-    crate::winit::init_winit(&mut event_loop, &mut data)?;
+    match backend.as_str() {
+        "winit" => crate::winit::init_winit(&mut event_loop, &mut data)?,
+        "tty" => crate::tty::init_tty(&mut event_loop, &mut data)?,
+        other => {
+            eprintln!("unknown backend `{other}` (expected winit or tty)");
+            std::process::exit(2);
+        }
+    }
+    tracing::info!("backend: {backend}");
     tracing::info!("listening on WAYLAND_DISPLAY={:?}", data.state.socket_name);
 
     for cmd in data

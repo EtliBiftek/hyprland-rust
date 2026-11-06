@@ -366,11 +366,57 @@ impl Hypr {
 
 pub fn spawn(cmd: &str) {
     tracing::info!("exec: {cmd}");
-    if let Err(e) = std::process::Command::new("/bin/sh")
+    // Double fork: the inner `sh` backgrounds the command and exits at once, so
+    // we reap it here and the program is re-parented to init (no zombies).
+    match std::process::Command::new("/bin/sh")
         .arg("-c")
+        .arg("eval \"$1\" &")
+        .arg("sh")
         .arg(cmd)
         .spawn()
     {
-        tracing::warn!("failed to spawn `{cmd}`: {e}");
+        Ok(mut child) => {
+            if let Err(e) = child.wait() {
+                tracing::warn!("failed to reap `{cmd}`: {e}");
+            }
+        }
+        Err(e) => tracing::warn!("failed to spawn `{cmd}`: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Zombie children of this process, read from /proc.
+    fn zombies() -> usize {
+        let me = std::process::id().to_string();
+        std::fs::read_dir("/proc")
+            .unwrap()
+            .filter_map(|e| std::fs::read_to_string(e.ok()?.path().join("stat")).ok())
+            .filter(|stat| {
+                // Fields after the `(comm)`: state, ppid, ...
+                let rest = stat.rsplit_once(") ").map_or("", |(_, r)| r);
+                let mut fields = rest.split(' ');
+                fields.next() == Some("Z") && fields.next() == Some(me.as_str())
+            })
+            .count()
+    }
+
+    #[test]
+    fn spawn_leaves_no_zombies() {
+        let marker = std::env::temp_dir().join(format!("hypr-spawn-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        for _ in 0..3 {
+            super::spawn("true");
+        }
+        super::spawn(&format!("touch '{}'", marker.display()));
+        for _ in 0..50 {
+            if marker.exists() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(marker.exists(), "spawned command did not run");
+        let _ = std::fs::remove_file(&marker);
+        assert_eq!(zombies(), 0);
     }
 }

@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwayland-dev libxkbcommon-dev libudev-dev \
+            libinput-dev libseat-dev libgbm-dev libegl-dev libdrm-dev libgles-dev \
+            pkg-config xvfb xdotool libxkbcommon-x11-0 libgl1-mesa-dri
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo build
+      - run: cargo test
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: ./target/debug/hyprland-rust --check-config -c examples/hyprland.conf
+      - name: Keybinding test (Xvfb + xdotool)
+        run: sh tests/keybinds-xvfb.sh

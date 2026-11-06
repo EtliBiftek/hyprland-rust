@@ -1,8 +1,9 @@
 use smithay::{
     backend::input::{
         AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
-        KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
+        KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
     },
+    backend::session::Session,
     input::{
         keyboard::{xkb, FilterResult},
         pointer::{AxisFrame, ButtonEvent, MotionEvent},
@@ -23,44 +24,81 @@ impl Hypr {
                 let time = Event::time_msec(&event);
                 let key_state = event.state();
 
-                let action = self.seat.get_keyboard().unwrap().input::<Dispatcher, _>(
-                    self,
-                    event.key_code(),
-                    key_state,
-                    serial,
-                    time,
-                    |state, modifiers, handle| {
-                        if key_state != KeyState::Pressed {
-                            return FilterResult::Forward;
-                        }
-                        let mods = Mods {
-                            shift: modifiers.shift,
-                            ctrl: modifiers.ctrl,
-                            alt: modifiers.alt,
-                            logo: modifiers.logo,
-                        };
-                        // Match on the unshifted key so `SUPER SHIFT, 1` works
-                        // regardless of keyboard layout's shifted symbol.
-                        let syms: Vec<String> = handle
-                            .raw_syms()
-                            .into_iter()
-                            .chain(handle.raw_latin_sym_or_raw_current_sym())
-                            .map(|s| xkb::keysym_get_name(s).to_ascii_lowercase())
-                            .collect();
-                        state
-                            .config
-                            .binds
-                            .iter()
-                            .find(|b| b.mods == mods && syms.contains(&b.key))
-                            .map(|b| FilterResult::Intercept(b.dispatcher.clone()))
-                            .unwrap_or(FilterResult::Forward)
-                    },
-                );
-                if let Some(action) = action {
+                let action = self
+                    .seat
+                    .get_keyboard()
+                    .unwrap()
+                    .input::<Option<Dispatcher>, _>(
+                        self,
+                        event.key_code(),
+                        key_state,
+                        serial,
+                        time,
+                        |state, modifiers, handle| {
+                            if key_state != KeyState::Pressed {
+                                return FilterResult::Forward;
+                            }
+                            // Ctrl+Alt+F<n> gives XF86Switch_VT_<n> in the default keymap.
+                            let vt = handle
+                                .modified_sym()
+                                .raw()
+                                .wrapping_sub(xkb::keysyms::KEY_XF86Switch_VT_1);
+                            if vt < 12 {
+                                if let Some(session) = state.session.as_mut() {
+                                    if let Err(e) = session.change_vt(vt as i32 + 1) {
+                                        tracing::warn!("VT switch failed: {e}");
+                                    }
+                                    return FilterResult::Intercept(None);
+                                }
+                            }
+                            let mods = Mods {
+                                shift: modifiers.shift,
+                                ctrl: modifiers.ctrl,
+                                alt: modifiers.alt,
+                                logo: modifiers.logo,
+                            };
+                            // Match on the unshifted key so `SUPER SHIFT, 1` works
+                            // regardless of keyboard layout's shifted symbol.
+                            let syms: Vec<String> = handle
+                                .raw_syms()
+                                .into_iter()
+                                .chain(handle.raw_latin_sym_or_raw_current_sym())
+                                .map(|s| xkb::keysym_get_name(s).to_ascii_lowercase())
+                                .collect();
+                            state
+                                .config
+                                .binds
+                                .iter()
+                                .find(|b| b.mods == mods && syms.contains(&b.key))
+                                .map(|b| FilterResult::Intercept(Some(b.dispatcher.clone())))
+                                .unwrap_or(FilterResult::Forward)
+                        },
+                    );
+                if let Some(action) = action.flatten() {
                     self.dispatch(&action);
                 }
             }
-            InputEvent::PointerMotion { .. } => {}
+            InputEvent::PointerMotion { event, .. } => {
+                // Relative motion (libinput mice): move and clamp to the output.
+                let pointer = self.seat.get_pointer().unwrap();
+                let mut pos = pointer.current_location() + event.delta();
+                if let Some(geo) = self.output_geometry() {
+                    let geo = geo.to_f64();
+                    pos.x = pos.x.clamp(geo.loc.x, geo.loc.x + geo.size.w - 1.0);
+                    pos.y = pos.y.clamp(geo.loc.y, geo.loc.y + geo.size.h - 1.0);
+                }
+                let under = self.surface_under(pos);
+                pointer.motion(
+                    self,
+                    under,
+                    &MotionEvent {
+                        location: pos,
+                        serial: SERIAL_COUNTER.next_serial(),
+                        time: event.time_msec(),
+                    },
+                );
+                pointer.frame(self);
+            }
             InputEvent::PointerMotionAbsolute { event, .. } => {
                 let output = self.space.outputs().next().unwrap();
 
