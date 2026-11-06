@@ -33,4 +33,5 @@ jobs:
       - name: Layer-shell test (headless + waybar)
         run: sh tests/layer-shell.sh
       - name: Window rules test (headless + hyprctl)
+        timeout-minutes: 3
         run: sh tests/window-rules.sh

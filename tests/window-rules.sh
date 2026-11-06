@@ -27,7 +27,7 @@ fail() {
     exit 1
 }
 
-clients() { "$HYPRCTL" -j clients; }
+clients() { timeout 5 "$HYPRCTL" -j clients; }
 
 # Waits until `hyprctl -j clients` lists exactly $1 windows.
 wait_clients() {
@@ -44,7 +44,7 @@ wait_clients() {
 settle() { sleep 1.5; }
 
 kw() {
-    r=$("$HYPRCTL" keyword "$@") || fail "hyprctl keyword $* failed"
+    r=$(timeout 5 "$HYPRCTL" keyword "$@") || fail "hyprctl keyword $* failed"
     [ "$r" = ok ] || fail "keyword $*: $r"
 }
 
@@ -56,7 +56,7 @@ for _ in $(seq 50); do
 done
 
 # 1. Probe: learn the class and title of weston-simple-shm.
-"$HYPRCTL" dispatch exec weston-simple-shm >/dev/null || fail "dispatch exec"
+timeout 5 "$HYPRCTL" dispatch exec weston-simple-shm >/dev/null || fail "dispatch exec"
 wait_clients 1
 settle
 clients >"$T/probe.json"
@@ -78,7 +78,7 @@ kw windowrulev2 "tag +probe, class:^($CLASS)\$"
 kw windowrule "match:title $TITLE, tag +bytitle"
 kw windowrule "match:class negative:$CLASS, tag +neg, workspace 7"
 kw windowrule "match:class ^zzz\$, workspace 6"
-"$HYPRCTL" dispatch exec weston-simple-shm >/dev/null
+timeout 5 "$HYPRCTL" dispatch exec weston-simple-shm >/dev/null
 wait_clients 1
 settle
 clients >"$T/c1.json"
@@ -101,7 +101,7 @@ wait_clients 0
 
 # 3. workspace 3 silent: the window opens on workspace 3, focus stays.
 kw windowrule "match:class $CLASS, workspace 3 silent"
-"$HYPRCTL" dispatch exec weston-simple-shm >/dev/null
+timeout 5 "$HYPRCTL" dispatch exec weston-simple-shm >/dev/null
 wait_clients 1
 settle
 clients >"$T/c2.json"
@@ -114,8 +114,8 @@ print("workspace 3 silent ok")
 PY
 
 # 4. tagwindow dispatcher: static tag shows up without `*`.
-"$HYPRCTL" dispatch tagwindow "+manual" >/dev/null || fail "tagwindow"
-"$HYPRCTL" dispatch tagwindow "+manual2 class:$CLASS" >/dev/null || fail "tagwindow with selector"
+timeout 5 "$HYPRCTL" dispatch tagwindow "+manual" >/dev/null || fail "tagwindow"
+timeout 5 "$HYPRCTL" dispatch tagwindow "+manual2 class:$CLASS" >/dev/null || fail "tagwindow with selector"
 clients >"$T/c3.json"
 python3 - "$T/c3.json" <<'PY' || fail "tagwindow tags missing: $(cat "$T/c3.json")"
 import json, sys
