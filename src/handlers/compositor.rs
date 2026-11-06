@@ -34,12 +34,9 @@ impl CompositorHandler for Hypr {
             while let Some(parent) = get_parent(&root) {
                 root = parent;
             }
-            let window = self
-                .space
-                .elements()
-                .find(|w| w.toplevel().unwrap().wl_surface() == &root)
-                .cloned();
-            if let Some(window) = window {
+            // All workspaces, not just `space`: windows on hidden workspaces
+            // still need on_commit(), rules and their initial configure.
+            if let Some((_, window)) = self.window_for_surface(&root) {
                 let old_geo = window.geometry();
                 window.on_commit();
                 // The client-side decoration offset/size is only known after the
@@ -53,7 +50,10 @@ impl CompositorHandler for Hypr {
         };
 
         self.layer_commit(surface);
-        xdg_shell::handle_commit(&mut self.popups, &self.space, surface);
+        let toplevel = self
+            .window_for_surface(surface)
+            .and_then(|(_, w)| w.toplevel().cloned());
+        xdg_shell::handle_commit(&mut self.popups, toplevel.as_ref(), surface);
         resize_grab::handle_commit(&mut self.space, surface);
     }
 }

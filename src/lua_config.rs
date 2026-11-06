@@ -16,7 +16,36 @@
 
 use std::{cell::RefCell, path::Path, rc::Rc};
 
-use mlua::{Lua, Table, Value};
+use mlua::{HookTriggers, Lua, LuaOptions, StdLib, Table, Value, VmState};
+
+/// Limits for the config script: generous, but a stray `while true do end`
+/// or a runaway table must not hang or kill the compositor on (re)load.
+const CONFIG_MAX_INSTRUCTIONS: u64 = 500_000_000;
+const CONFIG_MAX_MEMORY: usize = 256 << 20;
+/// `hyprctl dispatch` input comes from any local client: tight limits.
+const DISPATCH_MAX_INSTRUCTIONS: u64 = 5_000_000;
+const DISPATCH_MAX_MEMORY: usize = 16 << 20;
+
+/// Aborts the script after `max_instr` VM instructions and caps its memory.
+fn guard(lua: &Lua, max_instr: u64, max_mem: usize) -> mlua::Result<()> {
+    lua.set_memory_limit(max_mem)?;
+    const STEP: u32 = 10_000;
+    let count = std::cell::Cell::new(0u64);
+    lua.set_hook(
+        HookTriggers::new().every_nth_instruction(STEP),
+        move |_, _| {
+            count.set(count.get() + STEP as u64);
+            if count.get() > max_instr {
+                Err(mlua::Error::RuntimeError(
+                    "Lua script took too long (instruction limit reached)".into(),
+                ))
+            } else {
+                Ok(VmState::Continue)
+            }
+        },
+    );
+    Ok(())
+}
 
 #[derive(Default)]
 struct Out {
@@ -32,8 +61,9 @@ type Shared = Rc<RefCell<Out>>;
 /// errors of individual `hl.*` calls. `Err` means the script itself failed.
 pub fn to_hyprlang(src: &str, dir: &Path, name: &str) -> Result<(String, Vec<String>), String> {
     let lua = Lua::new();
+    guard(&lua, CONFIG_MAX_INSTRUCTIONS, CONFIG_MAX_MEMORY).map_err(|e| e.to_string())?;
     let out: Shared = Rc::default();
-    install(&lua, &out, dir).map_err(|e| e.to_string())?;
+    install(&lua, &out, Some(dir)).map_err(|e| e.to_string())?;
     lua.load(src)
         .set_name(name)
         .exec()
@@ -44,10 +74,22 @@ pub fn to_hyprlang(src: &str, dir: &Path, name: &str) -> Result<(String, Vec<Str
 
 /// Evaluates a Lua dispatcher expression such as `hl.dsp.exit()` (what
 /// `hyprctl dispatch` takes in Hyprland >= 0.57) into `(name, args)`.
+///
+/// Any local client can send this, so it runs sandboxed: no `os`, `io`,
+/// `package` or file loading, and tight instruction/memory limits (otherwise
+/// `hl.dsp.exit() or os.exit()` would kill the compositor and a loop would
+/// hang it).
 pub fn eval_dispatch(expr: &str) -> Result<(String, String), String> {
-    let lua = Lua::new();
+    let libs = StdLib::TABLE | StdLib::STRING | StdLib::UTF8 | StdLib::MATH;
+    let lua = Lua::new_with(libs, LuaOptions::default()).map_err(|e| e.to_string())?;
+    guard(&lua, DISPATCH_MAX_INSTRUCTIONS, DISPATCH_MAX_MEMORY).map_err(|e| e.to_string())?;
+    for f in ["dofile", "loadfile", "load", "require"] {
+        lua.globals()
+            .set(f, Value::Nil)
+            .map_err(|e| e.to_string())?;
+    }
     let out: Shared = Rc::default();
-    install(&lua, &out, Path::new(".")).map_err(|e| e.to_string())?;
+    install(&lua, &out, None).map_err(|e| e.to_string())?;
     let v: Value = lua
         .load(expr)
         .set_name("dispatch")
@@ -526,18 +568,22 @@ fn device_block(t: &Table) -> Result<String, String> {
     Ok(lines.join("\n"))
 }
 
-fn install(lua: &Lua, out: &Shared, dir: &Path) -> mlua::Result<()> {
+/// `dir` is the config directory; `None` means sandboxed (no `package`,
+/// `hl.load` or `hl.env`).
+fn install(lua: &Lua, out: &Shared, dir: Option<&Path>) -> mlua::Result<()> {
     let g = lua.globals();
-    let package: Table = g.get("package")?;
-    let path: String = package.get("path")?;
-    package.set(
-        "path",
-        format!(
-            "{}/?.lua;{}/?/init.lua;{path}",
-            dir.display(),
-            dir.display()
-        ),
-    )?;
+    if let Some(dir) = dir {
+        let package: Table = g.get("package")?;
+        let path: String = package.get("path")?;
+        package.set(
+            "path",
+            format!(
+                "{}/?.lua;{}/?/init.lua;{path}",
+                dir.display(),
+                dir.display()
+            ),
+        )?;
+    }
 
     let hl = lua.create_table()?;
 
@@ -691,15 +737,18 @@ fn install(lua: &Lua, out: &Shared, dir: &Path) -> mlua::Result<()> {
         )?;
     }
 
-    let o = out.clone();
-    hl.set(
-        "env",
-        lua.create_function(move |_, (k, v): (String, String)| {
-            std::env::set_var(&k, &v);
-            push(&o, Ok(format!("env = {k},{v}")));
-            Ok(())
-        })?,
-    )?;
+    // Process-wide side effects: config scripts only, not sandboxed dispatch.
+    if dir.is_some() {
+        let o = out.clone();
+        hl.set(
+            "env",
+            lua.create_function(move |_, (k, v): (String, String)| {
+                std::env::set_var(&k, &v);
+                push(&o, Ok(format!("env = {k},{v}")));
+                Ok(())
+            })?,
+        )?;
+    }
 
     let o = out.clone();
     hl.set(
@@ -778,15 +827,17 @@ fn install(lua: &Lua, out: &Shared, dir: &Path) -> mlua::Result<()> {
         lua.create_function(|_, ()| Ok(env!("CARGO_PKG_VERSION")))?,
     )?;
 
-    let d = dir.to_path_buf();
-    hl.set(
-        "load",
-        lua.create_function(move |lua, file: String| {
-            let path = d.join(&file);
-            let src = std::fs::read_to_string(&path).map_err(mlua::Error::external)?;
-            lua.load(src).set_name(file).exec()
-        })?,
-    )?;
+    if let Some(dir) = dir {
+        let d = dir.to_path_buf();
+        hl.set(
+            "load",
+            lua.create_function(move |lua, file: String| {
+                let path = d.join(&file);
+                let src = std::fs::read_to_string(&path).map_err(mlua::Error::external)?;
+                lua.load(src).set_name(file).exec()
+            })?,
+        )?;
+    }
 
     // Anything else: a config error instead of "attempt to call a nil value".
     let o = out.clone();
@@ -919,5 +970,33 @@ mod tests {
             ("workspace".into(), "3".into())
         );
         assert!(eval_dispatch("hl.dsp.window.fullscreen_state({})").is_err());
+    }
+
+    #[test]
+    fn dispatch_is_sandboxed() {
+        // os/io/package/file loading are gone, so these cannot kill or read.
+        for expr in [
+            "os.exit() or hl.dsp.exit()",
+            "os.exit()",
+            "io.open('/etc/passwd')",
+            "dofile('/etc/passwd')",
+            "require('os')",
+            "load('return 1')()",
+        ] {
+            assert!(eval_dispatch(expr).is_err(), "{expr} should fail");
+        }
+        // A loop or memory bomb is cut off instead of hanging the compositor.
+        let t = std::time::Instant::now();
+        assert!(eval_dispatch("hl.version() while true do end").is_err());
+        assert!(eval_dispatch("string.rep('x', 1 << 30)").is_err());
+        assert!(t.elapsed() < std::time::Duration::from_secs(5));
+        // Normal expressions still work.
+        assert_eq!(eval_dispatch("hl.dsp.exit()").unwrap().0, "exit");
+    }
+
+    #[test]
+    fn config_loop_is_cut_off() {
+        let r = to_hyprlang("while true do end", Path::new("."), "loop.lua");
+        assert!(r.unwrap_err().contains("instruction limit"));
     }
 }
