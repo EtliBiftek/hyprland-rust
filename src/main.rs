@@ -4,6 +4,7 @@
 
 #![allow(irrefutable_let_patterns)]
 
+mod animation;
 mod config;
 mod grabs;
 mod groups;
