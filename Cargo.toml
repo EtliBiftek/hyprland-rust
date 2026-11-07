@@ -19,6 +19,10 @@ regex = "1"
 wayland-backend = "0.3"
 wayland-server = "0.31"
 wayland-scanner = "0.31"
+# Client side of the same protocols for src/bin/protocol-probe.rs.
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging", "unstable"] }
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 
 [dependencies.smithay]
 version = "0.7.0"
