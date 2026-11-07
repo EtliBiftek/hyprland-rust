@@ -34,7 +34,7 @@ use smithay::{
     desktop::{layer_map_for_output, Window},
     reexports::{
         calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
-        wayland_server::{protocol::wl_surface::WlSurface, Resource},
+        wayland_server::protocol::wl_surface::WlSurface,
     },
     wayland::{compositor::with_states, shell::xdg::XdgToplevelSurfaceData},
 };

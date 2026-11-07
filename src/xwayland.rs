@@ -163,10 +163,10 @@ impl Hypr {
                 return;
             }
         };
-        let display = xwayland.display_number();
-        self.x11.display = Some(display);
-        std::env::set_var("DISPLAY", format!(":{display}"));
-        tracing::info!("Xwayland on DISPLAY=:{display}");
+        let num = xwayland.display_number();
+        self.x11.display = Some(num);
+        std::env::set_var("DISPLAY", format!(":{num}"));
+        tracing::info!("Xwayland on DISPLAY=:{num}");
         let h = handle.clone();
         let res = handle.insert_source(xwayland, move |event, _, data| match event {
             XWaylandEvent::Ready { x11_socket, .. } => {
