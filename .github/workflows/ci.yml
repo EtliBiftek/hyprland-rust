@@ -15,7 +15,8 @@ jobs:
           sudo apt-get install -y libwayland-dev libxkbcommon-dev libudev-dev \
             libinput-dev libseat-dev libgbm-dev libegl-dev libdrm-dev libgles-dev \
             pkg-config xvfb xdotool weston waybar dbus gdb libxkbcommon-x11-0 libgl1-mesa-dri \
-            wl-clipboard grim wlrctl wlr-randr
+            wl-clipboard grim wlrctl wlr-randr xwayland x11-apps xterm xclip \
+            xfonts-base python3-xlib seatd wayland-utils wlsunset wtype wev wayland-protocols
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
@@ -56,9 +57,27 @@ jobs:
       - name: Popular hyprland.lua dotfiles load and run
         timeout-minutes: 6
         run: sh tests/dots-lua.sh
+      - name: Render effects test (winit in Xvfb + grim)
+        timeout-minutes: 4
+        run: sh tests/render-fx.sh
       - name: Screencopy test (winit in Xvfb + grim)
         timeout-minutes: 3
         run: sh tests/screencopy.sh
       - name: Foreign toplevel and output management test (headless + wlrctl)
         timeout-minutes: 3
         run: sh tests/foreign-toplevel.sh
+      - name: Multi-monitor test (headless, 2 outputs)
+        timeout-minutes: 3
+        run: sh tests/multimon.sh
+      - name: TTY backend on VKMS (DRM/KMS + seatd)
+        timeout-minutes: 4
+        run: sh tests/tty-vkms.sh
+      - name: XWayland test (headless + Xwayland + X11 clients)
+        timeout-minutes: 4
+        run: sh tests/xwayland.sh
+      - name: Protocol globals, wlsunset and wtype test (headless)
+        timeout-minutes: 3
+        run: sh tests/globals.sh
+      - name: Protocol probe test (winit in Xvfb)
+        timeout-minutes: 4
+        run: sh tests/probe.sh

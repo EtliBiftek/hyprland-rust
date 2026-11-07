@@ -199,8 +199,20 @@ pub enum Dispatcher {
     /// `global, appid:name`: press the shortcut a client registered through
     /// hyprland-global-shortcuts-v1.
     Global(String),
-    /// Accepted for compatibility, no effect on a single monitor or yet.
+    /// Accepted for compatibility, no effect yet.
     Noop(&'static str, String),
+    /// `focusmonitor, l|r|u|d|NAME|+1|-1|ID|current`.
+    FocusMonitor(String),
+    /// `movecurrentworkspacetomonitor, MON`.
+    MoveCurrentWorkspaceToMonitor(String),
+    /// `moveworkspacetomonitor, WS MON`.
+    MoveWorkspaceToMonitor(String, String),
+    /// `swapactiveworkspaces, MON1 MON2`.
+    SwapActiveWorkspaces(String, String),
+    /// `focusworkspaceoncurrentmonitor, WS`: bring WS here.
+    FocusWorkspaceOnCurrentMonitor(WsSel),
+    /// `movewindow, mon:MON`.
+    MoveWindowToMonitor(String),
 }
 
 /// Strips the `[rule; rule]` prefix of `exec`. Rules are accepted but ignored.
@@ -335,6 +347,18 @@ impl Dispatcher {
             Dispatcher::Dpms(t) => ("dpms", t.name().into()),
             Dispatcher::Global(name) => ("global", name.clone()),
             Dispatcher::Noop(name, arg) => (*name, arg.clone()),
+            Dispatcher::FocusMonitor(m) => ("focusmonitor", m.clone()),
+            Dispatcher::MoveCurrentWorkspaceToMonitor(m) => {
+                ("movecurrentworkspacetomonitor", m.clone())
+            }
+            Dispatcher::MoveWorkspaceToMonitor(w, m) => {
+                ("moveworkspacetomonitor", format!("{w} {m}"))
+            }
+            Dispatcher::SwapActiveWorkspaces(a, b) => ("swapactiveworkspaces", format!("{a} {b}")),
+            Dispatcher::FocusWorkspaceOnCurrentMonitor(s) => {
+                ("focusworkspaceoncurrentmonitor", s.to_string())
+            }
+            Dispatcher::MoveWindowToMonitor(m) => ("movewindow", format!("mon:{m}")),
         }
     }
 
@@ -346,7 +370,10 @@ impl Dispatcher {
             "killactive" => Dispatcher::KillActive,
             "forcekillactive" => Dispatcher::ForceKillActive,
             "exit" => Dispatcher::Exit,
-            "workspace" | "focusworkspaceoncurrentmonitor" => Dispatcher::Workspace(arg.parse()?),
+            "workspace" => Dispatcher::Workspace(arg.parse()?),
+            "focusworkspaceoncurrentmonitor" => {
+                Dispatcher::FocusWorkspaceOnCurrentMonitor(arg.parse()?)
+            }
             "movetoworkspace" => Dispatcher::MoveToWorkspace(arg.parse()?),
             "movetoworkspacesilent" => Dispatcher::MoveToWorkspaceSilent(arg.parse()?),
             "togglefloating" => Dispatcher::ToggleFloating,
@@ -360,7 +387,10 @@ impl Dispatcher {
             "movefocus" => Dispatcher::MoveFocus(dir()?),
             "cyclenext" => Dispatcher::CycleNext,
             "togglesplit" => Dispatcher::ToggleSplit,
-            "movewindow" => Dispatcher::MoveWindow(dir()?),
+            "movewindow" => match arg.trim().strip_prefix("mon:") {
+                Some(m) => Dispatcher::MoveWindowToMonitor(m.trim().to_string()),
+                None => Dispatcher::MoveWindow(dir()?),
+            },
             "swapwindow" => Dispatcher::SwapWindow(dir()?),
             "resizeactive" => Dispatcher::ResizeActive(arg.parse()?),
             "moveactive" => Dispatcher::MoveActive(arg.parse()?),
@@ -474,12 +504,25 @@ impl Dispatcher {
             "event" => Dispatcher::Event(arg.to_string()),
             "dpms" => Dispatcher::Dpms(Toggle::parse(split_word(arg).0)?),
             "global" => Dispatcher::Global(arg.trim().to_string()),
-            "focusmonitor" => Dispatcher::Noop("focusmonitor", arg.to_string()),
-            "movecurrentworkspacetomonitor" => {
-                Dispatcher::Noop("movecurrentworkspacetomonitor", arg.to_string())
+            "focusmonitor" => Dispatcher::FocusMonitor(need(arg, "focusmonitor")?),
+            "movecurrentworkspacetomonitor" => Dispatcher::MoveCurrentWorkspaceToMonitor(need(
+                arg,
+                "movecurrentworkspacetomonitor",
+            )?),
+            "moveworkspacetomonitor" => {
+                let (w, m) = split_word(arg);
+                if m.is_empty() {
+                    return Err("moveworkspacetomonitor: expected `WORKSPACE MONITOR`".into());
+                }
+                Dispatcher::MoveWorkspaceToMonitor(w.into(), m.into())
             }
-            "moveworkspacetomonitor" => Dispatcher::Noop("moveworkspacetomonitor", arg.to_string()),
-            "swapactiveworkspaces" => Dispatcher::Noop("swapactiveworkspaces", arg.to_string()),
+            "swapactiveworkspaces" => {
+                let (a, b) = split_word(arg);
+                if b.is_empty() {
+                    return Err("swapactiveworkspaces: expected `MONITOR1 MONITOR2`".into());
+                }
+                Dispatcher::SwapActiveWorkspaces(a.into(), b.into())
+            }
             "toggleswallow" => Dispatcher::Noop("toggleswallow", arg.to_string()),
             "forcerendererreload" => Dispatcher::Noop("forcerendererreload", arg.to_string()),
             other => return Err(format!("unknown dispatcher `{other}`")),
@@ -488,6 +531,16 @@ impl Dispatcher {
 }
 
 /// Splits off the first word; commas and spaces both separate arguments.
+/// A required non-empty argument.
+fn need(arg: &str, what: &str) -> Result<String, String> {
+    let a = arg.trim();
+    if a.is_empty() {
+        Err(format!("{what}: missing argument"))
+    } else {
+        Ok(a.to_string())
+    }
+}
+
 fn split_word(s: &str) -> (&str, &str) {
     let s = s.trim();
     match s.find(|c: char| c.is_whitespace() || c == ',') {
@@ -577,6 +630,8 @@ pub struct General {
     /// RGBA, 0.0-1.0
     pub active_border_color: [f32; 4],
     pub inactive_border_color: [f32; 4],
+    pub active_border: crate::animation::Gradient,
+    pub inactive_border: crate::animation::Gradient,
     /// `general:layout`: `dwindle` or `master`.
     pub layout: String,
 }
@@ -590,6 +645,8 @@ impl Default for General {
             border_size: 1,
             active_border_color: [1.0, 1.0, 1.0, 1.0],
             inactive_border_color: [0.27, 0.27, 0.27, 1.0],
+            active_border: crate::animation::Gradient::solid([1.0, 1.0, 1.0, 1.0]),
+            inactive_border: crate::animation::Gradient::solid([0.27, 0.27, 0.27, 1.0]),
             layout: "dwindle".into(),
         }
     }
@@ -603,6 +660,173 @@ pub struct WorkspaceRule {
     pub workspace: String,
     pub layout: Option<String>,
     pub orientation: Option<Orientation>,
+    /// `monitor:NAME`: the workspace is created on that monitor.
+    pub monitor: Option<String>,
+    /// `default:true`: shown when that monitor is added.
+    pub default: bool,
+}
+
+/// Mode of a `monitor =` rule.
+#[derive(Debug, Clone, PartialEq)]
+pub enum MonMode {
+    Preferred,
+    HighRes,
+    HighRr,
+    /// `1920x1080` or `1920x1080@144`.
+    Exact {
+        w: i32,
+        h: i32,
+        refresh: Option<f64>,
+    },
+}
+
+/// Position of a `monitor =` rule.
+#[derive(Debug, Clone, PartialEq)]
+pub enum MonPos {
+    /// `auto`, `auto-right`, `auto-left`, `auto-up`, `auto-down`.
+    Auto(Direction),
+    Exact(i32, i32),
+}
+
+/// `monitor = NAME, MODE, POSITION, SCALE[, transform, T][, mirror, M]...`
+/// or `monitor = NAME, disable`. An empty name is the fallback rule.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MonitorRule {
+    /// Connector name (`DP-1`), `desc:...`, or empty for every monitor.
+    pub name: String,
+    pub disabled: bool,
+    pub mode: MonMode,
+    pub position: MonPos,
+    /// `None`: `auto`.
+    pub scale: Option<f64>,
+    /// wl_output transform 0-7.
+    pub transform: u8,
+    pub mirror: Option<String>,
+}
+
+impl Default for MonitorRule {
+    fn default() -> Self {
+        MonitorRule {
+            name: String::new(),
+            disabled: false,
+            mode: MonMode::Preferred,
+            position: MonPos::Auto(Direction::Right),
+            scale: None,
+            transform: 0,
+            mirror: None,
+        }
+    }
+}
+
+impl MonitorRule {
+    /// Does this rule apply to the output `name` with description `desc`?
+    pub fn matches(&self, name: &str, desc: &str) -> bool {
+        match self.name.strip_prefix("desc:") {
+            Some(d) => desc.starts_with(d.trim()),
+            None => self.name == name,
+        }
+    }
+}
+
+impl Config {
+    /// The `monitor =` rule for an output: a name or `desc:` match, else the
+    /// fallback rule (empty name), else the defaults.
+    pub fn monitor_rule(&self, name: &str, desc: &str) -> MonitorRule {
+        let rules = self.monitors.iter().rev();
+        rules
+            .clone()
+            .find(|r| !r.name.is_empty() && r.matches(name, desc))
+            .or_else(|| rules.clone().find(|r| r.name.is_empty()))
+            .cloned()
+            .unwrap_or_default()
+    }
+}
+
+pub fn parse_monitor_rule(value: &str) -> Result<MonitorRule, String> {
+    let parts: Vec<&str> = value.split(',').map(str::trim).collect();
+    let mut rule = MonitorRule {
+        name: parts[0].to_string(),
+        ..Default::default()
+    };
+    match parts.get(1).copied() {
+        Some("disable" | "disabled") => {
+            rule.disabled = true;
+            return Ok(rule);
+        }
+        // Reserved areas only: keep the defaults.
+        Some("addreserved") | None => return Ok(rule),
+        _ => {}
+    }
+    rule.mode = match parts[1] {
+        "preferred" | "" => MonMode::Preferred,
+        "highres" => MonMode::HighRes,
+        "highrr" | "maxwidth" => MonMode::HighRr,
+        m => {
+            let (size, refresh) = match m.split_once('@') {
+                Some((s, r)) => (s, Some(parse_float(r)? as f64)),
+                None => (m, None),
+            };
+            let (w, h) = size
+                .split_once('x')
+                .and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)))
+                .filter(|&(w, h): &(i32, i32)| w > 0 && h > 0)
+                .ok_or_else(|| format!("invalid monitor mode `{m}`"))?;
+            MonMode::Exact { w, h, refresh }
+        }
+    };
+    if let Some(p) = parts.get(2) {
+        rule.position = match *p {
+            "auto" | "auto-right" | "" => MonPos::Auto(Direction::Right),
+            "auto-left" => MonPos::Auto(Direction::Left),
+            "auto-up" => MonPos::Auto(Direction::Up),
+            "auto-down" => MonPos::Auto(Direction::Down),
+            p if p.starts_with("auto-center") => MonPos::Auto(Direction::Right),
+            p => {
+                let (x, y) = p
+                    .split_once('x')
+                    .and_then(|(x, y)| Some((x.parse().ok()?, y.parse().ok()?)))
+                    .ok_or_else(|| format!("invalid monitor position `{p}`"))?;
+                MonPos::Exact(x, y)
+            }
+        };
+    }
+    if let Some(s) = parts.get(3) {
+        rule.scale = match *s {
+            "auto" | "" => None,
+            s => Some(parse_float(s)? as f64).filter(|v| *v > 0.0),
+        };
+    }
+    let mut i = 4;
+    while i + 1 < parts.len() {
+        let (k, v) = (parts[i], parts[i + 1]);
+        match k {
+            "transform" => {
+                rule.transform = v
+                    .parse()
+                    .ok()
+                    .filter(|t| *t <= 7)
+                    .ok_or_else(|| format!("invalid transform `{v}`"))?
+            }
+            "mirror" => rule.mirror = Some(v.to_string()),
+            // shortcut: accepted, no effect (no HDR/VRR/10-bit output yet).
+            "bitdepth"
+            | "vrr"
+            | "cm"
+            | "sdrbrightness"
+            | "sdrsaturation"
+            | "supports_wide_color"
+            | "supports_hdr"
+            | "sdr_min_luminance"
+            | "sdr_max_luminance"
+            | "min_luminance"
+            | "max_luminance"
+            | "max_avg_luminance"
+            | "icc" => {}
+            _ => return Err(format!("unknown monitor rule argument `{k}`")),
+        }
+        i += 2;
+    }
+    Ok(rule)
 }
 
 /// Hyprland's `0xAARRGGBB` as RGBA floats.
@@ -666,9 +890,146 @@ impl Default for GroupCfg {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Blur {
+    pub enabled: bool,
+    pub size: i32,
+    pub passes: i32,
+    pub ignore_opacity: bool,
+    pub new_optimizations: bool,
+    pub xray: bool,
+    pub noise: f32,
+    pub contrast: f32,
+    pub brightness: f32,
+    pub vibrancy: f32,
+    pub vibrancy_darkness: f32,
+    pub special: bool,
+    pub popups: bool,
+    pub popups_ignorealpha: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Shadow {
+    pub enabled: bool,
+    pub range: i32,
+    pub render_power: i32,
+    pub sharp: bool,
+    pub ignore_window: bool,
+    pub color: [f32; 4],
+    /// Unset: same as `color`.
+    pub color_inactive: Option<[f32; 4]>,
+    pub offset: (f32, f32),
+    pub scale: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Decoration {
     pub rounding: i32,
+    pub rounding_power: f32,
+    pub active_opacity: f32,
+    pub inactive_opacity: f32,
+    pub fullscreen_opacity: f32,
+    pub dim_inactive: bool,
+    pub dim_strength: f32,
+    pub dim_special: f32,
+    pub dim_around: f32,
+    pub blur: Blur,
+    pub shadow: Shadow,
+}
+
+impl Default for Decoration {
+    fn default() -> Self {
+        Self {
+            rounding: 0,
+            rounding_power: 2.0,
+            active_opacity: 1.0,
+            inactive_opacity: 1.0,
+            fullscreen_opacity: 1.0,
+            dim_inactive: false,
+            dim_strength: 0.5,
+            dim_special: 0.2,
+            dim_around: 0.4,
+            blur: Blur {
+                enabled: true,
+                size: 8,
+                passes: 1,
+                ignore_opacity: true,
+                new_optimizations: true,
+                xray: false,
+                noise: 0.0117,
+                contrast: 0.8916,
+                brightness: 0.8172,
+                vibrancy: 0.1696,
+                vibrancy_darkness: 0.0,
+                special: false,
+                popups: false,
+                popups_ignorealpha: 0.2,
+            },
+            shadow: Shadow {
+                enabled: true,
+                range: 4,
+                render_power: 3,
+                sharp: false,
+                ignore_window: true,
+                color: argb(0xee1a1a1a),
+                color_inactive: None,
+                offset: (0.0, 0.0),
+                scale: 1.0,
+            },
+        }
+    }
+}
+
+impl Decoration {
+    /// Sets `decoration:*` option `key` (without the prefix). `Ok(false)`: unknown.
+    fn set(&mut self, key: &str, v: &str) -> Result<bool, String> {
+        let b = &mut self.blur;
+        let s = &mut self.shadow;
+        match key {
+            "rounding" => self.rounding = parse_int(v)?.max(0),
+            "rounding_power" => self.rounding_power = parse_float(v)?.clamp(1.0, 10.0),
+            "active_opacity" => self.active_opacity = parse_float(v)?.clamp(0.0, 1.0),
+            "inactive_opacity" => self.inactive_opacity = parse_float(v)?.clamp(0.0, 1.0),
+            "fullscreen_opacity" => self.fullscreen_opacity = parse_float(v)?.clamp(0.0, 1.0),
+            "dim_inactive" => self.dim_inactive = parse_bool(v)?,
+            "dim_strength" => self.dim_strength = parse_float(v)?.clamp(0.0, 1.0),
+            "dim_special" => self.dim_special = parse_float(v)?.clamp(0.0, 1.0),
+            "dim_around" => self.dim_around = parse_float(v)?.clamp(0.0, 1.0),
+            "blur:enabled" => b.enabled = parse_bool(v)?,
+            "blur:size" => b.size = parse_int(v)?.clamp(1, 100),
+            "blur:passes" => b.passes = parse_int(v)?.clamp(1, 8),
+            "blur:ignore_opacity" => b.ignore_opacity = parse_bool(v)?,
+            "blur:new_optimizations" => b.new_optimizations = parse_bool(v)?,
+            "blur:xray" => b.xray = parse_bool(v)?,
+            "blur:noise" => b.noise = parse_float(v)?.clamp(0.0, 1.0),
+            "blur:contrast" => b.contrast = parse_float(v)?.clamp(0.0, 2.0),
+            "blur:brightness" => b.brightness = parse_float(v)?.clamp(0.0, 2.0),
+            "blur:vibrancy" => b.vibrancy = parse_float(v)?.clamp(0.0, 1.0),
+            "blur:vibrancy_darkness" => b.vibrancy_darkness = parse_float(v)?.clamp(0.0, 1.0),
+            "blur:special" => b.special = parse_bool(v)?,
+            "blur:popups" => b.popups = parse_bool(v)?,
+            "blur:popups_ignorealpha" => b.popups_ignorealpha = parse_float(v)?.clamp(0.0, 1.0),
+            "shadow:enabled" => s.enabled = parse_bool(v)?,
+            "shadow:range" => s.range = parse_int(v)?.max(0),
+            "shadow:render_power" => s.render_power = parse_int(v)?.clamp(1, 4),
+            "shadow:sharp" => s.sharp = parse_bool(v)?,
+            "shadow:ignore_window" => s.ignore_window = parse_bool(v)?,
+            "shadow:color" => s.color = parse_color(v)?,
+            "shadow:color_inactive" => s.color_inactive = Some(parse_color(v)?),
+            "shadow:scale" => s.scale = parse_float(v)?.clamp(0.0, 1.0),
+            "shadow:offset" => {
+                let mut it = v.split_whitespace();
+                let mut n = || {
+                    it.next()
+                        .ok_or_else(|| format!("invalid vec2 `{v}`"))
+                        .and_then(parse_float)
+                };
+                s.offset = (n()?, n()?);
+            }
+            _ => return Ok(false),
+        }
+        Ok(true)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -899,24 +1260,53 @@ pub struct Misc {
     pub disable_autoreload: bool,
 }
 
+/// `xwayland { }`. shortcut: `force_zero_scaling` and `use_nearest_neighbor`
+/// are stored only (no output scaling yet).
+#[derive(Debug, Clone, PartialEq)]
+pub struct XwaylandCfg {
+    pub enabled: bool,
+    pub force_zero_scaling: bool,
+    pub use_nearest_neighbor: bool,
+    pub create_abstract_socket: bool,
+}
+
+impl Default for XwaylandCfg {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            force_zero_scaling: false,
+            use_nearest_neighbor: true,
+            create_abstract_socket: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Config {
     pub misc: Misc,
+    /// `cursor:no_warps`: focusing a monitor does not move the pointer.
+    pub cursor_no_warps: bool,
+    pub xwayland: XwaylandCfg,
     /// Config file plus every `source`d file that was read (for autoreload).
     pub files: Vec<PathBuf>,
     /// Option keys (lowercase `cat:key`) the user set explicitly (`getoption` `set`).
     pub set_options: HashSet<String>,
     pub general: General,
     pub decoration: Decoration,
+    pub anim: crate::animation::Animations,
     pub dwindle: Dwindle,
     pub master: MasterCfg,
     pub group: GroupCfg,
     /// `binds:ignore_group_lock`.
     pub ignore_group_lock: bool,
     pub workspace_rules: Vec<WorkspaceRule>,
+    /// `monitor =` rules.
+    pub monitors: Vec<MonitorRule>,
     pub input: Input,
     pub binds: Vec<Bind>,
     pub gestures: Vec<Gesture>,
+    /// `gestures:workspace_swipe_distance/invert/cancel_ratio`.
+    pub swipe: crate::gestures::SwipeOpts,
     pub exec_once: Vec<String>,
     pub exec: Vec<String>,
     /// `windowrule` / `layerrule` (see `rules.rs`).
@@ -1326,12 +1716,40 @@ impl Parser {
             "general:gaps_in" => cfg.general.gaps_in = parse_int(value)?,
             "general:gaps_out" => cfg.general.gaps_out = parse_int(value)?,
             "general:border_size" => cfg.general.border_size = parse_int(value)?,
-            "general:col.active_border" => cfg.general.active_border_color = parse_color(value)?,
+            "general:col.active_border" => {
+                let g = parse_gradient(value)?;
+                cfg.general.active_border_color = g.colors[0];
+                cfg.general.active_border = g;
+            }
             "general:col.inactive_border" => {
-                cfg.general.inactive_border_color = parse_color(value)?
+                let g = parse_gradient(value)?;
+                cfg.general.inactive_border_color = g.colors[0];
+                cfg.general.inactive_border = g;
             }
             "misc:disable_autoreload" => cfg.misc.disable_autoreload = parse_bool(value)?,
-            "decoration:rounding" => cfg.decoration.rounding = parse_int(value)?,
+            "cursor:no_warps" => cfg.cursor_no_warps = parse_bool(value)?,
+            "gestures:workspace_swipe_distance" => {
+                cfg.swipe.distance = parse_float(value)?.max(1.0) as f64
+            }
+            "gestures:workspace_swipe_invert" => cfg.swipe.invert = parse_bool(value)?,
+            "gestures:workspace_swipe_cancel_ratio" => {
+                cfg.swipe.cancel_ratio = parse_float(value)?.clamp(0.0, 1.0) as f64
+            }
+            "xwayland:enabled" => cfg.xwayland.enabled = parse_bool(value)?,
+            "xwayland:force_zero_scaling" => cfg.xwayland.force_zero_scaling = parse_bool(value)?,
+            "xwayland:use_nearest_neighbor" => {
+                cfg.xwayland.use_nearest_neighbor = parse_bool(value)?
+            }
+            "xwayland:create_abstract_socket" => {
+                cfg.xwayland.create_abstract_socket = parse_bool(value)?
+            }
+            "animations:enabled" => {
+                // The stock example says `yes, please :)`.
+                cfg.anim.enabled = parse_bool(value.split([',', ' ']).next().unwrap_or(""))?
+            }
+            "bezier" | "animations:bezier" => cfg.anim.curves.add(value)?,
+            "animation" | "animations:animation" => cfg.anim.add(value)?,
+            k if k.starts_with("decoration:") && cfg.decoration.set(&k[11..], value)? => {}
             "dwindle:preserve_split" => cfg.dwindle.preserve_split = parse_bool(value)?,
             "dwindle:default_split_ratio" => {
                 let r: f32 = value
@@ -1419,6 +1837,12 @@ impl Parser {
                 cfg.group.groupbar.col_locked_inactive = parse_color(value)?
             }
             "binds:ignore_group_lock" => cfg.ignore_group_lock = parse_bool(value)?,
+            "monitor" => {
+                let rule = parse_monitor_rule(value)?;
+                // A later rule for the same monitor replaces the earlier one.
+                cfg.monitors.retain(|r| r.name != rule.name);
+                cfg.monitors.push(rule);
+            }
             "workspace" => {
                 if let Some(rule) = parse_workspace_rule(value) {
                     // A later rule for the same workspace replaces the earlier one.
@@ -1472,7 +1896,6 @@ fn is_known_unimplemented(key: &str) -> bool {
         "binds:",
         "xwayland:",
         "cursor:",
-        "monitor",
         "env",
         "workspace",
     ];
@@ -1584,15 +2007,21 @@ fn parse_workspace_rule(value: &str) -> Option<WorkspaceRule> {
         workspace,
         layout: None,
         orientation: None,
+        monitor: None,
+        default: false,
     };
     for p in parts {
         if let Some(l) = p.strip_prefix("layout:") {
             rule.layout = Some(l.trim().to_string());
         } else if let Some(o) = p.strip_prefix("layoutopt:orientation:") {
             rule.orientation = Orientation::parse(o);
+        } else if let Some(m) = p.strip_prefix("monitor:") {
+            rule.monitor = Some(m.trim().to_string());
+        } else if let Some(d) = p.strip_prefix("default:") {
+            rule.default = parse_bool(d.trim()).unwrap_or(false);
         }
     }
-    (rule.layout.is_some() || rule.orientation.is_some()).then_some(rule)
+    (rule.layout.is_some() || rule.orientation.is_some() || rule.monitor.is_some()).then_some(rule)
 }
 
 fn parse_bool(value: &str) -> Result<bool, String> {
@@ -1605,6 +2034,10 @@ fn parse_bool(value: &str) -> Result<bool, String> {
 
 /// Parses `rgba(RRGGBBAA)`, `rgb(RRGGBB)` or `0xAARRGGBB`. For gradients
 /// (`rgba(...) rgba(...) 45deg`) only the first color is used for now.
+pub fn parse_gradient(value: &str) -> Result<crate::animation::Gradient, String> {
+    crate::animation::Gradient::parse(value, parse_color)
+}
+
 pub fn parse_color(value: &str) -> Result<[f32; 4], String> {
     let first = value.split_whitespace().next().unwrap_or("");
     let bad = || format!("invalid color `{value}`");
@@ -1649,8 +2082,6 @@ pub struct Gesture {
     pub args: Vec<String>,
 }
 
-// shortcut: gestures are parsed and stored only, the tty backend does not
-// feed libinput swipe/pinch events to them yet.
 fn parse_gesture(value: &str) -> Result<Gesture, String> {
     let parts: Vec<&str> = value.split(',').map(str::trim).collect();
     let fingers: u32 = parts[0]
@@ -1912,6 +2343,56 @@ mod tests {
     }
 
     #[test]
+    fn monitor_and_workspace_monitor_rules() {
+        let (cfg, errors) = Config::parse_str(
+            "monitor = ,preferred,auto,1\nmonitor = DP-1, 2560x1440@144, 1920x0, 1.25, transform, 1\nmonitor = HDMI-A-1, disable\nmonitor = desc:Dell U2720Q, highres, auto-left, auto, bitdepth, 10\nmonitor = DP-1, 1920x1080, 0x0, 1\nworkspace = 3, monitor:DP-1, default:true\nworkspace = name:web, monitor:HDMI-A-1",
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(cfg.monitors.len(), 4);
+        let dp = cfg.monitors.iter().find(|r| r.name == "DP-1").unwrap();
+        assert_eq!(
+            dp.mode,
+            MonMode::Exact {
+                w: 1920,
+                h: 1080,
+                refresh: None
+            }
+        );
+        assert_eq!(dp.position, MonPos::Exact(0, 0));
+        assert_eq!(dp.scale, Some(1.0));
+        assert!(cfg
+            .monitors
+            .iter()
+            .any(|r| r.name == "HDMI-A-1" && r.disabled));
+        let dell = cfg
+            .monitors
+            .iter()
+            .find(|r| r.name.starts_with("desc:"))
+            .unwrap();
+        assert!(dell.matches("DP-3", "Dell U2720Q 0x1234"));
+        assert_eq!(dell.position, MonPos::Auto(Direction::Left));
+        let r = parse_monitor_rule("DP-2, 2560x1440@144, 1920x0, 1.25, transform, 1").unwrap();
+        assert_eq!(
+            r.mode,
+            MonMode::Exact {
+                w: 2560,
+                h: 1440,
+                refresh: Some(144.0)
+            }
+        );
+        assert_eq!((r.scale, r.transform), (Some(1.25), 1));
+        assert!(parse_monitor_rule("DP-2, 0x0, auto, 1").is_err());
+        assert!(parse_monitor_rule("DP-2, preferred, auto, 1, bogus, 2").is_err());
+        let ws3 = cfg
+            .workspace_rules
+            .iter()
+            .find(|r| r.workspace == "3")
+            .unwrap();
+        assert_eq!((ws3.monitor.as_deref(), ws3.default), (Some("DP-1"), true));
+        assert!(cfg.workspace_rules.iter().any(|r| r.workspace == "web"));
+    }
+
+    #[test]
     fn named_rule_toggle() {
         let (mut cfg, errors) = Config::parse_str(
             "windowrule {\n  name = Mode-Float\n  match:class = .*\n  float = on\n}\nwindowrule[mode-float]:enable = false",
@@ -2161,12 +2642,32 @@ dwindle:nope = 1",
         );
         assert_eq!(
             p("focusworkspaceoncurrentmonitor", "2"),
-            Ok(Dispatcher::Workspace(WsSel::Id(2)))
+            Ok(Dispatcher::FocusWorkspaceOnCurrentMonitor(WsSel::Id(2)))
         );
         assert_eq!(
             p("focusmonitor", "DP-1"),
-            Ok(Dispatcher::Noop("focusmonitor", "DP-1".into()))
+            Ok(Dispatcher::FocusMonitor("DP-1".into()))
         );
+        assert_eq!(
+            p("moveworkspacetomonitor", "3 HDMI-A-1"),
+            Ok(Dispatcher::MoveWorkspaceToMonitor(
+                "3".into(),
+                "HDMI-A-1".into()
+            ))
+        );
+        assert_eq!(
+            p("swapactiveworkspaces", "DP-1 DP-2"),
+            Ok(Dispatcher::SwapActiveWorkspaces(
+                "DP-1".into(),
+                "DP-2".into()
+            ))
+        );
+        assert_eq!(
+            p("movewindow", "mon:DP-2"),
+            Ok(Dispatcher::MoveWindowToMonitor("DP-2".into()))
+        );
+        assert!(p("focusmonitor", "").is_err());
+        assert!(p("swapactiveworkspaces", "DP-1").is_err());
         assert!(p("nosuchthing", "").is_err());
     }
 

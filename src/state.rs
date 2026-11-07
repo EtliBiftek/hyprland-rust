@@ -82,6 +82,7 @@ pub struct Hypr {
     pub keyboard_shortcuts_inhibit_state: KeyboardShortcutsInhibitState,
     pub pointer_constraints_state: PointerConstraintsState,
     pub relative_pointer_state: RelativePointerManagerState,
+    pub pointer_gestures_state: smithay::wayland::pointer_gestures::PointerGesturesState,
     pub xdg_foreign_state: XdgForeignState,
     pub session_lock_state: SessionLockManagerState,
     /// ext-idle-notify timers and idle-inhibit surfaces.
@@ -90,6 +91,10 @@ pub struct Hypr {
     /// wlr-foreign-toplevel-management and ext-foreign-toplevel-list.
     pub toplevels: crate::handlers::foreign_toplevel::ToplevelState,
     pub global_shortcuts: crate::handlers::global_shortcuts::GlobalShortcutsState,
+    /// Xwayland, the X11 window manager and override-redirect windows.
+    pub x11: crate::xwayland::XState,
+    /// hyprland protocols, capture, gamma, dmabuf, input method (see `handlers/extra.rs`).
+    pub extra: crate::handlers::extra::ExtraState,
     /// Last cursor image requested by a client (`cursor-shape` or a surface).
     pub cursor_status: CursorImageStatus,
     /// Session lock held: only `lock_surfaces` are drawn and get input.
@@ -116,6 +121,9 @@ pub struct Hypr {
 
     /// Config path, errors and autoreload bookkeeping.
     pub reload: crate::reload::ReloadState,
+
+    /// Effect renderer state (animations, ghosts, shaders).
+    pub fx: crate::render::FxState,
 }
 
 impl Hypr {
@@ -212,12 +220,17 @@ impl Hypr {
             keyboard_shortcuts_inhibit_state: KeyboardShortcutsInhibitState::new::<Self>(&dh),
             pointer_constraints_state: PointerConstraintsState::new::<Self>(&dh),
             relative_pointer_state: RelativePointerManagerState::new::<Self>(&dh),
+            pointer_gestures_state: smithay::wayland::pointer_gestures::PointerGesturesState::new::<
+                Self,
+            >(&dh),
             xdg_foreign_state: XdgForeignState::new::<Self>(&dh),
             session_lock_state,
             idle: IdleState::default(),
             screencopy: Default::default(),
             toplevels: crate::handlers::foreign_toplevel::ToplevelState::new(&dh),
             global_shortcuts: Default::default(),
+            x11: crate::xwayland::XState::new(&dh),
+            extra: crate::handlers::extra::ExtraState::new(&dh),
             cursor_status: CursorImageStatus::default_named(),
             session_locked: false,
             lock_surfaces: Vec::new(),
@@ -231,6 +244,7 @@ impl Hypr {
             session: None,
             ipc: crate::ipc::init(&event_loop.handle()),
             reload: Default::default(),
+            fx: Default::default(),
         };
         hypr.apply_input_config();
         hypr
@@ -314,6 +328,17 @@ impl Hypr {
 #[derive(Default)]
 pub struct ClientState {
     pub compositor_state: CompositorClientState,
+    /// Set for clients that connected through a wp-security-context listener.
+    pub security_context: Option<smithay::wayland::security_context::SecurityContext>,
+}
+
+impl ClientState {
+    /// False for sandboxed clients; used as the filter of privileged globals.
+    pub fn trusted(client: &smithay::reexports::wayland_server::Client) -> bool {
+        client
+            .get_data::<ClientState>()
+            .is_none_or(|d| d.security_context.is_none())
+    }
 }
 
 impl ClientData for ClientState {

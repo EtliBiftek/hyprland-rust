@@ -55,12 +55,7 @@ impl Hypr {
         self.workspaces[i].replace_in_layout(old, new);
         self.space.unmap_elem(old);
         if let (true, Some(g)) = (floating, geo) {
-            if let Some(t) = new.toplevel() {
-                t.with_pending_state(|s| s.size = Some(g.size));
-                if t.is_initial_configure_sent() {
-                    t.send_pending_configure();
-                }
-            }
+            crate::xwayland::request_size(new, g.loc, g.size);
             self.space.map_element(new.clone(), g.loc, false);
         }
     }
@@ -372,7 +367,7 @@ impl Hypr {
             .map(|t| t.window)
     }
 
-    pub fn groupbar_elements(&self) -> Vec<SolidColorRenderElement> {
+    pub fn groupbar_elements(&self, origin: Point<i32, Logical>) -> Vec<SolidColorRenderElement> {
         let gb = &self.config.group.groupbar;
         self.groupbar_tabs()
             .into_iter()
@@ -391,7 +386,7 @@ impl Hypr {
                 buf.update((t.rect.w, t.rect.h), color);
                 SolidColorRenderElement::from_buffer(
                     &buf,
-                    (t.rect.x, t.rect.y),
+                    (t.rect.x - origin.x, t.rect.y - origin.y),
                     1.0,
                     1.0,
                     Kind::Unspecified,

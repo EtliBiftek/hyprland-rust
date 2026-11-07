@@ -1,9 +1,8 @@
 use smithay::{
     backend::{
         renderer::{
-            damage::OutputDamageTracker,
-            element::{solid::SolidColorRenderElement, surface::WaylandSurfaceRenderElement},
-            gles::GlesRenderer,
+            damage::OutputDamageTracker, element::surface::WaylandSurfaceRenderElement,
+            gles::GlesRenderer, ImportDma,
         },
         winit::{self, WinitEvent},
     },
@@ -47,9 +46,10 @@ pub fn init_winit(
     );
     output.set_preferred(mode);
 
-    state.space.map_output(&output, (0, 0));
+    state.add_output(&output);
 
     let mut damage_tracker = OutputDamageTracker::from_output(&output);
+    state.init_dmabuf(backend.renderer().dmabuf_formats());
 
     std::env::set_var("WAYLAND_DISPLAY", &state.socket_name);
 
@@ -75,7 +75,11 @@ pub fn init_winit(
                 }
                 WinitEvent::Input(event) => state.process_input_event(event),
                 WinitEvent::Redraw => {
-                    let borders = state.border_elements();
+                    let elements = if state.session_locked {
+                        Vec::new()
+                    } else {
+                        crate::render::output_elements(state, backend.renderer(), &output)
+                    };
                     let age = backend.buffer_age().unwrap_or(0);
                     let result = {
                         let (renderer, mut framebuffer) = backend.bind().unwrap();
@@ -100,18 +104,15 @@ pub fn init_winit(
                             )
                             .unwrap()
                         } else {
-                            smithay::desktop::space::render_output::<_, SolidColorRenderElement, _, _>(
-                                &output,
-                                renderer,
-                                &mut framebuffer,
-                                1.0,
-                                age,
-                                [&state.space],
-                                &borders,
-                                &mut damage_tracker,
-                                [0.1, 0.1, 0.1, 1.0],
-                            )
-                            .unwrap()
+                            damage_tracker
+                                .render_output(
+                                    renderer,
+                                    &mut framebuffer,
+                                    age,
+                                    &elements,
+                                    [0.1, 0.1, 0.1, 1.0],
+                                )
+                                .unwrap()
                         }
                     };
                     // Nothing changed: skip the swap.

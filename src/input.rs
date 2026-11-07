@@ -3,15 +3,22 @@ use std::time::Duration;
 use smithay::{
     backend::{
         input::{
-            AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent,
-            KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
+            AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, GestureBeginEvent,
+            GestureEndEvent, GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _,
+            InputBackend, InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent,
+            PointerButtonEvent, PointerMotionEvent,
         },
         libinput::LibinputInputBackend,
         session::Session,
     },
     input::{
         keyboard::{xkb, Keycode, KeysymHandle, ModifiersState, XkbConfig},
-        pointer::{AxisFrame, ButtonEvent, MotionEvent, RelativeMotionEvent},
+        pointer::{
+            AxisFrame, ButtonEvent, GestureHoldBeginEvent, GestureHoldEndEvent,
+            GesturePinchBeginEvent, GesturePinchEndEvent, GesturePinchUpdateEvent,
+            GestureSwipeBeginEvent, GestureSwipeEndEvent, GestureSwipeUpdateEvent, MotionEvent,
+            RelativeMotionEvent,
+        },
     },
     reexports::{
         calloop::timer::{TimeoutAction, Timer},
@@ -24,9 +31,151 @@ use smithay::{
 
 use crate::{
     config::{AccelProfile, Dispatcher, Mods},
+    gestures::{Kind, Outcome, Tracker},
     selectors::WinSel,
     state::Hypr,
 };
+
+impl Hypr {
+    fn current_mods(&self) -> Mods {
+        let m = self
+            .seat
+            .get_keyboard()
+            .map(|k| k.modifier_state())
+            .unwrap_or_default();
+        Mods {
+            shift: m.shift,
+            ctrl: m.ctrl,
+            alt: m.alt,
+            logo: m.logo,
+        }
+    }
+
+    /// A touchpad gesture starts: ours if a `gesture =` for this finger count
+    /// (and modifiers) exists, else it goes to the client (pointer-gestures).
+    fn gesture_begin(&mut self, kind: Kind, fingers: u32, time: u32) {
+        let t = Tracker::new(kind, fingers, self.current_mods());
+        let ours = self.config.gestures.iter().any(|g| {
+            g.fingers == fingers
+                && g.mods == t.mods
+                && g.action != "unset"
+                && (g.direction.starts_with("pinch") == (kind == Kind::Pinch))
+        });
+        self.wm.gesture = Some((t, ours));
+        if ours {
+            return;
+        }
+        let pointer = self.seat.get_pointer().unwrap();
+        let serial = SERIAL_COUNTER.next_serial();
+        match kind {
+            Kind::Swipe => pointer.gesture_swipe_begin(
+                self,
+                &GestureSwipeBeginEvent {
+                    serial,
+                    time,
+                    fingers,
+                },
+            ),
+            Kind::Pinch => pointer.gesture_pinch_begin(
+                self,
+                &GesturePinchBeginEvent {
+                    serial,
+                    time,
+                    fingers,
+                },
+            ),
+        }
+    }
+
+    fn gesture_update(
+        &mut self,
+        delta: Point<f64, Logical>,
+        scale: Option<f64>,
+        rotation: f64,
+        time: u32,
+    ) {
+        let Some((mut t, ours)) = self.wm.gesture.take() else {
+            return;
+        };
+        t.dx += delta.x;
+        t.dy += delta.y;
+        if let Some(s) = scale {
+            t.scale = s;
+        }
+        if ours {
+            // `move` / `resize` follow the fingers.
+            if let Some(g) = t.live_action(&self.config.gestures) {
+                let name = if g.action == "move" {
+                    "moveactive"
+                } else {
+                    "resizeactive"
+                };
+                let f = g.scale as f64;
+                let arg = format!("{} {}", (delta.x * f).round(), (delta.y * f).round());
+                if let Ok(d) = Dispatcher::parse(name, &arg) {
+                    self.dispatch(&d);
+                }
+            }
+        } else {
+            let pointer = self.seat.get_pointer().unwrap();
+            match t.kind {
+                Kind::Swipe => {
+                    pointer.gesture_swipe_update(self, &GestureSwipeUpdateEvent { time, delta })
+                }
+                Kind::Pinch => pointer.gesture_pinch_update(
+                    self,
+                    &GesturePinchUpdateEvent {
+                        time,
+                        delta,
+                        scale: t.scale,
+                        rotation,
+                    },
+                ),
+            }
+        }
+        self.wm.gesture = Some((t, ours));
+    }
+
+    fn gesture_end(&mut self, cancelled: bool, time: u32) {
+        let Some((t, ours)) = self.wm.gesture.take() else {
+            return;
+        };
+        if !ours {
+            let pointer = self.seat.get_pointer().unwrap();
+            let serial = SERIAL_COUNTER.next_serial();
+            match t.kind {
+                Kind::Swipe => pointer.gesture_swipe_end(
+                    self,
+                    &GestureSwipeEndEvent {
+                        serial,
+                        time,
+                        cancelled,
+                    },
+                ),
+                Kind::Pinch => pointer.gesture_pinch_end(
+                    self,
+                    &GesturePinchEndEvent {
+                        serial,
+                        time,
+                        cancelled,
+                    },
+                ),
+            }
+            return;
+        }
+        if cancelled {
+            return;
+        }
+        match t.finish(&self.config.gestures, &self.config.swipe) {
+            Outcome::Dispatch(name, _) if name == "noop" => {}
+            Outcome::Dispatch(name, args) => match Dispatcher::parse(&name, &args) {
+                Ok(d) => self.dispatch(&d),
+                Err(e) => tracing::warn!("gesture: {e}"),
+            },
+            Outcome::Unhandled => {}
+        }
+    }
+}
 
 /// What a key event should do, decided inside the keyboard filter.
 #[derive(Default)]
@@ -131,12 +280,9 @@ impl Hypr {
             InputEvent::PointerMotion { event, .. } => {
                 // Relative motion (libinput mice): move and clamp to the output.
                 let pointer = self.seat.get_pointer().unwrap();
-                let mut pos = pointer.current_location() + event.delta();
-                if let Some(geo) = self.output_geometry() {
-                    let geo = geo.to_f64();
-                    pos.x = pos.x.clamp(geo.loc.x, geo.loc.x + geo.size.w - 1.0);
-                    pos.y = pos.y.clamp(geo.loc.y, geo.loc.y + geo.size.h - 1.0);
-                }
+                let from = pointer.current_location();
+                let pos = self.clamp_to_outputs(from, from + event.delta());
+                self.pointer_on_monitor(pos);
                 self.follow_mouse(pos);
                 let under = self.surface_under(pos);
                 // Relative motion goes to the client even when the pointer is clamped.
@@ -161,9 +307,10 @@ impl Hypr {
                 pointer.frame(self);
             }
             InputEvent::PointerMotionAbsolute { event, .. } => {
-                let output = self.space.outputs().next().unwrap();
-
-                let output_geo = self.space.output_geometry(output).unwrap();
+                // Absolute devices (winit, tablets) map to the focused output.
+                let Some(output_geo) = self.output_geometry() else {
+                    return;
+                };
 
                 let pos = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
 
@@ -171,6 +318,7 @@ impl Hypr {
 
                 let pointer = self.seat.get_pointer().unwrap();
 
+                self.pointer_on_monitor(pos);
                 self.follow_mouse(pos);
                 let under = self.surface_under(pos);
 
@@ -194,6 +342,9 @@ impl Hypr {
 
                 let button_state = event.state();
 
+                if ButtonState::Pressed == button_state {
+                    self.focus_grab_button(pointer.current_location());
+                }
                 if ButtonState::Pressed == button_state
                     && !pointer.is_grabbed()
                     && !self.session_locked
@@ -268,6 +419,49 @@ impl Hypr {
                 let pointer = self.seat.get_pointer().unwrap();
                 pointer.axis(self, frame);
                 pointer.frame(self);
+            }
+            InputEvent::GestureSwipeBegin { event, .. } => {
+                self.gesture_begin(Kind::Swipe, event.fingers(), event.time_msec())
+            }
+            InputEvent::GestureSwipeUpdate { event, .. } => {
+                self.gesture_update(event.delta(), None, 0.0, event.time_msec())
+            }
+            InputEvent::GestureSwipeEnd { event, .. } => {
+                self.gesture_end(event.cancelled(), event.time_msec())
+            }
+            InputEvent::GesturePinchBegin { event, .. } => {
+                self.gesture_begin(Kind::Pinch, event.fingers(), event.time_msec())
+            }
+            InputEvent::GesturePinchUpdate { event, .. } => self.gesture_update(
+                event.delta(),
+                Some(event.scale()),
+                event.rotation(),
+                event.time_msec(),
+            ),
+            InputEvent::GesturePinchEnd { event, .. } => {
+                self.gesture_end(event.cancelled(), event.time_msec())
+            }
+            InputEvent::GestureHoldBegin { event, .. } => {
+                let pointer = self.seat.get_pointer().unwrap();
+                pointer.gesture_hold_begin(
+                    self,
+                    &GestureHoldBeginEvent {
+                        serial: SERIAL_COUNTER.next_serial(),
+                        time: event.time_msec(),
+                        fingers: event.fingers(),
+                    },
+                );
+            }
+            InputEvent::GestureHoldEnd { event, .. } => {
+                let pointer = self.seat.get_pointer().unwrap();
+                pointer.gesture_hold_end(
+                    self,
+                    &GestureHoldEndEvent {
+                        serial: SERIAL_COUNTER.next_serial(),
+                        time: event.time_msec(),
+                        cancelled: event.cancelled(),
+                    },
+                );
             }
             _ => {}
         }
@@ -470,7 +664,7 @@ impl Hypr {
         let Some((_, w)) = self.find_window(sel) else {
             return;
         };
-        let Some(surface) = w.toplevel().map(|t| t.wl_surface().clone()) else {
+        let Some(surface) = crate::xwayland::wl_surface_of(&w) else {
             return;
         };
         self.forward_key(surface.clone(), code, state, time);

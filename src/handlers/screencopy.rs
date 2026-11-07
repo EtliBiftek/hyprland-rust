@@ -21,7 +21,7 @@ use smithay::{
         allocator::Fourcc,
         renderer::{
             damage::OutputDamageTracker,
-            element::{solid::SolidColorRenderElement, surface::WaylandSurfaceRenderElement},
+            element::surface::WaylandSurfaceRenderElement,
             gles::{GlesRenderer, GlesTexture},
             Bind, ExportMem, Offscreen,
         },
@@ -68,10 +68,57 @@ pub struct ScreencopyState {
     pending: Vec<Pending>,
 }
 
-struct Shot {
-    rgba: Vec<u8>,
-    w: usize,
-    h: usize,
+pub(crate) struct Shot {
+    pub rgba: Vec<u8>,
+    pub w: usize,
+    pub h: usize,
+}
+
+/// True for an Xrgb8888 shm buffer of exactly `w` x `h` that fits its pool.
+pub(crate) fn shm_matches(buffer: &WlBuffer, w: i32, h: i32) -> bool {
+    with_buffer_contents_mut(buffer, |_, len, d| {
+        d.format == wl_shm::Format::Xrgb8888
+            && d.width == w
+            && d.height == h
+            && d.stride >= w * 4
+            && d.offset >= 0
+            && d.offset as usize + d.stride as usize * h as usize <= len
+    })
+    .unwrap_or(false)
+}
+
+/// Writes `rect` of `shot` into a validated shm buffer (Xrgb8888). False if the pool is gone.
+pub(crate) fn copy_shot_to_shm(
+    buffer: &WlBuffer,
+    shot: &Shot,
+    rect: Rectangle<i32, smithay::utils::Physical>,
+) -> bool {
+    let r = rect;
+    with_buffer_contents_mut(buffer, |ptr, _, d| {
+        for row in 0..r.size.h as usize {
+            let y = r.loc.y as usize + row;
+            let y = if FLIP_ROWS { shot.h - 1 - y } else { y };
+            let start = (y * shot.w + r.loc.x as usize) * 4;
+            let src = &shot.rgba[start..start + r.size.w as usize * 4];
+            // Safety: bounds were validated by the caller against the pool length.
+            let dst = unsafe {
+                slice::from_raw_parts_mut(
+                    ptr.add(d.offset as usize + row * d.stride as usize),
+                    r.size.w as usize * 4,
+                )
+            };
+            // GL gives R,G,B,A; wl_shm Xrgb8888 is B,G,R,X in memory.
+            for (o, i) in dst
+                .as_chunks_mut::<4>()
+                .0
+                .iter_mut()
+                .zip(src.as_chunks::<4>().0)
+            {
+                *o = [i[2], i[1], i[0], 255];
+            }
+        }
+    })
+    .is_ok()
 }
 
 impl GlobalDispatch<ZwlrScreencopyManagerV1, ()> for Hypr {
@@ -183,16 +230,7 @@ impl Dispatch<ZwlrScreencopyFrameV1, FrameData> for Hypr {
             );
             return;
         }
-        let valid = with_buffer_contents_mut(&buffer, |_, len, d| {
-            d.format == wl_shm::Format::Xrgb8888
-                && d.width == rect.size.w
-                && d.height == rect.size.h
-                && d.stride >= rect.size.w * 4
-                && d.offset >= 0
-                && d.offset as usize + d.stride as usize * rect.size.h as usize <= len
-        })
-        .unwrap_or(false);
-        if !valid {
+        if !shm_matches(&buffer, rect.size.w, rect.size.h) {
             resource.post_error(
                 zwlr_screencopy_frame_v1::Error::InvalidBuffer,
                 "buffer must be an shm buffer matching the advertised format and size",
@@ -212,31 +250,7 @@ impl Dispatch<ZwlrScreencopyFrameV1, FrameData> for Hypr {
 impl Pending {
     fn finish(self, shot: &Shot, time: Duration) {
         let r = self.rect;
-        let ok = with_buffer_contents_mut(&self.buffer, |ptr, _, d| {
-            for row in 0..r.size.h as usize {
-                let y = r.loc.y as usize + row;
-                let y = if FLIP_ROWS { shot.h - 1 - y } else { y };
-                let start = (y * shot.w + r.loc.x as usize) * 4;
-                let src = &shot.rgba[start..start + r.size.w as usize * 4];
-                // Safety: bounds were validated in `copy` against the pool length.
-                let dst = unsafe {
-                    slice::from_raw_parts_mut(
-                        ptr.add(d.offset as usize + row * d.stride as usize),
-                        r.size.w as usize * 4,
-                    )
-                };
-                // GL gives R,G,B,A; wl_shm Xrgb8888 is B,G,R,X in memory.
-                for (o, i) in dst
-                    .as_chunks_mut::<4>()
-                    .0
-                    .iter_mut()
-                    .zip(src.as_chunks::<4>().0)
-                {
-                    *o = [i[2], i[1], i[0], 255];
-                }
-            }
-        })
-        .is_ok();
+        let ok = copy_shot_to_shm(&self.buffer, shot, r);
         if !ok {
             self.frame.failed();
             return;
@@ -257,11 +271,13 @@ impl Hypr {
         for p in self.screencopy.pending.drain(..) {
             p.frame.failed();
         }
+        self.capture_fail_all();
     }
 
     /// Serves the captures queued for `output`. Called by the backends after
     /// each frame, with the renderer that draws the output.
     pub fn screencopy_process(&mut self, renderer: &mut GlesRenderer, output: &Output) {
+        self.capture_process(renderer, output);
         let all = std::mem::take(&mut self.screencopy.pending);
         let (mine, rest): (Vec<_>, Vec<_>) = all.into_iter().partition(|p| &p.output == output);
         self.screencopy.pending = rest;
@@ -283,7 +299,7 @@ impl Hypr {
     }
 
     /// Renders the whole output into a texture and reads it back (RGBA).
-    fn render_shot(
+    pub(crate) fn render_shot(
         &mut self,
         renderer: &mut GlesRenderer,
         output: &Output,
@@ -312,19 +328,10 @@ impl Hypr {
             )
             .map_err(|e| format!("render: {e:?}"))?;
         } else {
-            let borders = self.border_elements();
-            render_output::<_, SolidColorRenderElement, _, _>(
-                output,
-                renderer,
-                &mut target,
-                1.0,
-                0,
-                [&self.space],
-                &borders,
-                &mut tracker,
-                clear,
-            )
-            .map_err(|e| format!("render: {e:?}"))?;
+            let elements = crate::render::output_elements(self, renderer, output);
+            tracker
+                .render_output(renderer, &mut target, 0, &elements, clear)
+                .map_err(|e| format!("render: {e:?}"))?;
         }
         let mapping = renderer
             .copy_framebuffer(

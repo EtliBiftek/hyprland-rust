@@ -44,7 +44,7 @@ impl WlrLayerShellHandler for Hypr {
         let Some(output) = wl_output
             .as_ref()
             .and_then(Output::from_resource)
-            .or_else(|| self.space.outputs().next().cloned())
+            .or_else(|| self.focused_output())
         else {
             surface.send_close();
             return;
@@ -201,7 +201,7 @@ impl Hypr {
         pos: Point<f64, Logical>,
         levels: [Layer; 2],
     ) -> Option<(LayerSurface, WlSurface, Point<f64, Logical>)> {
-        let output = self.space.outputs().next()?;
+        let output = self.space.output_under(pos).next()?;
         let origin = self.space.output_geometry(output)?.loc.to_f64();
         let map = layer_map_for_output(output);
         levels.into_iter().find_map(|level| {
@@ -239,6 +239,7 @@ impl Hypr {
     /// Frame callbacks for windows and layer surfaces on `output`.
     pub fn send_frames(&mut self, output: &Output) {
         self.sync_toplevels();
+        self.sync_ext_workspaces();
         let time = self.start_time.elapsed();
         self.space.elements().for_each(|window| {
             window.send_frame(output, time, Some(Duration::ZERO), |_, _| {

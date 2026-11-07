@@ -604,6 +604,7 @@ pub fn find_in_direction<T: PartialEq + Clone>(
 
 /// The four border rectangles (top, bottom, left, right) of width `b` drawn
 /// outside `r`; the top and bottom ones cover the corners.
+#[allow(dead_code)]
 pub fn border_sides(r: Rect, b: i32) -> [Rect; 4] {
     [
         Rect::new(r.x - b, r.y - b, r.w + 2 * b, b),

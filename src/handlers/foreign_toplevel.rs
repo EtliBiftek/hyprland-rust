@@ -11,6 +11,7 @@ use smithay::{
     delegate_foreign_toplevel_list,
     desktop::Window,
     reexports::{
+        wayland_protocols::ext::foreign_toplevel_list::v1::server::ext_foreign_toplevel_handle_v1::ExtForeignToplevelHandleV1,
         wayland_protocols_wlr::foreign_toplevel::v1::server::{
             zwlr_foreign_toplevel_handle_v1::{self, ZwlrForeignToplevelHandleV1},
             zwlr_foreign_toplevel_manager_v1::{self, ZwlrForeignToplevelManagerV1},
@@ -179,6 +180,8 @@ impl Dispatch<ZwlrForeignToplevelHandleV1, String> for Hypr {
             R::Close => {
                 if let Some(t) = window.toplevel() {
                     t.send_close();
+                } else if let Some(x) = window.x11_surface() {
+                    let _ = x.close();
                 }
             }
             R::SetMaximized => state.set_wm_slot(&window, false, true),
@@ -191,6 +194,23 @@ impl Dispatch<ZwlrForeignToplevelHandleV1, String> for Hypr {
 }
 
 impl Hypr {
+    /// Window behind a wlr-foreign-toplevel handle (its data is the window address).
+    pub fn window_for_wlr_handle(&self, h: &ZwlrForeignToplevelHandleV1) -> Option<Window> {
+        let addr = h.data::<String>()?;
+        self.find_window(&WinSel::Address(addr.to_ascii_lowercase()))
+            .map(|(_, w)| w)
+    }
+
+    /// Window behind an ext-foreign-toplevel-list handle.
+    pub fn window_for_ext_handle(&self, h: &ExtForeignToplevelHandleV1) -> Option<Window> {
+        let id = ForeignToplevelHandle::from_resource(h)?.identifier();
+        self.toplevels
+            .entries
+            .iter()
+            .find(|e| e.ext.identifier() == id)
+            .map(|e| e.window.clone())
+    }
+
     /// Sets or clears the fullscreen/maximized slot of the window's workspace.
     fn set_wm_slot(&mut self, w: &Window, fullscreen: bool, on: bool) {
         let Some(i) = self.ws_of(w) else {
