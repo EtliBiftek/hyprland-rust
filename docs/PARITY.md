@@ -708,14 +708,14 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 |------|--------|-------|
 | `ext_background_effect_manager_v1` | none | Not registered by the repo. |
 | `ext_data_control_manager_v1` | none | Not registered by the repo. |
-| `ext_foreign_toplevel_list_v1` | none | Not registered by the repo. |
+| `ext_foreign_toplevel_list_v1` | partial | `handlers/foreign_toplevel.rs` (Smithay list, synced every frame). No test client. |
 | `ext_idle_notifier_v1` | none | Not registered by the repo. |
 | `ext_image_copy_capture_manager_v1` | none | Not registered by the repo. |
 | `ext_session_lock_manager_v1` | none | Not registered by the repo. |
 | `ext_workspace_manager_v1` | none | Not registered by the repo. |
 | `hyprland_ctm_control_manager_v1` | none | Not registered by the repo. |
 | `hyprland_focus_grab_manager_v1` | none | Not registered by the repo. |
-| `hyprland_global_shortcuts_manager_v1` | none | Not registered by the repo. |
+| `hyprland_global_shortcuts_manager_v1` | partial | `handlers/global_shortcuts.rs` + `global` dispatcher (press on bind press, release on key release; `hyprctl dispatch` sends pressed only). No test client. |
 | `hyprland_input_capture_manager_v1` | none | Not registered by the repo. |
 | `hyprland_lock_notifier_v1` | none | Not registered by the repo. |
 | `hyprland_surface_manager_v1` | none | Not registered by the repo. |
@@ -753,12 +753,12 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `xwayland_shell_v1` | none | Not registered by the repo. |
 | `xx_hotkey_manager_v1` | none | Not registered by the repo. |
 | `zwlr_data_control_manager_v1` | none | Not registered by the repo. |
-| `zwlr_foreign_toplevel_manager_v1` | none | Not registered by the repo. |
+| `zwlr_foreign_toplevel_manager_v1` | tested | `handlers/foreign_toplevel.rs`, `tests/foreign-toplevel.sh` (wlrctl list/fullscreen/close). Minimize and set_rectangle ignored. |
 | `zwlr_gamma_control_manager_v1` | none | Not registered by the repo. |
 | `zwlr_layer_shell_v1` | tested | `tests/layer-shell.sh` (waybar). |
-| `zwlr_output_manager_v1` | none | Not registered by the repo. |
+| `zwlr_output_manager_v1` | partial | `handlers/output_management.rs`: read-only heads announced at bind (`wlr-randr` in `tests/foreign-toplevel.sh`); apply/test answer `failed`. |
 | `zwlr_output_power_manager_v1` | none | Not registered by the repo. |
-| `zwlr_screencopy_manager_v1` | none | Not registered by the repo. |
+| `zwlr_screencopy_manager_v1` | tested | `handlers/screencopy.rs`, `tests/screencopy.sh` (grim, winit in Xvfb). shm only, no cursor overlay, headless answers `failed`. |
 | `zwlr_virtual_pointer_manager_v1` | none | Not registered by the repo. |
 | `zwp_idle_inhibit_manager_v1` | none | Not registered by the repo. |
 | `zwp_input_method_manager_v2` | none | Not registered by the repo. |

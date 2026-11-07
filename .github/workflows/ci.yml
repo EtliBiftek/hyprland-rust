@@ -15,7 +15,7 @@ jobs:
           sudo apt-get install -y libwayland-dev libxkbcommon-dev libudev-dev \
             libinput-dev libseat-dev libgbm-dev libegl-dev libdrm-dev libgles-dev \
             pkg-config xvfb xdotool weston waybar dbus gdb libxkbcommon-x11-0 libgl1-mesa-dri \
-            wl-clipboard
+            wl-clipboard grim wlrctl wlr-randr
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
@@ -47,3 +47,9 @@ jobs:
       - name: Lua config test (headless + hyprland.lua)
         timeout-minutes: 3
         run: sh tests/lua-config.sh
+      - name: Screencopy test (winit in Xvfb + grim)
+        timeout-minutes: 3
+        run: sh tests/screencopy.sh
+      - name: Foreign toplevel and output management test (headless + wlrctl)
+        timeout-minutes: 3
+        run: sh tests/foreign-toplevel.sh

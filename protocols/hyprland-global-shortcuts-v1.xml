@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Re-created from the hyprland-protocols interface description (BSD-3-Clause, Vaxry). -->
+<protocol name="hyprland_global_shortcuts_v1">
+  <description summary="registering global shortcuts">
+    This protocol allows a client to register triggerable actions,
+    meant to be global shortcuts.
+  </description>
+
+  <interface name="hyprland_global_shortcuts_manager_v1" version="1">
+    <description summary="manager for shortcuts">
+      This object is a manager which offers requests to create global shortcuts.
+    </description>
+
+    <request name="register_shortcut">
+      <description summary="register a shortcut">
+        Register a new global shortcut. The keybinding is dealt with by the
+        compositor. A duplicate app_id + id combination is ignored.
+      </description>
+      <arg name="shortcut" type="new_id" interface="hyprland_global_shortcut_v1"/>
+      <arg name="id" type="string" summary="a unique id for the shortcut"/>
+      <arg name="app_id" type="string" summary="app_id of the shortcut"/>
+      <arg name="description" type="string" summary="a description of the shortcut action"/>
+      <arg name="trigger_description" type="string" summary="a preferred trigger for the shortcut"/>
+    </request>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the manager">
+        All objects created by the manager remain valid until destroyed.
+      </description>
+    </request>
+  </interface>
+
+  <interface name="hyprland_global_shortcut_v1" version="1">
+    <description summary="a shortcut">
+      This object represents a single shortcut.
+    </description>
+
+    <event name="pressed">
+      <description summary="keystroke pressed">The keystroke was pressed.</description>
+      <arg name="tv_sec_hi" type="uint" summary="high 32 bits of the seconds part of the timestamp"/>
+      <arg name="tv_sec_lo" type="uint" summary="low 32 bits of the seconds part of the timestamp"/>
+      <arg name="tv_nsec" type="uint" summary="nanoseconds part of the timestamp"/>
+    </event>
+
+    <event name="released">
+      <description summary="keystroke released">The keystroke was released.</description>
+      <arg name="tv_sec_hi" type="uint" summary="high 32 bits of the seconds part of the timestamp"/>
+      <arg name="tv_sec_lo" type="uint" summary="low 32 bits of the seconds part of the timestamp"/>
+      <arg name="tv_nsec" type="uint" summary="nanoseconds part of the timestamp"/>
+    </event>
+
+    <request name="destroy" type="destructor">
+      <description summary="destroy the shortcut">Destroys the shortcut.</description>
+    </request>
+  </interface>
+</protocol>

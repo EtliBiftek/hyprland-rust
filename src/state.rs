@@ -7,6 +7,7 @@ use smithay::{
     reexports::{
         calloop::{generic::Generic, EventLoop, Interest, LoopSignal, Mode, PostAction},
         wayland_protocols::ext::idle_notify::v1::server::ext_idle_notifier_v1::ExtIdleNotifierV1,
+        wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1,
         wayland_server::{
             backend::{ClientData, ClientId, DisconnectReason},
             protocol::wl_surface::WlSurface,
@@ -85,6 +86,10 @@ pub struct Hypr {
     pub session_lock_state: SessionLockManagerState,
     /// ext-idle-notify timers and idle-inhibit surfaces.
     pub idle: IdleState,
+    pub screencopy: crate::handlers::screencopy::ScreencopyState,
+    /// wlr-foreign-toplevel-management and ext-foreign-toplevel-list.
+    pub toplevels: crate::handlers::foreign_toplevel::ToplevelState,
+    pub global_shortcuts: crate::handlers::global_shortcuts::GlobalShortcutsState,
     /// Last cursor image requested by a client (`cursor-shape` or a surface).
     pub cursor_status: CursorImageStatus,
     /// Session lock held: only `lock_surfaces` are drawn and get input.
@@ -149,6 +154,9 @@ impl Hypr {
         let presentation_state = PresentationState::new::<Self>(&dh, 1);
         let session_lock_state = SessionLockManagerState::new::<Self, _>(&dh, |_| true);
         dh.create_global::<Self, ExtIdleNotifierV1, _>(2, ());
+        dh.create_global::<Self, ZwlrScreencopyManagerV1, _>(3, ());
+        crate::handlers::output_management::init(&dh);
+        crate::handlers::global_shortcuts::init(&dh);
 
         // A seat is a group of keyboards, pointer and touch devices.
         // A seat typically has a pointer and maintains a keyboard focus and a pointer focus.
@@ -207,6 +215,9 @@ impl Hypr {
             xdg_foreign_state: XdgForeignState::new::<Self>(&dh),
             session_lock_state,
             idle: IdleState::default(),
+            screencopy: Default::default(),
+            toplevels: crate::handlers::foreign_toplevel::ToplevelState::new(&dh),
+            global_shortcuts: Default::default(),
             cursor_status: CursorImageStatus::default_named(),
             session_locked: false,
             lock_surfaces: Vec::new(),

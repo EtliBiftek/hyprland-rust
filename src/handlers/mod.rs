@@ -1,6 +1,10 @@
 mod compositor;
+pub mod foreign_toplevel;
+pub mod global_shortcuts;
 pub mod layer_shell;
+pub mod output_management;
 pub mod protocols;
+pub mod screencopy;
 mod xdg_shell;
 
 use crate::Hypr;
