@@ -117,6 +117,8 @@ impl Toggle {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Dispatcher {
     Exec(String),
+    /// A Lua function bind of `hyprland.lua` (`__lua, N`, see `lua_config.rs`).
+    Lua(usize),
     KillActive,
     ForceKillActive,
     Exit,
@@ -315,6 +317,7 @@ impl Dispatcher {
             Dispatcher::MoveCursorToCorner(c) => ("movecursortocorner", c.to_string()),
             Dispatcher::MoveCursor(x, y) => ("movecursor", format!("{x} {y}")),
             Dispatcher::TogglePseudo => ("togglepseudo", String::new()),
+            Dispatcher::Lua(i) => ("__lua", i.to_string()),
             Dispatcher::SetProp(s, p, v) => (
                 "setprop",
                 format!(
@@ -438,6 +441,11 @@ impl Dispatcher {
                 }
             }
             "togglepseudo" | "pseudo" => Dispatcher::TogglePseudo,
+            "__lua" => Dispatcher::Lua(
+                arg.trim()
+                    .parse()
+                    .map_err(|_| format!("__lua: expected a callback number, got `{arg}`"))?,
+            ),
             "setprop" => {
                 let (sel, rest) = split_word(arg);
                 let (prop, value) = split_word(rest);
@@ -908,6 +916,8 @@ pub struct Config {
     pub exec: Vec<String>,
     /// `windowrule` / `layerrule` (see `rules.rs`).
     pub rules: crate::rules::Rules,
+    /// The live `hyprland.lua` runtime (function binds, `hl.on`, `hl.timer`).
+    pub lua: crate::lua_config::Handle,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -947,9 +957,10 @@ impl Config {
         if path.extension().is_some_and(|e| e == "lua") {
             let dir = path.parent().unwrap_or(Path::new("."));
             let name = path.display().to_string();
-            match crate::lua_config::to_hyprlang(&text, dir, &name) {
-                Ok((hyprlang, lua_errors)) => {
+            match crate::lua_config::Runtime::load(&text, dir, &name) {
+                Ok((rt, hyprlang, lua_errors)) => {
                     parser.parse(&hyprlang, path);
+                    parser.config.lua = crate::lua_config::Handle(Some(std::rc::Rc::new(rt)));
                     parser
                         .errors
                         .extend(lua_errors.into_iter().map(|message| ConfigError {

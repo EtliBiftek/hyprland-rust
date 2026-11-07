@@ -616,6 +616,8 @@ pub struct Ipc {
     dir: Option<PathBuf>,
     events: Vec<UnixStream>,
     last_active: Option<String>,
+    /// Events since the last loop iteration, for `hl.on` (`lua_host.rs`).
+    pub lua_events: Vec<(String, String)>,
     /// Backend name shown in `monitors` (`winit`, `tty`, `headless`).
     pub backend: String,
 }
@@ -623,6 +625,7 @@ pub struct Ipc {
 impl Ipc {
     /// Sends `EVENT>>DATA\n` to all event clients, dropping dead ones.
     pub fn emit(&mut self, event: &str, data: &str) {
+        self.lua_events.push((event.into(), data.into()));
         let line = format!("{event}>>{data}\n");
         self.events
             .retain_mut(|s| s.write_all(line.as_bytes()).is_ok());
@@ -747,6 +750,7 @@ pub fn init(handle: &LoopHandle<'_, CalloopData>) -> Ipc {
         dir: None,
         events: Vec::new(),
         last_active: None,
+        lua_events: Vec::new(),
         backend: String::new(),
     };
     let runtime = std::env::var_os("XDG_RUNTIME_DIR")

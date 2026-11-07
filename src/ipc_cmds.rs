@@ -300,6 +300,16 @@ fn eval(h: &mut Hypr, code: &str) -> String {
     if code.is_empty() {
         return "not enough args".into();
     }
+    // A hyprland.lua config: run in its live state, as Hyprland does.
+    if !code.starts_with("hl.dsp.") {
+        if let Some(r) = h.lua_eval(code) {
+            return match r {
+                Ok(v) if v.is_empty() => "ok".into(),
+                Ok(v) => v,
+                Err(e) => e,
+            };
+        }
+    }
     if code.starts_with("hl.dsp.") {
         let (name, arg) = match lua_config::eval_dispatch(code) {
             Ok(p) => p,

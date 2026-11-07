@@ -53,3 +53,6 @@ jobs:
       - name: Popular dotfiles load without config errors
         timeout-minutes: 5
         run: sh tests/dots-conf.sh
+      - name: Popular hyprland.lua dotfiles load and run
+        timeout-minutes: 6
+        run: sh tests/dots-lua.sh

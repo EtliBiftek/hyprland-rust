@@ -14,6 +14,7 @@ mod ipc;
 mod ipc_cmds;
 mod layout;
 mod lua_config;
+mod lua_host;
 mod master;
 mod options;
 mod reload;
@@ -171,7 +172,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         wm::spawn(cmd);
     }
 
-    event_loop.run(None, &mut data, move |_| {})?;
+    data.state.lua_loaded();
+    data.state.lua_fire("hyprland.start", &[]);
+
+    event_loop.run(None, &mut data, |data| data.state.lua_drain())?;
 
     Ok(())
 }

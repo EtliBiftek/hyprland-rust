@@ -1181,7 +1181,11 @@ impl Hypr {
             Dispatcher::Exec(cmd) => spawn(cmd),
             Dispatcher::KillActive => self.kill_window(None, false),
             Dispatcher::ForceKillActive => self.kill_window(None, true),
-            Dispatcher::Exit => self.loop_signal.stop(),
+            Dispatcher::Exit => {
+                self.lua_fire("hyprland.shutdown", &[]);
+                self.loop_signal.stop()
+            }
+            Dispatcher::Lua(id) => self.lua_bind(*id),
             Dispatcher::Workspace(sel) => self.select_workspace(sel),
             Dispatcher::MoveToWorkspace(sel) => self.move_to_workspace(sel, false),
             Dispatcher::MoveToWorkspaceSilent(sel) => self.move_to_workspace(sel, true),
