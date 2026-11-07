@@ -322,6 +322,7 @@ impl Anim {
         }
     }
 
+    #[allow(dead_code)]
     pub fn target(&self) -> f32 {
         self.to
     }
@@ -344,6 +345,7 @@ impl Anim {
     }
 
     /// Retarget from the current value (keeps the motion continuous).
+    #[allow(dead_code)]
     pub fn retarget(&mut self, to: f32, now: f64, r: &Resolved) {
         *self = Anim::new(self.value(now), to, now, r);
     }
@@ -441,6 +443,7 @@ impl Gradient {
 
 /// Position (0..=1) of pixel `(x, y)` of a `w` by `h` box along a gradient of
 /// `angle` degrees (0 = left to right, 90 = bottom to top).
+#[allow(dead_code)]
 pub fn gradient_pos(x: f32, y: f32, w: f32, h: f32, angle: f32) -> f32 {
     let a = angle.to_radians();
     let (dx, dy) = (a.cos(), -a.sin());

@@ -68,7 +68,7 @@ fn pass(
         uniforms,
     )
     .map_err(|e| format!("blur pass: {e:?}"))?;
-    frame.finish().map_err(|e| format!("finish: {e:?}"))?;
+    let _sync = frame.finish().map_err(|e| format!("finish: {e:?}"))?;
     Ok(())
 }
 

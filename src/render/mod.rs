@@ -102,7 +102,6 @@ struct Props {
     shadow: Option<ShadowP>,
     /// Blur threshold on the surface alpha (-1: whole rect).
     blur: Option<f32>,
-    focused: bool,
 }
 
 #[derive(Clone)]
@@ -427,7 +426,7 @@ fn compose(ctx: &Ctx, fw: &mut FxWin, rect: FRect, alpha: f32, blur: bool) -> Ve
     out
 }
 
-fn flatten<'a>(groups: &'a [Vec<FxElement>]) -> Vec<&'a FxElement> {
+fn flatten(groups: &[Vec<FxElement>]) -> Vec<&FxElement> {
     groups.iter().rev().flatten().collect()
 }
 
@@ -635,7 +634,6 @@ fn window_group(
         grad,
         shadow,
         blur: want_blur.then_some(-1.0),
-        focused: i.focused,
     };
 
     let mut items: Vec<FxElement> = popup_elems(
@@ -676,11 +674,7 @@ fn window_group(
     items
 }
 
-fn flatten_below<'a>(
-    groups: &'a [Vec<FxElement>],
-    lower_n: usize,
-    xray: bool,
-) -> Vec<&'a FxElement> {
+fn flatten_below(groups: &[Vec<FxElement>], lower_n: usize, xray: bool) -> Vec<&FxElement> {
     flatten(
         &groups[..if xray {
             lower_n.min(groups.len())
@@ -955,8 +949,8 @@ pub fn output_elements(h: &mut Hypr, r: &mut GlesRenderer, output: &Output) -> V
         }
         groups.push(items);
     };
-    for idx in 0..layers.len() {
-        if matches!(layers[idx].2, Layer::Background | Layer::Bottom) {
+    for (idx, lay) in layers.iter().enumerate() {
+        if matches!(lay.2, Layer::Background | Layer::Bottom) {
             layer_group(&mut ctx, r, &mut groups, 0, idx);
         }
     }
@@ -973,13 +967,12 @@ pub fn output_elements(h: &mut Hypr, r: &mut GlesRenderer, output: &Output) -> V
         let items = ghost_group(&mut ctx, g);
         groups.push(items);
     }
-    for idx in 0..layers.len() {
-        if matches!(layers[idx].2, Layer::Top | Layer::Overlay) {
+    for (idx, lay) in layers.iter().enumerate() {
+        if matches!(lay.2, Layer::Top | Layer::Overlay) {
             layer_group(&mut ctx, r, &mut groups, lower_n, idx);
         }
     }
     let animating = ctx.animating;
-    drop(ctx);
 
     // Windows that disappeared: closing windows become ghosts.
     let fx = &mut h.fx;
