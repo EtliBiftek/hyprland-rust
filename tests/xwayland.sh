@@ -152,7 +152,7 @@ pkill -f "x11-win.py or" || true
 WL=$(ls "$T" | grep -E '^wayland-[0-9]+$' | head -n 1)
 [ -n "$WL" ] || fail "no wayland socket"
 echo from-wayland | WAYLAND_DISPLAY="$WL" wl-copy || fail "wl-copy"
-got=$(DISPLAY="$XD" timeout 5 xclip -selection clipboard -o) || fail "xclip -o failed"
+got=$(DISPLAY="$XD" timeout 5 xclip -selection clipboard -o -t UTF8_STRING 2>/dev/null || DISPLAY="$XD" timeout 5 xclip -selection clipboard -o -t STRING) || fail "xclip -o failed"
 [ "$got" = "from-wayland" ] || fail "wayland->x11 clipboard: got '$got'"
 pkill -x wl-copy || true
 printf from-x11 | DISPLAY="$XD" xclip -selection clipboard -i || fail "xclip -i"
