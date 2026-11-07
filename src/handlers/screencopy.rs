@@ -21,7 +21,7 @@ use smithay::{
         allocator::Fourcc,
         renderer::{
             damage::OutputDamageTracker,
-            element::{solid::SolidColorRenderElement, surface::WaylandSurfaceRenderElement},
+            element::surface::WaylandSurfaceRenderElement,
             gles::{GlesRenderer, GlesTexture},
             Bind, ExportMem, Offscreen,
         },
@@ -328,19 +328,10 @@ impl Hypr {
             )
             .map_err(|e| format!("render: {e:?}"))?;
         } else {
-            let borders = self.border_elements();
-            render_output::<_, SolidColorRenderElement, _, _>(
-                output,
-                renderer,
-                &mut target,
-                1.0,
-                0,
-                [&self.space],
-                &borders,
-                &mut tracker,
-                clear,
-            )
-            .map_err(|e| format!("render: {e:?}"))?;
+            let elements = crate::render::output_elements(self, renderer, output);
+            tracker
+                .render_output(renderer, &mut target, 0, &elements, clear)
+                .map_err(|e| format!("render: {e:?}"))?;
         }
         let mapping = renderer
             .copy_framebuffer(

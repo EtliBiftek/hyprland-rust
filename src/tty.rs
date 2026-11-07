@@ -25,8 +25,7 @@ use smithay::{
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             element::{
-                memory::MemoryRenderBufferRenderElement, solid::SolidColorRenderElement,
-                surface::WaylandSurfaceRenderElement,
+                memory::MemoryRenderBufferRenderElement, surface::WaylandSurfaceRenderElement,
             },
             gles::GlesRenderer,
             ImportDma,
@@ -34,7 +33,6 @@ use smithay::{
         session::{libseat::LibSeatSession, Event as SessionEvent, Session},
         udev::{all_gpus, primary_gpu, UdevBackend, UdevEvent},
     },
-    desktop::space::{space_render_elements, SpaceRenderElements},
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
         calloop::{
@@ -57,8 +55,7 @@ use crate::{
 
 smithay::backend::renderer::element::render_elements! {
     pub TtyElement<=GlesRenderer>;
-    Space=SpaceRenderElements<GlesRenderer, WaylandSurfaceRenderElement<GlesRenderer>>,
-    Solid=SolidColorRenderElement,
+    Fx=crate::render::FxElement,
     Surface=WaylandSurfaceRenderElement<GlesRenderer>,
     Cursor=MemoryRenderBufferRenderElement<GlesRenderer>,
 }
@@ -441,16 +438,8 @@ fn render(data: &mut CalloopData, crtc: crtc::Handle) {
         let lock = state.lock_elements(&mut tty.renderer);
         elements.extend(lock.into_iter().map(TtyElement::Surface));
     } else {
-        elements.extend(
-            state
-                .border_elements_for(&output)
-                .into_iter()
-                .map(TtyElement::Solid),
-        );
-        match space_render_elements(&mut tty.renderer, [&state.space], &output, 1.0) {
-            Ok(e) => elements.extend(e.into_iter().map(TtyElement::Space)),
-            Err(e) => tracing::warn!("no output mode: {e:?}"),
-        }
+        let fx = crate::render::output_elements(state, &mut tty.renderer, &output);
+        elements.extend(fx.into_iter().map(TtyElement::Fx));
     }
 
     let out = &mut tty.outputs[idx];

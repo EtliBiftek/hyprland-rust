@@ -16,7 +16,7 @@ jobs:
             libinput-dev libseat-dev libgbm-dev libegl-dev libdrm-dev libgles-dev \
             pkg-config xvfb xdotool weston waybar dbus gdb libxkbcommon-x11-0 libgl1-mesa-dri \
             wl-clipboard grim wlrctl wlr-randr xwayland x11-apps xterm xclip \
-            xfonts-base python3-xlib seatd wayland-utils wlsunset wtype wev
+            xfonts-base python3-xlib seatd wayland-utils wlsunset wtype wev wayland-protocols
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
@@ -57,6 +57,9 @@ jobs:
       - name: Popular hyprland.lua dotfiles load and run
         timeout-minutes: 6
         run: sh tests/dots-lua.sh
+      - name: Render effects test (winit in Xvfb + grim)
+        timeout-minutes: 4
+        run: sh tests/render-fx.sh
       - name: Screencopy test (winit in Xvfb + grim)
         timeout-minutes: 3
         run: sh tests/screencopy.sh

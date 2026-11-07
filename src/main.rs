@@ -4,6 +4,7 @@
 
 #![allow(irrefutable_let_patterns)]
 
+mod animation;
 mod config;
 mod cursor;
 mod gestures;
@@ -21,6 +22,7 @@ mod master;
 mod monitors;
 mod options;
 mod reload;
+mod render;
 mod rules;
 mod selectors;
 mod state;

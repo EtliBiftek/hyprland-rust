@@ -630,6 +630,8 @@ pub struct General {
     /// RGBA, 0.0-1.0
     pub active_border_color: [f32; 4],
     pub inactive_border_color: [f32; 4],
+    pub active_border: crate::animation::Gradient,
+    pub inactive_border: crate::animation::Gradient,
     /// `general:layout`: `dwindle` or `master`.
     pub layout: String,
 }
@@ -643,6 +645,8 @@ impl Default for General {
             border_size: 1,
             active_border_color: [1.0, 1.0, 1.0, 1.0],
             inactive_border_color: [0.27, 0.27, 0.27, 1.0],
+            active_border: crate::animation::Gradient::solid([1.0, 1.0, 1.0, 1.0]),
+            inactive_border: crate::animation::Gradient::solid([0.27, 0.27, 0.27, 1.0]),
             layout: "dwindle".into(),
         }
     }
@@ -886,9 +890,146 @@ impl Default for GroupCfg {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
+pub struct Blur {
+    pub enabled: bool,
+    pub size: i32,
+    pub passes: i32,
+    pub ignore_opacity: bool,
+    pub new_optimizations: bool,
+    pub xray: bool,
+    pub noise: f32,
+    pub contrast: f32,
+    pub brightness: f32,
+    pub vibrancy: f32,
+    pub vibrancy_darkness: f32,
+    pub special: bool,
+    pub popups: bool,
+    pub popups_ignorealpha: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Shadow {
+    pub enabled: bool,
+    pub range: i32,
+    pub render_power: i32,
+    pub sharp: bool,
+    pub ignore_window: bool,
+    pub color: [f32; 4],
+    /// Unset: same as `color`.
+    pub color_inactive: Option<[f32; 4]>,
+    pub offset: (f32, f32),
+    pub scale: f32,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Decoration {
     pub rounding: i32,
+    pub rounding_power: f32,
+    pub active_opacity: f32,
+    pub inactive_opacity: f32,
+    pub fullscreen_opacity: f32,
+    pub dim_inactive: bool,
+    pub dim_strength: f32,
+    pub dim_special: f32,
+    pub dim_around: f32,
+    pub blur: Blur,
+    pub shadow: Shadow,
+}
+
+impl Default for Decoration {
+    fn default() -> Self {
+        Self {
+            rounding: 0,
+            rounding_power: 2.0,
+            active_opacity: 1.0,
+            inactive_opacity: 1.0,
+            fullscreen_opacity: 1.0,
+            dim_inactive: false,
+            dim_strength: 0.5,
+            dim_special: 0.2,
+            dim_around: 0.4,
+            blur: Blur {
+                enabled: true,
+                size: 8,
+                passes: 1,
+                ignore_opacity: true,
+                new_optimizations: true,
+                xray: false,
+                noise: 0.0117,
+                contrast: 0.8916,
+                brightness: 0.8172,
+                vibrancy: 0.1696,
+                vibrancy_darkness: 0.0,
+                special: false,
+                popups: false,
+                popups_ignorealpha: 0.2,
+            },
+            shadow: Shadow {
+                enabled: true,
+                range: 4,
+                render_power: 3,
+                sharp: false,
+                ignore_window: true,
+                color: argb(0xee1a1a1a),
+                color_inactive: None,
+                offset: (0.0, 0.0),
+                scale: 1.0,
+            },
+        }
+    }
+}
+
+impl Decoration {
+    /// Sets `decoration:*` option `key` (without the prefix). `Ok(false)`: unknown.
+    fn set(&mut self, key: &str, v: &str) -> Result<bool, String> {
+        let b = &mut self.blur;
+        let s = &mut self.shadow;
+        match key {
+            "rounding" => self.rounding = parse_int(v)?.max(0),
+            "rounding_power" => self.rounding_power = parse_float(v)?.clamp(1.0, 10.0),
+            "active_opacity" => self.active_opacity = parse_float(v)?.clamp(0.0, 1.0),
+            "inactive_opacity" => self.inactive_opacity = parse_float(v)?.clamp(0.0, 1.0),
+            "fullscreen_opacity" => self.fullscreen_opacity = parse_float(v)?.clamp(0.0, 1.0),
+            "dim_inactive" => self.dim_inactive = parse_bool(v)?,
+            "dim_strength" => self.dim_strength = parse_float(v)?.clamp(0.0, 1.0),
+            "dim_special" => self.dim_special = parse_float(v)?.clamp(0.0, 1.0),
+            "dim_around" => self.dim_around = parse_float(v)?.clamp(0.0, 1.0),
+            "blur:enabled" => b.enabled = parse_bool(v)?,
+            "blur:size" => b.size = parse_int(v)?.clamp(1, 100),
+            "blur:passes" => b.passes = parse_int(v)?.clamp(1, 8),
+            "blur:ignore_opacity" => b.ignore_opacity = parse_bool(v)?,
+            "blur:new_optimizations" => b.new_optimizations = parse_bool(v)?,
+            "blur:xray" => b.xray = parse_bool(v)?,
+            "blur:noise" => b.noise = parse_float(v)?.clamp(0.0, 1.0),
+            "blur:contrast" => b.contrast = parse_float(v)?.clamp(0.0, 2.0),
+            "blur:brightness" => b.brightness = parse_float(v)?.clamp(0.0, 2.0),
+            "blur:vibrancy" => b.vibrancy = parse_float(v)?.clamp(0.0, 1.0),
+            "blur:vibrancy_darkness" => b.vibrancy_darkness = parse_float(v)?.clamp(0.0, 1.0),
+            "blur:special" => b.special = parse_bool(v)?,
+            "blur:popups" => b.popups = parse_bool(v)?,
+            "blur:popups_ignorealpha" => b.popups_ignorealpha = parse_float(v)?.clamp(0.0, 1.0),
+            "shadow:enabled" => s.enabled = parse_bool(v)?,
+            "shadow:range" => s.range = parse_int(v)?.max(0),
+            "shadow:render_power" => s.render_power = parse_int(v)?.clamp(1, 4),
+            "shadow:sharp" => s.sharp = parse_bool(v)?,
+            "shadow:ignore_window" => s.ignore_window = parse_bool(v)?,
+            "shadow:color" => s.color = parse_color(v)?,
+            "shadow:color_inactive" => s.color_inactive = Some(parse_color(v)?),
+            "shadow:scale" => s.scale = parse_float(v)?.clamp(0.0, 1.0),
+            "shadow:offset" => {
+                let mut it = v.split_whitespace();
+                let mut n = || {
+                    it.next()
+                        .ok_or_else(|| format!("invalid vec2 `{v}`"))
+                        .and_then(parse_float)
+                };
+                s.offset = (n()?, n()?);
+            }
+            _ => return Ok(false),
+        }
+        Ok(true)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1152,6 +1293,7 @@ pub struct Config {
     pub set_options: HashSet<String>,
     pub general: General,
     pub decoration: Decoration,
+    pub anim: crate::animation::Animations,
     pub dwindle: Dwindle,
     pub master: MasterCfg,
     pub group: GroupCfg,
@@ -1574,9 +1716,15 @@ impl Parser {
             "general:gaps_in" => cfg.general.gaps_in = parse_int(value)?,
             "general:gaps_out" => cfg.general.gaps_out = parse_int(value)?,
             "general:border_size" => cfg.general.border_size = parse_int(value)?,
-            "general:col.active_border" => cfg.general.active_border_color = parse_color(value)?,
+            "general:col.active_border" => {
+                let g = parse_gradient(value)?;
+                cfg.general.active_border_color = g.colors[0];
+                cfg.general.active_border = g;
+            }
             "general:col.inactive_border" => {
-                cfg.general.inactive_border_color = parse_color(value)?
+                let g = parse_gradient(value)?;
+                cfg.general.inactive_border_color = g.colors[0];
+                cfg.general.inactive_border = g;
             }
             "misc:disable_autoreload" => cfg.misc.disable_autoreload = parse_bool(value)?,
             "cursor:no_warps" => cfg.cursor_no_warps = parse_bool(value)?,
@@ -1595,7 +1743,13 @@ impl Parser {
             "xwayland:create_abstract_socket" => {
                 cfg.xwayland.create_abstract_socket = parse_bool(value)?
             }
-            "decoration:rounding" => cfg.decoration.rounding = parse_int(value)?,
+            "animations:enabled" => {
+                // The stock example says `yes, please :)`.
+                cfg.anim.enabled = parse_bool(value.split([',', ' ']).next().unwrap_or(""))?
+            }
+            "bezier" | "animations:bezier" => cfg.anim.curves.add(value)?,
+            "animation" | "animations:animation" => cfg.anim.add(value)?,
+            k if k.starts_with("decoration:") && cfg.decoration.set(&k[11..], value)? => {}
             "dwindle:preserve_split" => cfg.dwindle.preserve_split = parse_bool(value)?,
             "dwindle:default_split_ratio" => {
                 let r: f32 = value
@@ -1880,6 +2034,10 @@ fn parse_bool(value: &str) -> Result<bool, String> {
 
 /// Parses `rgba(RRGGBBAA)`, `rgb(RRGGBB)` or `0xAARRGGBB`. For gradients
 /// (`rgba(...) rgba(...) 45deg`) only the first color is used for now.
+pub fn parse_gradient(value: &str) -> Result<crate::animation::Gradient, String> {
+    crate::animation::Gradient::parse(value, parse_color)
+}
+
 pub fn parse_color(value: &str) -> Result<[f32; 4], String> {
     let first = value.split_whitespace().next().unwrap_or("");
     let bad = || format!("invalid color `{value}`");

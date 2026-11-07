@@ -80,6 +80,11 @@ impl Hypr {
         }
     }
 
+    /// Dynamic rule effects of this window (opacity, rounding, no_blur, ...).
+    pub fn window_dynp(&self, w: &Window) -> DynProps {
+        state(w).borrow().dynp.clone()
+    }
+
     /// Border size and colors forced by rules for this window.
     pub fn rule_border(&self, w: &Window) -> (Option<i32>, BorderColor) {
         let s = state(w).borrow();

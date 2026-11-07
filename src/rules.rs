@@ -885,8 +885,26 @@ pub struct DynProps {
     pub border_size: Option<i32>,
     pub border_color: Option<BorderColor>,
     pub rounding: Option<i32>,
+    /// Parsed-only effects (`no_blur`, `no_shadow`, `rounding_power`, ...), last wins.
+    pub other: Vec<(String, String)>,
     /// Dynamic tags without the `*` suffix.
     pub tags: Vec<String>,
+}
+
+impl DynProps {
+    /// Argument of a parsed-only effect, if a matching rule set it.
+    pub fn other(&self, name: &str) -> Option<&str> {
+        self.other
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, a)| a.as_str())
+    }
+
+    /// Boolean effect (`no_blur`, ...): set and not `off`/`0`/`false`.
+    pub fn flag(&self, name: &str) -> bool {
+        self.other(name)
+            .is_some_and(|a| !matches!(a.trim(), "off" | "0" | "false" | "no"))
+    }
 }
 
 fn apply_tag(tags: &mut Vec<String>, arg: &str) {
@@ -935,6 +953,10 @@ pub fn dynamic_props(rules: &[Rule], p: &WindowProps) -> DynProps {
                 Effect::Opacity(o) => out.opacity = Some(*o),
                 Effect::BorderSize(n) => out.border_size = Some(*n),
                 Effect::Rounding(n) => out.rounding = Some(*n),
+                Effect::Other(n, a) => {
+                    out.other.retain(|(k, _)| k != n);
+                    out.other.push((n.clone(), a.clone()));
+                }
                 Effect::BorderColor(c) => {
                     let mut c = *c;
                     // `match:focus 0` + one color sets the inactive color.
