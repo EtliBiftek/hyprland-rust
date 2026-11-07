@@ -368,6 +368,10 @@ pub fn ipc_to_lua_event(event: &str, data: &str) -> Option<(&'static str, Vec<Ev
         "windowtitlev2" => ("window.title", vec![win()]),
         "urgent" => ("window.urgent", vec![win()]),
         "pin" => ("window.pin", vec![win()]),
+        "minimized" => (
+            "window.minimize",
+            vec![win(), EvArg::Bool(f.next()? == "1")],
+        ),
         "movewindowv2" => ("window.move_to_workspace", vec![win(), ws(f.next()?)?]),
         "workspacev2" => ("workspace.active", vec![ws(&first)?]),
         "createworkspacev2" => ("workspace.created", vec![ws(&first)?]),

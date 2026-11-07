@@ -57,7 +57,7 @@ impl CompositorHandler for Hypr {
                 {
                     self.unmap_toplevel(&window);
                 }
-            } else if let Some(w) = self.unmapped_window(&root) {
+            } else if let Some(w) = self.unmapped_toplevel(&root) {
                 w.on_commit();
                 if has_buffer(&root) {
                     self.wm.unmapped.retain(|x| x != &w);
@@ -71,7 +71,7 @@ impl CompositorHandler for Hypr {
         let toplevel = self
             .window_for_surface(surface)
             .map(|(_, w)| w)
-            .or_else(|| self.unmapped_window(surface))
+            .or_else(|| self.unmapped_toplevel(surface))
             .and_then(|w| w.toplevel().cloned());
         xdg_shell::handle_commit(&mut self.popups, toplevel.as_ref(), surface);
         resize_grab::handle_commit(&mut self.space, surface);
@@ -84,7 +84,7 @@ fn has_buffer(s: &WlSurface) -> bool {
 }
 
 impl Hypr {
-    pub fn unmapped_window(&self, s: &WlSurface) -> Option<smithay::desktop::Window> {
+    pub fn unmapped_toplevel(&self, s: &WlSurface) -> Option<smithay::desktop::Window> {
         self.wm
             .unmapped
             .iter()

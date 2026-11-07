@@ -961,7 +961,7 @@ impl Hypr {
         let prev = kb.current_focus();
         let time = self.start_time.elapsed().as_millis() as u32;
         kb.set_focus(self, Some(surface), SERIAL_COUNTER.next_serial());
-        let mut send = |h: &mut Hypr, c: u32, s: KeyState| {
+        let send = |h: &mut Hypr, c: u32, s: KeyState| {
             kb.input_forward(h, c.into(), s, SERIAL_COUNTER.next_serial(), time, true);
         };
         for st in states {
@@ -985,19 +985,29 @@ impl Hypr {
 
     /// Keycode (xkb, evdev + 8) that produces the keysym `name` at level 0.
     fn keycode_for(&mut self, name: &str) -> Option<u32> {
-        let sym = smithay::input::keyboard::xkb::keysym_from_name(
-            name,
-            smithay::input::keyboard::xkb::KEYSYM_CASE_INSENSITIVE,
-        );
-        if sym.raw() == 0 {
-            return name.strip_prefix("code:").and_then(|n| n.parse().ok());
+        use smithay::input::keyboard::xkb;
+        if let Some(n) = name.strip_prefix("code:") {
+            return n.parse().ok();
         }
-        let kb = self.seat.get_keyboard()?;
-        kb.with_xkb_state(self, |ctx| {
-            let keymap = ctx.keymap();
-            (keymap.min_keycode().raw()..=keymap.max_keycode().raw())
-                .find(|&kc| keymap.key_get_syms_by_level(kc.into(), 0, 0).contains(&sym))
-        })
+        let sym = xkb::keysym_from_name(name, xkb::KEYSYM_CASE_INSENSITIVE);
+        if sym.raw() == 0 {
+            return None;
+        }
+        // The configured layout, compiled again (the seat's keymap is not
+        // reachable from here).
+        let i = &self.config.input;
+        let ctx = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+        let keymap = xkb::Keymap::new_from_names(
+            &ctx,
+            &i.kb_rules,
+            &i.kb_model,
+            &i.kb_layout,
+            &i.kb_variant,
+            (!i.kb_options.is_empty()).then(|| i.kb_options.clone()),
+            xkb::KEYMAP_COMPILE_NO_FLAGS,
+        )?;
+        (keymap.min_keycode().raw()..=keymap.max_keycode().raw())
+            .find(|&kc| keymap.key_get_syms_by_level(kc.into(), 0, 0).contains(&sym))
     }
 
     /// Rects of the tiled windows of the workspace holding `w`, plus its index.
