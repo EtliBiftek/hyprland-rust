@@ -639,7 +639,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `locked` | tested | `tests/ipc-dots.sh`. |
 | `descriptions` | parsed | Stub: replies `[]` (no option description table). `tests/ipc-dots.sh`. |
 | `submap` | tested | `default` or the active submap; JSON string. `tests/ipc-dots.sh`. |
-| `status` | none | Not implemented. |
+| `status` | tested | `configProvider` (`lua`/`hyprlang`) and `configErrors`; `systeminfo` shows the same provider. `tests/lua-config.sh`, `tests/ipc-dots.sh`. |
 | `deprecated-config` | none | Not implemented. |
 | `reloadshaders` | parsed | Stub: replies `ok` (no shaders). |
 | `monitors` | partial | One output. JSON and text; description, make, model, physical size, `specialWorkspace` and `reserved` are real. `tests/ipc-dots.sh`. |

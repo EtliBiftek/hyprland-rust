@@ -107,6 +107,8 @@ echo "ok: function bind with hl.get_active_workspace, hl.dispatch, hl.config"
 echo "ok: hyprctl eval"
 
 ctl configerrors | grep -q "hl.timer: expected (function" || fail "bad hl.timer call not reported"
+[ "$(ctl -j status | json "d[\"configProvider\"]")" = lua ] || fail "status configProvider != lua"
+ctl systeminfo | grep -q "configProvider: lua" || fail "systeminfo configProvider"
 echo "ok: configerrors reports bad hl.* calls"
 
 kill -0 "$COMP" 2>/dev/null || fail "compositor died"

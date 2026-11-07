@@ -49,6 +49,20 @@ pub fn handle(h: &mut Hypr, req: &Request) -> Option<String> {
         "kill" => "ok".into(),
         "switchxkblayout" => switch_xkb_layout(h, args),
         "systeminfo" => system_info(h),
+        // v0.57.1 `status`: which config format is loaded.
+        "status" => {
+            let p = config_provider(h);
+            if json {
+                serde_json::json!({ "configProvider": p, "configErrors": h.reload.errors.len() })
+                    .to_string()
+            } else {
+                format!(
+                    "configProvider: {p}
+configErrors: {}",
+                    h.reload.errors.len()
+                )
+            }
+        }
         "animations" if json => "[[],\n[]]".into(),
         "animations" => "animations:\n\nbeziers:\n".into(),
         "layouts" if json => r#"["dwindle","master"]"#.into(),
@@ -310,9 +324,17 @@ fn system_info(h: &Hypr) -> String {
         .map(|s| s.trim().to_string())
         .unwrap_or_default();
     format!(
-        "Hyprland {} (hyprland-rust)\n\nSystem Information:\nDistro: {os}\nKernel: {kernel}\nbackend: {}\nconfigProvider: hyprlang\n",
+        "Hyprland {} (hyprland-rust)
+
+System Information:
+Distro: {os}
+Kernel: {kernel}
+backend: {}
+configProvider: {}
+",
         env!("CARGO_PKG_VERSION"),
-        h.ipc.backend
+        h.ipc.backend,
+        config_provider(h)
     )
 }
 
@@ -486,6 +508,14 @@ fn getprop(h: &Hypr, args: &str, json: bool) -> String {
     }
 }
 
+/// `lua` when the loaded config is a hyprland.lua, else `hyprlang`.
+fn config_provider(h: &Hypr) -> &'static str {
+    if h.config.lua.0.is_some() {
+        "lua"
+    } else {
+        "hyprlang"
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
