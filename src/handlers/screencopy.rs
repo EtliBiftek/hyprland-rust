@@ -44,9 +44,9 @@ use smithay::{
 
 use crate::Hypr;
 
-/// Rows of the GL readback are in image order (top row first) when rendering
-/// into a texture with `Transform::Normal`; flip them if CI shows otherwise.
-const FLIP_ROWS: bool = false;
+/// Rows of the GL readback are bottom row first (CI showed it upside down) when rendering
+/// into a texture with `Transform::Normal`, so they are flipped on copy.
+const FLIP_ROWS: bool = true;
 
 pub struct FrameData {
     output: Option<Output>,
