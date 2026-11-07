@@ -19,6 +19,7 @@ mod lua_host;
 mod master;
 mod options;
 mod reload;
+mod render;
 mod rules;
 mod selectors;
 mod state;

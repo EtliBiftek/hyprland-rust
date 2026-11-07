@@ -1,12 +1,6 @@
 //! Window management: workspaces, tiling, focus and dispatchers.
 
-use std::cell::RefCell;
-
 use smithay::{
-    backend::renderer::element::{
-        solid::{SolidColorBuffer, SolidColorRenderElement},
-        Kind,
-    },
     desktop::{layer_map_for_output, Window},
     input::pointer::{Focus, GrabStartData as PointerGrabStartData, MotionEvent},
     reexports::{
@@ -22,7 +16,7 @@ use crate::{
     config::{Direction, Dispatcher, Mods},
     grabs::{resize_grab::ResizeEdge, MoveSurfaceGrab, ResizeSurfaceGrab},
     ipc::{class_title, window_addr},
-    layout::{border_sides, find_in_direction, Rect},
+    layout::{find_in_direction, Rect},
     selectors::{resolve_ws, Target, Vec2Arg, WinInfo, WinSel, WsInfo, WsSel},
     state::Hypr,
     tiling::LayoutKind,
@@ -1283,67 +1277,6 @@ impl Hypr {
         }
         // Floating, fullscreen, pin or tags may have changed: dynamic rules.
         self.refresh_all_rules();
-    }
-
-    /// Border render elements (outside each window). Each side keeps a
-    /// `SolidColorBuffer` in the window's user data, so unchanged borders keep
-    /// their element id and commit counter and are not redrawn.
-    pub fn border_elements(&self) -> Vec<SolidColorRenderElement> {
-        let g = &self.config.general;
-        let focused = self.focused_window();
-        let mut out = Vec::new();
-        for i in self.visible_ws() {
-            let ws = &self.workspaces[i];
-            for w in ws.windows() {
-                if ws.fullscreen.as_ref() == Some(&w) {
-                    continue;
-                }
-                let Some(loc) = self.space.element_location(&w) else {
-                    continue;
-                };
-                let size = w.geometry().size;
-                let (rule_size, rule_color) = self.rule_border(&w);
-                let b = rule_size.unwrap_or(g.border_size);
-                if b <= 0 {
-                    continue;
-                }
-                let is_focused = focused.as_ref() == Some(&w);
-                let gc = &self.config.group;
-                let rule = if is_focused {
-                    rule_color.active
-                } else {
-                    rule_color.inactive
-                };
-                // Window-rule colors win over group and general colors.
-                let color = rule.unwrap_or(match (ws.groups.group_of(&w), is_focused) {
-                    (None, true) => g.active_border_color,
-                    (None, false) => g.inactive_border_color,
-                    (Some(grp), true) if grp.locked => gc.border_locked_active,
-                    (Some(_), true) => gc.border_active,
-                    (Some(grp), false) if grp.locked => gc.border_locked_inactive,
-                    (Some(_), false) => gc.border_inactive,
-                });
-                let bufs = w
-                    .user_data()
-                    .get_or_insert(|| RefCell::new(<[SolidColorBuffer; 4]>::default()));
-                let mut bufs = bufs.borrow_mut();
-                for (buf, side) in bufs
-                    .iter_mut()
-                    .zip(border_sides(Rect::new(loc.x, loc.y, size.w, size.h), b))
-                {
-                    buf.update((side.w, side.h), color);
-                    out.push(SolidColorRenderElement::from_buffer(
-                        buf,
-                        (side.x, side.y),
-                        1.0,
-                        1.0,
-                        Kind::Unspecified,
-                    ));
-                }
-            }
-        }
-        out.extend(self.groupbar_elements());
-        out
     }
 
     /// Window under the pointer on the visible workspaces.

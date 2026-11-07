@@ -31,7 +31,6 @@ use smithay::{
         session::{libseat::LibSeatSession, Event as SessionEvent, Session},
         udev::{all_gpus, primary_gpu},
     },
-    desktop::space::{space_render_elements, SpaceRenderElements},
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
         calloop::{
@@ -49,7 +48,7 @@ use crate::{CalloopData, Hypr};
 
 smithay::backend::renderer::element::render_elements! {
     pub TtyElement<=GlesRenderer>;
-    Space=SpaceRenderElements<GlesRenderer, WaylandSurfaceRenderElement<GlesRenderer>>,
+    Fx=crate::render::FxElement,
     Solid=SolidColorRenderElement,
     Lock=WaylandSurfaceRenderElement<GlesRenderer>,
 }
@@ -273,11 +272,8 @@ fn render(data: &mut CalloopData) {
         let lock = state.lock_elements(&mut tty.renderer);
         elements.extend(lock.into_iter().map(TtyElement::Lock));
     } else {
-        elements.extend(state.border_elements().into_iter().map(TtyElement::Solid));
-        match space_render_elements(&mut tty.renderer, [&state.space], &tty.output, 1.0) {
-            Ok(e) => elements.extend(e.into_iter().map(TtyElement::Space)),
-            Err(e) => tracing::warn!("no output mode: {e:?}"),
-        }
+        let fx = crate::render::output_elements(state, &mut tty.renderer, &tty.output);
+        elements.extend(fx.into_iter().map(TtyElement::Fx));
     }
 
     let rendered = match tty.surface.render_frame(

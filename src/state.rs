@@ -116,6 +116,9 @@ pub struct Hypr {
 
     /// Config path, errors and autoreload bookkeeping.
     pub reload: crate::reload::ReloadState,
+
+    /// Effect renderer state (animations, ghosts, shaders).
+    pub fx: crate::render::FxState,
 }
 
 impl Hypr {
@@ -231,6 +234,7 @@ impl Hypr {
             session: None,
             ipc: crate::ipc::init(&event_loop.handle()),
             reload: Default::default(),
+            fx: Default::default(),
         };
         hypr.apply_input_config();
         hypr
