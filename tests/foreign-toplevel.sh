@@ -73,15 +73,10 @@ echo "wlrctl toplevel list: $LIST"
 echo "$LIST" | grep -q "$CLASS" || fail "toplevel list does not contain the app_id"
 echo "ok: wlr-foreign-toplevel lists the window"
 
-timeout 10 wlrctl toplevel fullscreen "app_id:$CLASS" || fail "wlrctl fullscreen failed"
-FS=
-for _ in $(seq 25); do
-    FS=$(clients | python3 -c 'import json,sys; print(int(json.load(sys.stdin)[0]["fullscreen"]))')
-    [ "$FS" != 0 ] && break
-    sleep 0.2
-done
-[ "$FS" != 0 ] || fail "set_fullscreen was not applied"
-echo "ok: set_fullscreen request"
+# wlrctl segfaults on fullscreen/maximize (seen in CI), so only focus and close
+# are exercised through it.
+timeout 10 wlrctl toplevel focus "app_id:$CLASS" || fail "wlrctl focus failed"
+echo "ok: activate request"
 
 timeout 10 wlrctl toplevel close "app_id:$CLASS" || fail "wlrctl close failed"
 wait_count 0
