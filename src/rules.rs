@@ -497,6 +497,7 @@ pub struct WindowProps {
     pub initial_title: String,
     pub floating: bool,
     pub fullscreen: bool,
+    pub xwayland: bool,
     pub pinned: bool,
     pub focus: bool,
     pub workspace_id: i32,
@@ -611,8 +612,9 @@ impl Matchers {
                     BoolProp::Fullscreen => p.fullscreen,
                     BoolProp::Pin => p.pinned,
                     BoolProp::Focus => p.focus,
-                    // No XWayland, groups or modal handling yet.
-                    BoolProp::Xwayland | BoolProp::Group | BoolProp::Modal => false,
+                    BoolProp::Xwayland => p.xwayland,
+                    // No groups or modal handling yet.
+                    BoolProp::Group | BoolProp::Modal => false,
                 };
                 have == *want
             })
@@ -1155,6 +1157,9 @@ mod tests {
         assert!(r.matchers.matches(&p));
         assert!(!rule("match:xwayland 1, float on").matchers.matches(&p));
         assert!(rule("match:xwayland 0, float on").matchers.matches(&p));
+        p.xwayland = true;
+        assert!(rule("match:xwayland 1, float on").matchers.matches(&p));
+        assert!(!rule("match:xwayland 0, float on").matchers.matches(&p));
     }
 
     #[test]

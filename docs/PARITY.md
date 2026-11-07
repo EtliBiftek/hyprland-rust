@@ -446,10 +446,10 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `scrolling:fullscreen_on_one_column` | none | Bool. Not accepted: unknown option, config load error (`config.rs` `apply_inner`). |
 | `scrolling:wrap_focus` | none | Bool. Not accepted: unknown option, config load error (`config.rs` `apply_inner`). |
 | `scrolling:wrap_swapcol` | none | Bool. Not accepted: unknown option, config load error (`config.rs` `apply_inner`). |
-| `xwayland:create_abstract_socket` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `xwayland:`). |
-| `xwayland:enabled` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `xwayland:`). |
-| `xwayland:force_zero_scaling` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `xwayland:`). |
-| `xwayland:use_nearest_neighbor` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `xwayland:`). |
+| `xwayland:create_abstract_socket` | implemented | Bool, passed to Xwayland (`xwayland.rs`). |
+| `xwayland:enabled` | implemented | Bool. Xwayland starts at launch (not lazily) and `DISPLAY` is exported before `exec-once`. |
+| `xwayland:force_zero_scaling` | parsed | Bool. Stored only (no output scaling yet). |
+| `xwayland:use_nearest_neighbor` | parsed | Bool. Stored only (no output scaling yet). |
 
 ## Keywords: v0.57.1 Lua API (`hl.*`)
 
@@ -758,7 +758,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `xdg_toplevel_tag_manager_v1` | none | Not registered by the repo. |
 | `xdg_wm_base` | tested | `delegate_xdg_shell`; every test client. |
 | `xdg_wm_dialog_v1` | none | Not registered by the repo. |
-| `xwayland_shell_v1` | none | Not registered by the repo. |
+| `xwayland_shell_v1` | implemented | Smithay `XWaylandShellState`, visible to the Xwayland client only (`xwayland.rs`). |
 | `xx_hotkey_manager_v1` | none | Not registered by the repo. |
 | `zwlr_data_control_manager_v1` | none | Not registered by the repo. |
 | `zwlr_foreign_toplevel_manager_v1` | tested | `handlers/foreign_toplevel.rs`, `tests/foreign-toplevel.sh` (wlrctl list/fullscreen/close). Minimize and set_rectangle ignored. |

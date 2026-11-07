@@ -15,7 +15,8 @@ jobs:
           sudo apt-get install -y libwayland-dev libxkbcommon-dev libudev-dev \
             libinput-dev libseat-dev libgbm-dev libegl-dev libdrm-dev libgles-dev \
             pkg-config xvfb xdotool weston waybar dbus gdb libxkbcommon-x11-0 libgl1-mesa-dri \
-            wl-clipboard grim wlrctl wlr-randr seatd
+            wl-clipboard grim wlrctl wlr-randr xwayland x11-apps xterm xclip \
+            xfonts-base python3-xlib seatd
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
@@ -68,3 +69,6 @@ jobs:
       - name: TTY backend on VKMS (DRM/KMS + seatd)
         timeout-minutes: 4
         run: sh tests/tty-vkms.sh
+      - name: XWayland test (headless + Xwayland + X11 clients)
+        timeout-minutes: 4
+        run: sh tests/xwayland.sh

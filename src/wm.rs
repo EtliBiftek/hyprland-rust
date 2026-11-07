@@ -117,8 +117,8 @@ fn from_rect(r: Rect) -> Rectangle<i32, Logical> {
     Rectangle::new((r.x, r.y).into(), (r.w, r.h).into())
 }
 
-fn wl_surface(w: &Window) -> Option<&WlSurface> {
-    w.toplevel().map(|t| t.wl_surface())
+fn wl_surface(w: &Window) -> Option<WlSurface> {
+    crate::xwayland::wl_surface_of(w)
 }
 
 fn special_name(n: &str) -> String {
@@ -161,7 +161,7 @@ impl Hypr {
         self.workspaces.iter().enumerate().find_map(|(i, ws)| {
             ws.windows()
                 .into_iter()
-                .find(|w| wl_surface(w) == Some(surface))
+                .find(|w| wl_surface(w).as_ref() == Some(surface))
                 .map(|w| (i, w))
         })
     }
@@ -467,9 +467,17 @@ impl Hypr {
 
     /// Called when a client destroys a toplevel window.
     pub fn remove_window(&mut self, surface: &WlSurface) {
-        let Some((idx, window)) = self.window_for_surface(surface) else {
+        if let Some((_, window)) = self.window_for_surface(surface) {
+            self.remove_window_obj(&window);
+        }
+    }
+
+    /// Like `remove_window`, for windows without a surface (X11).
+    pub fn remove_window_obj(&mut self, window: &Window) {
+        let Some(idx) = self.ws_of(window) else {
             return;
         };
+        let window = window.clone();
         if crate::ipc::is_mapped(&window) {
             self.ipc.emit(
                 "closewindow",
@@ -508,6 +516,7 @@ impl Hypr {
         for i in self.visible_ws() {
             self.layout_ws(i);
         }
+        self.raise_override_redirect();
     }
 
     fn layout_ws(&mut self, idx: usize) {
@@ -556,9 +565,14 @@ impl Hypr {
             let rect = match geo {
                 Some(g) => g,
                 None => {
-                    // First time floating: center at 60% of the output.
+                    // First time floating: center at 60% of the output (X11
+                    // windows keep the size they asked for).
                     let out = output_geo.unwrap_or(Rectangle::from_size((1280, 800).into()));
-                    let size = (out.size.w * 3 / 5, out.size.h * 3 / 5);
+                    let own = w
+                        .x11_surface()
+                        .map(|x| x.geometry().size)
+                        .filter(|s| s.w > 0 && s.h > 0);
+                    let size = own.map_or((out.size.w * 3 / 5, out.size.h * 3 / 5), |s| (s.w, s.h));
                     let loc = (
                         out.loc.x + (out.size.w - size.0) / 2,
                         out.loc.y + (out.size.h - size.1) / 2,
@@ -635,6 +649,17 @@ impl Hypr {
                 if toplevel.is_initial_configure_sent() {
                     toplevel.send_pending_configure();
                 }
+            } else if let Some(x) = window.x11_surface() {
+                let is_floating = floating.contains(&window);
+                let keep_size = (is_floating || pseudo.contains(&window))
+                    && self.space.element_geometry(&window).is_some();
+                let size = if keep_size {
+                    x.geometry().size
+                } else {
+                    rect.size
+                };
+                let _ = x.set_fullscreen(is_fullscreen);
+                let _ = x.configure(Rectangle::new(rect.loc, size));
             }
             // `Space` positions the window's geometry (it applies the client-side
             // decoration offset, e.g. shadows, itself).
@@ -704,6 +729,9 @@ impl Hypr {
         }
         self.wm.focused = window.clone();
         for w in self.space.elements() {
+            if crate::xwayland::is_override_redirect(w) {
+                continue;
+            }
             w.set_activated(Some(w) == window.as_ref());
             if let Some(t) = w.toplevel() {
                 if t.is_initial_configure_sent() {
@@ -716,7 +744,7 @@ impl Hypr {
         let target = self
             .layer_focus
             .clone()
-            .or_else(|| window.as_ref().and_then(wl_surface).cloned());
+            .or_else(|| window.as_ref().and_then(wl_surface));
         keyboard.set_focus(self, target, serial);
         self.ipc.emit_active(window.as_ref());
         self.refresh_rules_on_focus();
@@ -785,7 +813,7 @@ impl Hypr {
     }
 
     /// Sets (`Some`) or toggles (`None`) the floating state of `window`.
-    fn set_floating(&mut self, window: &Window, want: Option<bool>) {
+    pub(crate) fn set_floating(&mut self, window: &Window, want: Option<bool>) {
         let Some(i) = self.ws_of(window) else {
             return;
         };
@@ -930,12 +958,8 @@ impl Hypr {
         let cur = (size.w, size.h);
         if self.workspaces[i].is_floating(&w) {
             let (nw, nh) = arg.resolve(cur, cur, self.out_size());
-            if let Some(t) = w.toplevel() {
-                t.with_pending_state(|s| s.size = Some((nw.max(20), nh.max(20)).into()));
-                if t.is_initial_configure_sent() {
-                    t.send_pending_configure();
-                }
-            }
+            let loc = self.space.element_location(&w).unwrap_or((0, 0).into());
+            crate::xwayland::request_size(&w, loc, (nw.max(20), nh.max(20)).into());
         } else if !arg.exact {
             // shortcut: tiled windows resize by moving their split edge; exact
             // sizes are ignored for them.
@@ -1006,6 +1030,9 @@ impl Hypr {
     }
 
     pub fn window_pid(&self, w: &Window) -> i32 {
+        if let Some(x) = w.x11_surface() {
+            return crate::xwayland::x11_pid(x);
+        }
         w.toplevel()
             .and_then(|t| t.wl_surface().client())
             .and_then(|c| c.get_credentials(&self.display_handle).ok())
@@ -1065,6 +1092,8 @@ impl Hypr {
             }
         } else if let Some(t) = window.toplevel() {
             t.send_close();
+        } else if let Some(x) = window.x11_surface() {
+            let _ = x.close();
         }
     }
 
@@ -1459,7 +1488,12 @@ impl Hypr {
 
     /// Window under the pointer on the visible workspaces.
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<Window> {
-        self.space.element_under(pos).map(|(w, _)| w.clone())
+        let w = self.space.element_under(pos).map(|(w, _)| w.clone())?;
+        // A menu or tooltip never takes focus: the focused window stays.
+        if crate::xwayland::is_override_redirect(&w) {
+            return self.focused_window();
+        }
+        Some(w)
     }
 }
 

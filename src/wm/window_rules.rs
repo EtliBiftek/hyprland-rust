@@ -48,6 +48,7 @@ impl Hypr {
             initial_title,
             class,
             title,
+            xwayland: w.is_x11(),
             floating: ws.is_some_and(|ws| ws.is_floating(w)),
             fullscreen: ws.is_some_and(|ws| ws.fullscreen.as_ref() == Some(w)),
             pinned: self.wm.pinned.contains(w),
@@ -114,16 +115,18 @@ impl Hypr {
     /// Applies the static rules once class/title are known (before the initial
     /// configure, or at the first buffer), then tracks class/title changes.
     pub fn rules_on_commit(&mut self, w: &Window) {
-        let Some(t) = w.toplevel() else { return };
         let (class, title) = class_title(w);
         let (applied, changed) = {
             let s = state(w).borrow();
             (s.applied, s.last != (class.clone(), title.clone()))
         };
         if !applied {
-            let has_buffer = with_renderer_surface_state(t.wl_surface(), |s| s.buffer().is_some())
-                .unwrap_or(false);
-            if (!t.is_initial_configure_sent() && !class.is_empty()) || has_buffer {
+            let has_buffer = crate::xwayland::wl_surface_of(w).is_some_and(|s| {
+                with_renderer_surface_state(&s, |s| s.buffer().is_some()).unwrap_or(false)
+            });
+            // X11 windows have no initial configure: class is known at map.
+            let before_configure = w.toplevel().is_none_or(|t| !t.is_initial_configure_sent());
+            if (before_configure && !class.is_empty()) || has_buffer {
                 self.apply_static_rules(w);
             }
         } else if changed {
@@ -236,12 +239,8 @@ impl Hypr {
                     cur = (x.max(20), y.max(20));
                     vars.window_w = cur.0 as f64;
                     vars.window_h = cur.1 as f64;
-                    if let Some(t) = w.toplevel() {
-                        t.with_pending_state(|s| s.size = Some(cur.into()));
-                        if t.is_initial_configure_sent() {
-                            t.send_pending_configure();
-                        }
-                    }
+                    let at = self.space.element_location(w).unwrap_or((0, 0).into());
+                    crate::xwayland::request_size(w, at, cur.into());
                 }
                 (a, b) => tracing::warn!("size rule: {:?} {:?}", a.err(), b.err()),
             }

@@ -39,7 +39,7 @@ What works now (targeting Hyprland v0.57.1 behaviour):
   `getoption`, `keyword`, `reload`, `dispatch`, `-j`, `--batch`, ...).
 
 Not done yet: running the TTY backend on real hardware, multi-monitor and
-`monitor=` rules, XWayland, animations and visual effects (rounding, blur,
+`monitor=` rules, XWayland scaling, animations and visual effects (rounding, blur,
 shadows), screen sharing. See [`docs/ROADMAP.md`](docs/ROADMAP.md) (in
 Turkish) for the plan.
 

@@ -1119,11 +1119,33 @@ pub struct Misc {
     pub disable_autoreload: bool,
 }
 
+/// `xwayland { }`. shortcut: `force_zero_scaling` and `use_nearest_neighbor`
+/// are stored only (no output scaling yet).
+#[derive(Debug, Clone, PartialEq)]
+pub struct XwaylandCfg {
+    pub enabled: bool,
+    pub force_zero_scaling: bool,
+    pub use_nearest_neighbor: bool,
+    pub create_abstract_socket: bool,
+}
+
+impl Default for XwaylandCfg {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            force_zero_scaling: false,
+            use_nearest_neighbor: true,
+            create_abstract_socket: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Config {
     pub misc: Misc,
     /// `cursor:no_warps`: focusing a monitor does not move the pointer.
     pub cursor_no_warps: bool,
+    pub xwayland: XwaylandCfg,
     /// Config file plus every `source`d file that was read (for autoreload).
     pub files: Vec<PathBuf>,
     /// Option keys (lowercase `cat:key`) the user set explicitly (`getoption` `set`).
@@ -1564,6 +1586,14 @@ impl Parser {
             "gestures:workspace_swipe_invert" => cfg.swipe.invert = parse_bool(value)?,
             "gestures:workspace_swipe_cancel_ratio" => {
                 cfg.swipe.cancel_ratio = parse_float(value)?.clamp(0.0, 1.0) as f64
+            }
+            "xwayland:enabled" => cfg.xwayland.enabled = parse_bool(value)?,
+            "xwayland:force_zero_scaling" => cfg.xwayland.force_zero_scaling = parse_bool(value)?,
+            "xwayland:use_nearest_neighbor" => {
+                cfg.xwayland.use_nearest_neighbor = parse_bool(value)?
+            }
+            "xwayland:create_abstract_socket" => {
+                cfg.xwayland.create_abstract_socket = parse_bool(value)?
             }
             "decoration:rounding" => cfg.decoration.rounding = parse_int(value)?,
             "dwindle:preserve_split" => cfg.dwindle.preserve_split = parse_bool(value)?,

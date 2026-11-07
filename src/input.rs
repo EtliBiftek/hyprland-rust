@@ -661,7 +661,7 @@ impl Hypr {
         let Some((_, w)) = self.find_window(sel) else {
             return;
         };
-        let Some(surface) = w.toplevel().map(|t| t.wl_surface().clone()) else {
+        let Some(surface) = crate::xwayland::wl_surface_of(&w) else {
             return;
         };
         self.forward_key(surface.clone(), code, state, time);
