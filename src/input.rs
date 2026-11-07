@@ -687,7 +687,7 @@ impl Hypr {
             .map(|s| xkb::keysym_get_name(s).to_ascii_lowercase())
             .collect();
         for b in &self.config.binds {
-            if b.submap != self.wm.submap
+            if (b.submap != self.wm.submap && !b.flags.universal)
                 || (locked && !b.flags.locked)
                 || (inhibited && !b.flags.bypass)
             {

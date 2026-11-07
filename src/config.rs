@@ -56,7 +56,31 @@ impl Mods {
                 "CTRL" | "CONTROL" => mods.ctrl = true,
                 "ALT" | "MOD1" => mods.alt = true,
                 "SUPER" | "WIN" | "LOGO" | "MOD4" | "META" => mods.logo = true,
-                other => return Err(format!("unknown modifier `{other}`")),
+                // `SUPERSHIFT`, `CONTROLSHIFTALT`: Hyprland finds each
+                // modifier name as a substring, so they may be glued.
+                other => {
+                    let names: [(&str, fn(&mut Mods)); 9] = [
+                        ("SHIFT", |m| m.shift = true),
+                        ("CONTROL", |m| m.ctrl = true),
+                        ("CTRL", |m| m.ctrl = true),
+                        ("ALT", |m| m.alt = true),
+                        ("MOD1", |m| m.alt = true),
+                        ("SUPER", |m| m.logo = true),
+                        ("WIN", |m| m.logo = true),
+                        ("LOGO", |m| m.logo = true),
+                        ("MOD4", |m| m.logo = true),
+                    ];
+                    let mut rest = other.to_string();
+                    for (n, set) in names {
+                        if rest.contains(n) {
+                            set(&mut mods);
+                            rest = rest.replace(n, "");
+                        }
+                    }
+                    if !rest.is_empty() {
+                        return Err(format!("unknown modifier `{other}`"));
+                    }
+                }
             }
         }
         Ok(mods)
@@ -670,6 +694,8 @@ pub struct BindFlags {
     pub ignore_mods: bool,
     /// `o`: long press: fires after the key is held for `repeat_delay`.
     pub long_press: bool,
+    /// `u`: `submap_universal`, active in every submap.
+    pub universal: bool,
     /// `p`: works even when a client inhibits shortcuts.
     pub bypass: bool,
     /// `d`: has a description argument.
@@ -694,6 +720,7 @@ impl BindFlags {
                 'd' => f.has_description = true,
                 // Accepted, no effect: separate, click, drag, ...
                 'p' => f.bypass = true,
+                'u' => f.universal = true,
                 's' | 'c' | 'g' | 'k' => {}
                 _ => return None,
             }
@@ -2458,6 +2485,29 @@ mod tests {
         assert!(errors.is_empty(), "{errors:?}");
         assert!(cfg.binds[0].mods.logo);
         assert!(!cfg.binds[0].mods.alt);
+    }
+
+    #[test]
+    fn glued_modifiers() {
+        let m = Mods::parse("CONTROLSHIFTALTSUPER").unwrap();
+        assert!(m.ctrl && m.shift && m.alt && m.logo);
+        assert_eq!(
+            Mods::parse("SUPERSHIFT").unwrap(),
+            Mods::parse("SUPER SHIFT").unwrap()
+        );
+        assert!(Mods::parse("SUPERFOO").is_err());
+    }
+
+    #[test]
+    fn submap_universal_flag() {
+        let (cfg, errors) = Config::parse_str(
+            "submap = resize
+bindu = SUPER, X, exec, a
+submap = reset",
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(cfg.binds[0].flags.universal);
+        assert_eq!(cfg.binds[0].submap, "resize");
     }
 
     #[test]

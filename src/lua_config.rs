@@ -1262,6 +1262,7 @@ fn bind_line(keys: &str, dsp: &str, opts: Option<&Table>) -> String {
             ("transparent", 't'),
             ("ignore_mods", 'i'),
             ("long_press", 'o'),
+            ("submap_universal", 'u'),
         ] {
             if on(field) {
                 flags.push(flag);
@@ -1930,7 +1931,8 @@ mod tests {
                hl.bind(mod .. " + J", hl.dsp.layout("togglesplit"), { description = "split" })
                hl.bind(mod .. " + S", hl.dsp.workspace.toggle_special("magic"))
                hl.bind(mod .. " + F", function() end)
-               hl.bind(mod .. " + G", hl.dsp.global("quickshell:search"))"#,
+               hl.bind(mod .. " + G", hl.dsp.global("quickshell:search"))
+               hl.bind(mod .. " + U", hl.dsp.exit(), { submap_universal = true })"#,
         );
         for line in [
             "bind = SUPER, Q, exec, kitty",
@@ -1943,6 +1945,7 @@ mod tests {
             "bind = SUPER, S, togglespecialworkspace, magic",
             "bind = SUPER, F, __lua, 0",
             "bind = SUPER, G, global, quickshell:search",
+            "bindu = SUPER, U, exit",
         ] {
             assert!(
                 text.lines().any(|l| l == line),

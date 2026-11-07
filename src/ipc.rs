@@ -1156,7 +1156,7 @@ fn snapshot(h: &Hypr) -> Snapshot {
                     | (m.alt as u32) << 3
                     | (m.logo as u32) << 6,
                 submap: bd.submap.clone(),
-                submap_universal: "false".into(),
+                submap_universal: bd.flags.universal.to_string(),
                 key: bd.key.clone(),
                 keycode: 0,
                 catch_all: false,
