@@ -23,14 +23,19 @@ Turkish; reply in Turkish. Code, docs, commits and this file stay in English
   read Lua plus a `legacy` hyprlang parser; v0.54.3 is the last
   hyprlang-only release. Decision (owner): support **both**.
 - Lua config (`lua_config.rs`, mlua with vendored Lua 5.4): `hyprland.lua`
-  runs once per (re)load against an `hl.*` API mirroring v0.57.1
-  (`hl.config`, `bind`, `unbind`, `dsp.*`, `window_rule`, `layer_rule`,
-  `workspace_rule`, `device`, `env`, `monitor`, `curve`, `animation`,
-  `on("hyprland.start")`, `exec_cmd`, `define_submap`, `load`, `require`).
-  Each call becomes a hyprlang line fed to the normal parser. `hyprland.lua`
-  wins over `hyprland.conf` in the default path; `hyprctl dispatch
-  'hl.dsp.exit()'` is evaluated as Lua. No Lua state survives the load, so
-  function binds, other `hl.on` events, timers and queries are config errors.
+  runs once per (re)load against an `hl.*` API mirroring v0.57.1; each
+  load-time call becomes a hyprlang line fed to the normal parser. The Lua
+  state then lives on in `Config::lua` (`lua_config::Runtime`), driven by
+  `lua_host.rs`: function binds (dispatcher `__lua, N`), `hl.on` events (fed
+  from the socket2 events once per loop iteration, plus `hyprland.start` /
+  `shutdown`), `hl.timer` (calloop), `hl.dispatch`, `hl.get_*` (tables
+  built from the hyprctl JSON), runtime `hl.config`/`hl.bind` (as keywords),
+  rule objects with `set_enabled`, `hyprctl eval`. `hyprland.lua` wins over
+  `hyprland.conf` in the default path; `hyprctl dispatch 'hl.dsp.exit()'`
+  is sandboxed Lua.
+- Dotfiles: Hyprland's v0.54.3 example, JaKooLit (hyprlang) and end-4,
+  ML4W, HyDE (Lua) at pinned commits load and boot with zero config errors
+  (`tests/dots-conf.sh`, `tests/dots-lua.sh`).
 - Parity table: `docs/PARITY.md` (per config option, keyword, dispatcher,
   hyprctl command, IPC event, Wayland protocol).
 - Layouts: dwindle (`layout.rs`) and master (`master.rs`), chosen per
@@ -43,10 +48,12 @@ Turkish; reply in Turkish. Code, docs, commits and this file stay in English
   group colors), gaps, wlr-layer-shell (exclusive zones, layer focus),
   xdg-decoration (always server side).
 - hyprlang config (`config.rs`): `$vars`, categories, `cat:key`, `bind` with
-  flags `l r e n m t i o d`, `unbind`, submaps, `exec(-once)`, `source`,
-  colors, `input { }` / `touchpad { }` / `device { }`, `windowrule` /
-  `windowrulev2` / `layerrule` (`rules.rs`, `wm/window_rules.rs`). Unknown but
-  well-known options are ignored with a debug log.
+  flags `l r e n m t i o d`, `unbind`, submaps, `exec(-once)`, `source`
+  (globs), `$ENV` fallback, `# hyprlang if/endif/noerror`, `gesture`
+  (stored), colors, `input { }` / `touchpad { }` / `device { }`, `windowrule`
+  / `windowrulev2` / `layerrule` / `windowrule[NAME]:enable` (`rules.rs`,
+  `wm/window_rules.rs`). Unknown but well-known options are ignored with a
+  debug log.
 - Config reload: `hyprctl reload`, mtime-polling autoreload (incl. `source`d
   files), `hyprctl keyword`, `getoption` (`reload.rs`, `options.rs`).
 - Dispatchers: exec, killactive, forcekillactive, closewindow, exit,
@@ -56,24 +63,31 @@ Turkish; reply in Turkish. Code, docs, commits and this file stay in English
   focuscurrentorlast, focusurgentorlast, focuswindow, splitratio,
   togglesplit, layoutmsg, submap, pass, tagwindow, group dispatchers,
   renameworkspace, bringactivetotop, alterzorder, movecursor(tocorner),
-  togglepseudo, setprop (stored only), killwindow, signal, event, dpms,
-  monitor dispatchers as single-monitor no-ops.
+  togglepseudo/pseudo, setprop (stored only), killwindow, signal, event,
+  dpms, global, monitor dispatchers as single-monitor no-ops.
 - Protocols (`handlers/protocols.rs`): primary selection, wlr/ext
   data-control, viewporter, fractional-scale (1.0), presentation-time,
   single-pixel-buffer, content-type, cursor-shape, idle-inhibit,
   ext-idle-notify (hand-written timers), ext-session-lock,
   keyboard-shortcuts-inhibit, relative-pointer, pointer-constraints,
-  xdg-foreign, xdg-activation.
+  xdg-foreign, xdg-activation. Own files in `handlers/`: wlr-screencopy
+  (shm, winit/tty; headless replies `failed`), wlr-foreign-toplevel-management
+  + ext-foreign-toplevel-list, wlr-output-management (read-only),
+  hyprland-global-shortcuts-v1 (XML recreated from memory, untested with a
+  real client).
 - IPC (`ipc.rs`, `ipc_cmds.rs`): async request socket `.socket.sock` and
   event socket `.socket2.sock` under
   `$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/`. Requests include
   clients, workspaces, monitors, activewindow, layers, binds, devices,
-  getoption, keyword, reload, configerrors, dispatch, `[[BATCH]]`.
-  `src/bin/hyprctl.rs` is a std-only client.
-- Tests: unit tests for all pure modules plus nine shell tests in `tests/`
-  run by CI: keybinds (Xvfb + xdotool), headless smoke, IPC, layer-shell
-  (waybar), window rules, master layout + groups, protocols (wl-clipboard),
-  dispatchers, Lua config.
+  getoption, keyword, reload, configerrors, dispatch, getprop, eval, submap,
+  locked, setcursor (validated only), `[[BATCH]]`; hyprpaper/hyprsunset are
+  forwarded to their own sockets. `src/bin/hyprctl.rs` is a std-only client
+  (flags anywhere on the command line, like Hyprland's).
+- Tests: unit tests for all pure modules plus fourteen shell tests in
+  `tests/` run by CI: keybinds (Xvfb + xdotool), headless smoke, IPC,
+  IPC as used by dotfile scripts, layer-shell (waybar), window rules, master
+  layout + groups, protocols (wl-clipboard), dispatchers, Lua config,
+  dotfiles (conf and Lua), screencopy (grim), foreign toplevel (wlrctl).
 - Smoke-tested in Xvfb with 3 `weston-terminal`s (`docs/screenshot.png`).
 
 ## Roadmap
@@ -94,9 +108,13 @@ Phase 0, infrastructure
 - [ ] Run the TTY backend on real hardware and fix what breaks.
 - [ ] Split into a cargo workspace: `hypr-config`, `hypr-layout`, `hypr-ipc`,
       `hyprctl`, `compositor`.
-- [ ] Keep `docs/PARITY.md` current (it predates Lua support).
-- [ ] Lua runtime state: function binds, `hl.on` events, `hl.timer`, query
-      API (`hl.get_*`), `hl.dsp.send_shortcut`/`fullscreen_state`/`global`.
+- [ ] Keep `docs/PARITY.md` current.
+- [ ] Lua gaps: `hl.on` `window.fullscreen`/`update_state`/`*_early` (no IPC
+      counterpart), `hl.dsp.send_shortcut`/`send_key_state`, client-only
+      fullscreen state, `get_urgent_window`/`get_last_workspace` are nil,
+      runtime `hl.window_rule` blocks (multi-line keywords) unsupported.
+- [ ] Touchpad gestures are parsed but never executed (no libinput
+      swipe/pinch plumbing); `bindm` on a keyboard key is accepted but inert.
 
 TTY backend known gaps
 - [ ] Never run on real hardware.
@@ -118,7 +136,7 @@ IPC known gaps
 Not started
 - [ ] XWayland.
 - [ ] Remaining dispatchers (`movecurrentworkspacetomonitor`, `dpms`,
-      `alterzorder`, `sendshortcut`, `global`, `setprop`, ...).
+      `alterzorder`, `sendshortcut`, `setprop`, ...).
 - [ ] Bind flags `l`, `o`, `t` behave like plain binds (no lock screen,
       long-press or shortcut inhibit); `bindm` has no CI test.
 - [ ] Master: no per-window weights (`resizeactive` only moves `mfact`).
@@ -130,9 +148,10 @@ Not started
 - [ ] Config error overlay; empty `is_known_unimplemented`; inotify instead
       of mtime polling.
 - [ ] Animations (Bézier), rounded corners, gradient borders, blur, shadows.
-- [ ] Remaining protocols (see `docs/PARITY.md`): wlr-screencopy /
-      ext-image-copy-capture, output management, foreign-toplevel, gamma,
-      tablet, input-method/text-input, drm-lease, ...
+- [ ] Remaining protocols (see `docs/PARITY.md`): ext-image-copy-capture,
+      screencopy dmabuf/cursor/scale and headless rendering, output
+      management apply, foreign-toplevel minimize, gamma, tablet,
+      input-method/text-input, drm-lease, ...
 - [ ] Protocol shortcuts: pointer lock/confine not enforced; presentation
       feedback not fed; fractional scale fixed at 1.0; no lock-screen test.
 - [ ] Dispatchers missing: `sendshortcut`, `sendkeystate`,
@@ -160,12 +179,17 @@ Open decisions for the owner
 | `src/selectors.rs` | workspace/window selector parsing and resolution (pure) |
 | `src/rules.rs` | windowrule/layerrule parsing and matching (pure) |
 | `src/wm/window_rules.rs` | applying window rules to windows (static + dynamic) |
-| `src/lua_config.rs` | hyprland.lua: `hl.*` API translated to hyprlang (pure, unit-tested) |
+| `src/lua_config.rs` | hyprland.lua: `hl.*` API, load-time translation to hyprlang, live `Runtime` (callbacks, events, timers, queries) behind the `Host` trait (pure, unit-tested) |
+| `src/lua_host.rs` | `Host` for `Hypr`: runs Lua binds, `hl.on` events, timers, `hyprctl eval` |
 | `src/reload.rs` | config reload, autoreload, `keyword` |
 | `src/options.rs` | `getoption` lookup and formatting |
 | `src/ipc_cmds.rs` | non-snapshot hyprctl requests (devices, notify, ...) |
 | `src/handlers/layer_shell.rs` | wlr-layer-shell and xdg-decoration |
 | `src/handlers/protocols.rs` | clipboard, idle, session-lock, pointer and misc protocols |
+| `src/handlers/screencopy.rs` | wlr-screencopy (shm, offscreen GLES render) |
+| `src/handlers/foreign_toplevel.rs` | wlr-foreign-toplevel-management, ext-foreign-toplevel-list |
+| `src/handlers/output_management.rs` | wlr-output-management (read-only) |
+| `src/handlers/global_shortcuts.rs` | hyprland-global-shortcuts-v1, `global` dispatcher |
 | `docs/PARITY.md` | parity table against Hyprland v0.57.1 |
 | `src/workspace.rs` | `Workspace<W>`: tiled tree + floating stack + fullscreen + last focus |
 | `src/wm.rs` | `impl Hypr`: relayout, focus, workspaces, dispatchers, border rects |
@@ -187,8 +211,13 @@ Open decisions for the owner
 | `tests/protocols.sh` | wl-copy/wl-paste incl. primary selection (headless) |
 | `tests/lua-config.sh` | hyprland.lua options, binds, rules, exec-once, Lua dispatch |
 | `tests/dispatchers.sh` | renameworkspace, togglepseudo, movecursor, event, dpms |
+| `tests/ipc-dots.sh` | hyprctl flags, getprop, eval, submap, events used by dotfile scripts |
+| `tests/dots-conf.sh` | Hyprland v0.54.3 example + JaKooLit load with 0 errors |
+| `tests/dots-lua.sh` | end-4, ML4W, HyDE (pinned) load and boot with 0 errors |
+| `tests/screencopy.sh` | grim against winit in Xvfb |
+| `tests/foreign-toplevel.sh` | wlrctl toplevel list/focus/close, wlr-randr |
 | `docs/ROADMAP.md` | Turkish roadmap, phases 0-9 |
-| `.github/workflows/ci.yml` | fmt, build, test, clippy, check-config, the 9 shell tests |
+| `.github/workflows/ci.yml` | fmt, build, test, clippy, check-config, the 14 shell tests |
 
 `state.rs`, `winit.rs`, `input.rs`, `grabs/`, `handlers/` started from
 Smithay's `smallvil` example (MIT, see `docs/SMITHAY-LICENSE`); `tty.rs` is
@@ -295,7 +324,16 @@ Use a test config with `exec-once = weston-terminal` lines to open windows.
   name a surface that is on a hidden workspace (move/resize once crashed).
 - `hyprctl dispatch 'hl...'` is sandboxed Lua (`lua_config::eval_dispatch`:
   no os/io/package/file loading, instruction + memory limits); config scripts
-  run with the full stdlib but also under limits.
+  run with the full stdlib but also under limits (each callback gets a fresh
+  instruction budget).
+- Lua callbacks reach the compositor only through a scoped host function in
+  the Lua registry (`with_host`), so nothing outlives the call; `hl.on`
+  handlers run from the main-loop closure (`lua_drain`), never inside a
+  dispatcher. Hyprlang generated from Lua escapes `#` as `##` (inline
+  comments) and multi-line dispatchers go through callbacks. mlua's safe
+  stdlib has no `debug`; a minimal `debug.getinfo` is provided (HyDE).
+- Third-party dotfile Lua (`os.execute`, `io.popen`) must not run on the
+  owner's machine; parse `.conf` dotfiles locally, run Lua ones in CI only.
 - The pure modules (config, selectors, rules, layout, master, tiling, groups,
   options, lua_config) build on Windows: copy them into a scratch lib crate
   (deps: tracing, bitflags, mlua, serde, serde_json, regex) to run their unit

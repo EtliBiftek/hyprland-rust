@@ -27,7 +27,7 @@ Status meaning: `none` = not supported (for a config option, a config load error
 | Section | none | parsed | partial | full | tested | Total |
 |---------|-----:|-------:|--------:|-----:|-------:|------:|
 | Config options (v0.57.1 registry, 407 options) | 63 | 282 | 19 | 0 | 43 | 407 |
-| Keywords: v0.57.1 Lua API (`hl.*`) | 22 | 0 | 0 | 0 | 0 | 22 |
+| Keywords: v0.57.1 Lua API (`hl.*`) | 0 | 6 | 4 | 1 | 14 | 25 |
 | Keywords: hyprlang (repo only, not parsed by v0.57.1) | 2 | 6 | 4 | 0 | 8 | 20 |
 | Dispatchers: v0.57.1 Lua (`hl.dsp.*`) | 24 | 0 | 20 | 0 | 7 | 51 |
 | Dispatchers: hyprlang names (repo only) | 0 | 0 | 34 | 0 | 9 | 43 |
@@ -453,30 +453,35 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 
 ## Keywords: v0.57.1 Lua API (`hl.*`)
 
+`hyprland.lua` runs in mlua (Lua 5.4) through `src/lua_config.rs`; the Lua state stays alive after the load (`Config::lua`) and callbacks run against the compositor through `src/lua_host.rs`. While loading, each `hl.*` call becomes a hyprlang line for the normal parser; inside a callback it applies like `hyprctl keyword`. Unit tests in `lua_config.rs`; `tests/lua-config.sh`; `tests/dots-lua.sh` loads and boots end-4, ML4W and HyDE with zero errors.
+
 | Item | Status | Notes |
 |------|--------|-------|
-| `hl.bind(keys, dispatcher, opts)` | none | Keybind registration. Repo equivalent: hyprlang `bind`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.unbind(keys)` | none | Removes a keybind. Repo equivalent: `unbind`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.config(table)` | none | Sets config options from Lua. Repo equivalent: hyprlang option lines. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.get_config(name)` | none | Reads a config option. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.define_submap(name, fn)` | none | Submap definition. Repo equivalent: `submap =`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.device(table)` | none | Per-device input options. Repo equivalent: `device { }`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.env(name, value)` | none | Environment variables. Repo equivalent: `env =`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.monitor(table)` | none | Monitor rules. Repo equivalent: `monitor =`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.window_rule(table)` | none | Window rules. Repo equivalent: `windowrule`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.layer_rule(table)` | none | Layer rules. Repo equivalent: `layerrule`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.workspace_rule(table)` | none | Workspace rules. Repo equivalent: `workspace =`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.gesture(table)` | none | Touch and touchpad gestures. Repo equivalent: `gestures {}`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.animation(table) / hl.curve(name, points)` | none | Animations and Bezier curves. Repo equivalent: `animations {}`, `bezier =`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.on(event, fn)` | none | Event subscriptions, the Lua counterpart of socket2 events. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.timer(fn, opts)` | none | Timers. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.permission(table)` | none | Permission rules for privileged clients. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.dispatch(dsp)` | none | Runs a `hl.dsp.*` dispatcher. Also what `hyprctl dispatch` evaluates. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.exec_cmd(cmd)` | none | Runs a command. Repo equivalent: `exec` and `exec-once`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.get_monitors / get_windows / get_workspaces / get_*` | none | Query functions. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.load(path)` | none | Loads another Lua file. Repo equivalent: `source`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.version()` | none | Version query. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.is_key_down(key)` | none | Key state query. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
+| `hl.bind(keys, dispatcher, opts)` | tested | `hl.dsp.*` or a Lua function (dispatcher `__lua, N`). Opts `locked`, `release`, `repeating`, `non_consuming`, `mouse`, `transparent`, `ignore_mods`, `long_press`, `description`. |
+| `hl.unbind(keys)` | tested | As `unbind`. |
+| `hl.config(table)` | tested | Nested tables flatten to `cat:key`; also works inside callbacks. |
+| `hl.get_config(name)` | tested | From `getoption`; returns `nil, msg` for unknown keys. |
+| `hl.define_submap(name, fn)` | tested | As `submap =` ... `submap = reset`. |
+| `hl.device(table)` | partial | As `device { }`. |
+| `hl.env(name, value)` | tested | Sets the variable and emits `env =`. |
+| `hl.monitor(table)` | parsed | As `monitor =` (monitor rules are not applied yet). |
+| `hl.window_rule(table)` | tested | As a named `windowrule { }`; returns an object whose `set_enabled(bool)` toggles it (`windowrule[NAME]:enable`). |
+| `hl.layer_rule(table)` | parsed | As `layerrule =`. |
+| `hl.workspace_rule(table)` | partial | As `workspace =`. |
+| `hl.gesture(table)` | parsed | As `gesture =`; a function `action` becomes `dispatcher, __lua, N`. Gestures are not executed yet. |
+| `hl.animation(table) / hl.curve(name, points)` | parsed | As `animation =` / `bezier =`; no animations are drawn. |
+| `hl.on(event, fn)` | tested | Fed from the socket2 events once per loop iteration (`window.open/close/active/title/urgent/pin/move_to_workspace`, `workspace.active/created/removed/special_active`, `monitor.focused/added/removed`, `keybinds.submap`, `layer.opened/closed`, `config.reloaded`), plus `hyprland.start` and `hyprland.shutdown`. Handlers get object tables. Returns a subscription with `remove()`. No `window.fullscreen`, `window.update_state`, `*_early`. |
+| `hl.timer(fn, { timeout, type })` | tested | calloop timers, `oneshot` or `repeat`; `stop()`/`cancel()`; dropped on reload. |
+| `hl.notification.create(table)` | partial | Becomes `hyprctl notify` (logged, not drawn). |
+| `hl.permission(table)` | parsed | Accepted, ignored. |
+| `hl.dispatch(dsp)` | tested | Runs at once inside a callback; while loading it runs once the compositor is up. |
+| `hl.exec_cmd(cmd)` | tested | Inside a callback runs at once; while loading it is `exec =`. |
+| `hl.get_windows / get_window / get_active_window / get_last_window / get_workspaces / get_workspace / get_active_workspace / get_active_special_workspace / get_workspace_windows / get_monitors / get_monitor / get_active_monitor / get_monitor_at / get_monitor_at_cursor / get_cursor_pos / get_layers / get_devices / get_current_submap` | tested | Tables built from the hyprctl JSON with the field names of Hyprland's Lua objects (`at.x`, `workspace.monitor.name`, ...); `nil` while loading. `get_urgent_window`, `get_last_workspace` return nil. |
+| `hl.load(path)` / `require` | tested | Relative to the config directory (`?.lua`, `?/init.lua`). |
+| `debug.getinfo` / `debug.traceback` | partial | mlua's safe stdlib has no `debug`; a minimal safe one is provided for config scripts. |
+| `hl.version()` | full | Crate version. |
+| `hl.is_key_down(key)` | parsed | Always false. |
+| `hyprctl eval <lua>` | tested | Runs in the config's live Lua state. |
 
 ## Keywords: hyprlang (repo only, not parsed by v0.57.1)
 
