@@ -7,6 +7,8 @@
 mod animation;
 mod config;
 mod cursor;
+#[cfg(test)]
+mod fuzz_tests;
 mod gestures;
 mod grabs;
 mod groups;

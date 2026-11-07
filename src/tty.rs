@@ -462,11 +462,21 @@ fn render(data: &mut CalloopData, crtc: crtc::Handle) {
         elements.extend(fx.into_iter().map(TtyElement::Fx));
     }
 
+    // `dpms off`: a black frame.
+    // shortcut: the CRTC stays active (no DPMS property); real power saving
+    // needs the connector DPMS state or an inactive CRTC.
+    if !state.wm.dpms_on {
+        elements.clear();
+    }
     let out = &mut tty.outputs[idx];
     let rendered = match out.surface.render_frame(
         &mut tty.renderer,
         &elements,
-        [0.1, 0.1, 0.1, 1.0],
+        if state.wm.dpms_on {
+            [0.1, 0.1, 0.1, 1.0]
+        } else {
+            [0.0, 0.0, 0.0, 1.0]
+        },
         FrameFlags::DEFAULT,
     ) {
         Ok(result) => !result.is_empty,

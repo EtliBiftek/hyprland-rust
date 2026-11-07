@@ -147,12 +147,10 @@ Phase 0, infrastructure
 - [ ] Split into a cargo workspace: `hypr-config`, `hypr-layout`, `hypr-ipc`,
       `hyprctl`, `compositor`.
 - [ ] Keep `docs/PARITY.md` current.
-- [ ] Lua gaps: `hl.on` `window.fullscreen`/`update_state`/`*_early` (no IPC
-      counterpart), `hl.dsp.send_shortcut`/`send_key_state`, client-only
-      fullscreen state, `get_urgent_window`/`get_last_workspace` are nil,
+- [ ] Lua gaps: `hl.on` `window.update_state`/`*_early` (no IPC
+      counterpart), `get_urgent_window`/`get_last_workspace` are nil,
       runtime `hl.window_rule` blocks (multi-line keywords) unsupported.
-- [ ] `bindm` on a keyboard key is accepted but inert; gesture `cursorZoom`
-      and `scroll_move` do nothing.
+- [ ] Gesture `cursorZoom` and `scroll_move` do nothing.
 
 TTY backend known gaps
 - [ ] Never run on real hardware (VKMS in CI only).
@@ -165,35 +163,31 @@ IPC known gaps
       Hyprland.
 - [ ] Many placeholder fields (list in the `src/ipc.rs` header comment).
 - [ ] Missing events: other v0.57.1 events not emitted in `ipc.rs`.
-- [ ] `seterror` / `notify` are not drawn on screen; `rollinglog` is empty.
+- [ ] `seterror` / `notify` are not drawn on screen (no text rendering yet).
 
 Not started
-- [ ] XWayland extras: lazy start, HiDPI scaling (`force_zero_scaling`), X11
-      client-initiated move/resize, `WM_NORMAL_HINTS` limits while resizing.
-- [ ] Remaining dispatchers (`dpms`,
-      `alterzorder`, `sendshortcut`, `setprop`, ...).
-- [ ] Bind flags `l`, `o`, `t` behave like plain binds (no lock screen,
-      long-press or shortcut inhibit); `bindm` has no CI test.
+- [ ] XWayland extras: lazy start, HiDPI scaling (`force_zero_scaling`),
+      `WM_NORMAL_HINTS` limits while resizing.
+- [ ] `dpms off` shows black frames on tty but keeps the CRTC on.
+- [ ] Bind flag `t` is implicit (all matching binds run); `bindm` on a
+      keyboard key has no CI test (needs a held key + pointer motion).
 - [ ] Master: no per-window weights (`resizeactive` only moves `mfact`).
       Groupbar has no titles and reserves no layout space; drag-into-group
       and group window rules are missing.
 - [ ] Per-device `kb_*` overrides are ignored (one keyboard per seat).
-- [ ] A toplevel unmapped with a null buffer keeps its layout slot (Hyprland
-      removes it until it maps again); needs an "unmapped windows" list.
 - [ ] Config error overlay; empty `is_known_unimplemented`; inotify instead
       of mtime polling.
 - [ ] Effects shortcuts: see `shortcut:` comments in `src/render/` (blur cost, no damage tracking of effects).
 - [ ] Remaining protocols (see `docs/PARITY.md`): drm-lease, input-capture,
-      applying gamma/CTM/surface opacity, screencopy dmabuf/cursor/scale and
-      headless rendering, output-management apply, foreign-toplevel minimize.
+      gamma/CTM on winit/headless, screencopy dmabuf/cursor/scale and
+      headless rendering, output-management apply, foreign-toplevel minimize (only the `minimized` event).
 - [ ] Protocol shortcuts: pointer lock/confine not enforced; presentation
       feedback not fed; fractional scale fixed at 1.0; no lock-screen test.
-- [ ] Dispatchers missing: `sendshortcut`, `sendkeystate`,
-      `fullscreenstate`; `setprop` values stored but not applied;
-      `alterzorder bottom` approximated.
+- [ ] `alterzorder bottom` approximated; `sendshortcut` presses modifiers by
+      fixed keycodes (Super_L/Shift_L/Control_L/Alt_L).
 - [ ] Fractional scale, VRR, multi-GPU, explicit sync, HDR (phase 6).
 - [ ] Screen-sharing protocols for xdg-desktop-portal-hyprland (phase 7).
-- [ ] Fuzzing (config parser, IPC), packaging, migration guide (phase 9).
+- [ ] Fuzzing with an external fuzzer (cargo-fuzz); `fuzz_tests.rs` runs randomized parser and layout checks in `cargo test`. Packaging: `packaging/` (PKGBUILD, session file); migration guide: `docs/MIGRATION.md`.
 
 Open decisions for the owner
 - Plugin approach: no plugins / Rust dylib API / WASM (decide after phase 3).
