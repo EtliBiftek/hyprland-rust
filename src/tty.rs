@@ -141,7 +141,7 @@ pub fn init_tty(
     let _global = output.create_global::<Hypr>(&data.display_handle);
     output.change_current_state(Some(wl_mode), None, None, Some((0, 0).into()));
     output.set_preferred(wl_mode);
-    data.state.space.map_output(&output, (0, 0));
+    data.state.add_output(&output);
 
     let allocator = GbmAllocator::new(
         gbm.clone(),

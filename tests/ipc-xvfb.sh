@@ -169,8 +169,8 @@ for _ in $(seq 25); do
     sleep 0.2
 done
 grep -q '^configreloaded>>$' "$T/events" || { cat "$T/events"; fail "no configreloaded event"; }
-grep -q '^focusedmon>>' "$T/events" || fail "no focusedmon event"
-echo "ok: events configreloaded, focusedmon"
+# focusedmon fires only when the focused monitor changes: tests/multimon.sh.
+echo "ok: event configreloaded"
 
 # ---- extra requests ----------------------------------------------------------
 "$CTL" -j devices | grep -q '"keyboards"' || fail "devices"

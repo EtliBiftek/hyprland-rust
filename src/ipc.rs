@@ -675,19 +675,25 @@ impl Drop for Ipc {
 }
 
 impl Hypr {
-    /// Name of the (first) output, `HEADLESS-1` if there is none yet.
+    /// Name of the focused output, `HEADLESS-1` if there is none yet.
     pub fn monitor_name(&self) -> String {
+        let f = self.focused_mon_name();
+        if !f.is_empty() {
+            return f;
+        }
         self.space
             .outputs()
             .next()
             .map_or_else(|| "HEADLESS-1".into(), |o| o.name())
     }
 
-    /// `focusedmon`/`focusedmonv2` for the active workspace.
+    /// `focusedmon>>MON,WSNAME` / `focusedmonv2>>MON,WSID`.
     pub fn emit_focused_mon(&mut self) {
-        let (mon, ws) = (self.monitor_name(), self.active_workspace + 1);
-        self.ipc.emit("focusedmon", &format!("{mon},{ws}"));
-        self.ipc.emit("focusedmonv2", &format!("{mon},{ws}"));
+        let mon = self.monitor_name();
+        let ws = &self.workspaces[self.active_workspace];
+        let (id, name) = (ws.id, ws.name.clone());
+        self.ipc.emit("focusedmon", &format!("{mon},{name}"));
+        self.ipc.emit("focusedmonv2", &format!("{mon},{id}"));
     }
 
     /// Called after every commit of a toplevel: emits `openwindow` the first
@@ -699,12 +705,14 @@ impl Hypr {
         if !has_buffer || mapped_flag(w).0.swap(true, Ordering::Relaxed) {
             return;
         }
+        // `openwindow>>ADDR,WORKSPACENAME,CLASS,TITLE`.
         let ws = self
             .workspaces
             .iter()
-            .position(|ws| ws.contains(w))
-            .unwrap_or(self.active_workspace)
-            + 1;
+            .find(|ws| ws.contains(w))
+            .unwrap_or(&self.workspaces[self.active_workspace])
+            .name
+            .clone();
         let (class, title) = class_title(w);
         let addr = window_addr(w);
         self.ipc.emit(
@@ -931,8 +939,13 @@ fn handle_one(h: &mut Hypr, req: &Request) -> String {
 
 fn snapshot(h: &Hypr) -> Snapshot {
     let focused = h.focused_window();
-    let output = h.space.outputs().next();
-    let mon_name = h.monitor_name();
+    let visible = h.visible_ws();
+    let mon_id = |name: &str| {
+        h.wm.mons
+            .iter()
+            .find(|m| m.name == name)
+            .map_or(0, |m| m.id as i32)
+    };
     let active = WsRef::of(
         h.workspaces[h.active_workspace].id,
         &h.workspaces[h.active_workspace].name,
@@ -943,7 +956,8 @@ fn snapshot(h: &Hypr) -> Snapshot {
     for (i, ws) in h.workspaces.iter().enumerate() {
         let wins = ws.windows();
         let id = ws.id;
-        let shown = i == h.active_workspace || Some(id) == h.wm.special_shown;
+        let shown = visible.contains(&i);
+        let ws_mon = h.ws_monitor(i);
         if wins.is_empty() && !shown {
             continue;
         }
@@ -976,13 +990,13 @@ fn snapshot(h: &Hypr) -> Snapshot {
             clients.push(ClientInfo {
                 mapped: is_mapped(w),
                 hidden,
-                visible: i == h.active_workspace,
+                visible: shown,
                 accepts_input: true,
                 at,
                 size,
                 workspace: WsRef::of(id, &ws.name),
                 floating: ws.is_floating(w),
-                monitor: 0,
+                monitor: mon_id(&ws_mon),
                 initial_class,
                 initial_title,
                 class,
@@ -1015,8 +1029,8 @@ fn snapshot(h: &Hypr) -> Snapshot {
         let last = ws.last_focused.as_ref().filter(|w| ws.contains(w));
         workspaces.push(WorkspaceInfo {
             ws: WsRef::of(id, &ws.name),
-            monitor: mon_name.clone(),
-            monitor_id: 0,
+            monitor: ws_mon.clone(),
+            monitor_id: mon_id(&ws_mon),
             windows: wins.len() as i32,
             has_fullscreen: ws.fullscreen.is_some(),
             last_window: last.map_or("0x0".into(), window_addr),
@@ -1026,79 +1040,89 @@ fn snapshot(h: &Hypr) -> Snapshot {
         });
     }
 
-    let monitors = output
-        .map(|o| {
-            let mode = o.current_mode();
-            let (w, hh, hz) = mode.map_or((0, 0, 60.0), |m| {
-                (m.size.w, m.size.h, m.refresh as f64 / 1000.0)
-            });
-            let loc = o.current_location();
-            let phys = o.physical_properties();
-            let special =
-                h.wm.special_shown
-                    .and_then(|id| h.ws_index(id))
-                    .map_or_else(WsRef::empty, |i| {
-                        WsRef::of(h.workspaces[i].id, &h.workspaces[i].name)
-                    });
-            // [left, top, right, bottom] taken by layer-shell exclusive zones.
-            let reserved = {
-                let z = layer_map_for_output(o).non_exclusive_zone();
-                [
-                    z.loc.x,
-                    z.loc.y,
-                    w - z.loc.x - z.size.w,
-                    hh - z.loc.y - z.size.h,
-                ]
-            };
-            MonitorInfo {
-                id: 0,
-                name: mon_name.clone(),
-                description: format!("{} {} ({})", phys.make, phys.model, mon_name),
-                make: phys.make.clone(),
-                model: phys.model.clone(),
-                serial: String::new(),
-                width: w,
-                height: hh,
-                physical_width: phys.size.w,
-                physical_height: phys.size.h,
-                refresh_rate: hz,
-                x: loc.x,
-                y: loc.y,
-                active_workspace: active.clone(),
-                special_workspace: special,
-                reserved,
-                scale: o.current_scale().fractional_scale(),
-                transform: 0,
-                focused: true,
-                dpms_status: h.wm.dpms_on,
-                vrr: false,
-                solitary: "0".into(),
-                solitary_blocked_by: None,
-                actively_tearing: false,
-                tearing_blocked_by: None,
-                direct_scanout_to: "0".into(),
-                direct_scanout_blocked_by: None,
-                disabled: false,
-                current_format: "XRGB8888".into(),
-                mirror_of: "none".into(),
-                available_modes: vec![format!("{w}x{hh}@{hz:.2}Hz")],
-                color_management_preset: "srgb".into(),
-                sdr_brightness: 1.0,
-                sdr_saturation: 1.0,
-                sdr_min_luminance: 0.005,
-                sdr_max_luminance: 80.0,
-                hardware_cursors_in_use: false,
-                hardware_details: HardwareDetails {
-                    backend: h.ipc.backend.clone(),
-                    hdr: false,
-                    chroma: false,
-                    bt2020: false,
-                    vrr_capable: false,
-                },
-            }
-        })
-        .into_iter()
-        .collect();
+    let monitors =
+        h.wm.mons
+            .iter()
+            .enumerate()
+            .filter_map(|(mi, mon)| {
+                let o = &h.output_named(&mon.name)?;
+                let mon_name = &mon.name;
+                let is_focused = mi == h.wm.focused_mon;
+                let mode = o.current_mode();
+                let (w, hh, hz) = mode.map_or((0, 0, 60.0), |m| {
+                    (m.size.w, m.size.h, m.refresh as f64 / 1000.0)
+                });
+                let loc = o.current_location();
+                let phys = o.physical_properties();
+                // shortcut: one special workspace at a time, on the focused monitor.
+                let special =
+                    h.wm.special_shown
+                        .filter(|_| is_focused)
+                        .and_then(|id| h.ws_index(id))
+                        .map_or_else(WsRef::empty, |i| {
+                            WsRef::of(h.workspaces[i].id, &h.workspaces[i].name)
+                        });
+                let shown = h.ws_index(mon.ws).map_or_else(WsRef::empty, |i| {
+                    WsRef::of(h.workspaces[i].id, &h.workspaces[i].name)
+                });
+                // [left, top, right, bottom] taken by layer-shell exclusive zones.
+                let reserved = {
+                    let z = layer_map_for_output(o).non_exclusive_zone();
+                    [
+                        z.loc.x,
+                        z.loc.y,
+                        w - z.loc.x - z.size.w,
+                        hh - z.loc.y - z.size.h,
+                    ]
+                };
+                Some(MonitorInfo {
+                    id: mon.id as i32,
+                    name: mon_name.clone(),
+                    description: format!("{} {} ({})", phys.make, phys.model, mon_name),
+                    make: phys.make.clone(),
+                    model: phys.model.clone(),
+                    serial: String::new(),
+                    width: w,
+                    height: hh,
+                    physical_width: phys.size.w,
+                    physical_height: phys.size.h,
+                    refresh_rate: hz,
+                    x: loc.x,
+                    y: loc.y,
+                    active_workspace: shown,
+                    special_workspace: special,
+                    reserved,
+                    scale: o.current_scale().fractional_scale(),
+                    transform: crate::monitors::transform_index(o.current_transform()) as i32,
+                    focused: is_focused,
+                    dpms_status: h.wm.dpms_on,
+                    vrr: false,
+                    solitary: "0".into(),
+                    solitary_blocked_by: None,
+                    actively_tearing: false,
+                    tearing_blocked_by: None,
+                    direct_scanout_to: "0".into(),
+                    direct_scanout_blocked_by: None,
+                    disabled: false,
+                    current_format: "XRGB8888".into(),
+                    mirror_of: "none".into(),
+                    available_modes: vec![format!("{w}x{hh}@{hz:.2}Hz")],
+                    color_management_preset: "srgb".into(),
+                    sdr_brightness: 1.0,
+                    sdr_saturation: 1.0,
+                    sdr_min_luminance: 0.005,
+                    sdr_max_luminance: 80.0,
+                    hardware_cursors_in_use: false,
+                    hardware_details: HardwareDetails {
+                        backend: h.ipc.backend.clone(),
+                        hdr: false,
+                        chroma: false,
+                        bt2020: false,
+                        vrr_capable: false,
+                    },
+                })
+            })
+            .collect();
 
     let binds = h
         .config

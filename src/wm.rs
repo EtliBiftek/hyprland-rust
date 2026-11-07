@@ -67,6 +67,16 @@ pub struct WmState {
     pub props: Vec<(Window, String, String)>,
     /// `dpms`: false while the output is switched off.
     pub dpms_on: bool,
+    /// Monitors in the order they were added (see `monitors.rs`).
+    pub mons: Vec<crate::monitors::Mon>,
+    /// Index into `mons` of the focused monitor.
+    pub focused_mon: usize,
+    pub next_mon_id: u32,
+    /// Globals of virtual outputs, removed by `hyprctl output remove`.
+    pub output_globals: Vec<(
+        String,
+        smithay::reexports::wayland_server::backend::GlobalId,
+    )>,
 }
 
 impl WmState {
@@ -88,6 +98,10 @@ impl WmState {
             pseudo: Vec::new(),
             props: Vec::new(),
             dpms_on: true,
+            mons: Vec::new(),
+            focused_mon: 0,
+            next_mon_id: 0,
+            output_globals: Vec::new(),
         }
     }
 }
@@ -113,22 +127,24 @@ fn special_name(n: &str) -> String {
 }
 
 impl Hypr {
+    /// Geometry of the focused output.
     pub fn output_geometry(&self) -> Option<Rectangle<i32, Logical>> {
-        let output = self.space.outputs().next()?;
-        self.space.output_geometry(output)
+        let output = self.focused_output()?;
+        self.space.output_geometry(&output)
     }
 
-    /// The output minus the exclusive zones of layer surfaces (bars, docks).
+    /// The focused output minus the exclusive zones of layer surfaces.
     pub fn usable_geometry(&self) -> Option<Rectangle<i32, Logical>> {
-        let output = self.space.outputs().next()?;
-        let geo = self.space.output_geometry(output)?;
-        let zone = layer_map_for_output(output).non_exclusive_zone();
+        let output = self.focused_output()?;
+        let geo = self.space.output_geometry(&output)?;
+        let zone = layer_map_for_output(&output).non_exclusive_zone();
         Some(Rectangle::new(geo.loc + zone.loc, zone.size))
     }
 
-    /// The area tiled windows may use: the usable area minus the outer gaps.
-    /// Window rects are later shrunk by `gaps_in`, so subtract that here to
-    /// make the distance to the screen edge exactly `gaps_out`.
+    /// The area tiled windows of the focused monitor may use: the usable area
+    /// minus the outer gaps. Window rects are later shrunk by `gaps_in`, so
+    /// subtract that here to make the distance to the screen edge exactly
+    /// `gaps_out`.
     pub fn tiling_area(&self) -> Rect {
         let g = &self.config.general;
         let out = self
@@ -170,7 +186,10 @@ impl Hypr {
 
     /// Indices of the workspaces whose windows are on screen.
     pub(crate) fn visible_ws(&self) -> Vec<usize> {
-        let mut v = vec![self.active_workspace];
+        let mut v = self.shown_ws();
+        if !v.contains(&self.active_workspace) {
+            v.insert(0, self.active_workspace);
+        }
         v.extend(self.special_index());
         v
     }
@@ -180,11 +199,7 @@ impl Hypr {
     }
 
     fn mon_name(&self) -> String {
-        self.space
-            .outputs()
-            .next()
-            .map(|o| o.name())
-            .unwrap_or_else(|| "HEADLESS-1".into())
+        self.monitor_name()
     }
 
     fn ws_infos(&self) -> Vec<WsInfo> {
@@ -201,12 +216,22 @@ impl Hypr {
     fn create_ws(&mut self, id: i32, name: String) -> usize {
         self.ipc.emit("createworkspace", &name);
         self.ipc.emit("createworkspacev2", &format!("{id},{name}"));
-        self.workspaces.push(Workspace::new(id, name));
+        // A `workspace = N, monitor:X` rule places it, else the focused monitor.
+        let ruled = self
+            .config
+            .workspace_rules
+            .iter()
+            .find(|r| r.workspace == name || r.workspace == id.to_string())
+            .and_then(|r| r.monitor.clone())
+            .filter(|m| self.mon_index(m).is_some());
+        let mut ws = Workspace::new(id, name);
+        ws.monitor = ruled.unwrap_or_else(|| self.focused_mon_name());
+        self.workspaces.push(ws);
         self.workspaces.len() - 1
     }
 
     /// Finds or creates the workspace a selector resolved to.
-    fn ensure_ws(&mut self, t: &Target) -> Option<usize> {
+    pub(crate) fn ensure_ws(&mut self, t: &Target) -> Option<usize> {
         match t {
             Target::Id(n) => match self.ws_index(*n) {
                 Some(i) => Some(i),
@@ -241,10 +266,12 @@ impl Hypr {
 
     /// Destroys empty workspaces that are neither active nor shown.
     pub fn gc_workspaces(&mut self) {
+        let shown: Vec<i32> = self.wm.mons.iter().map(|m| m.ws).collect();
         let mut i = 0;
         while i < self.workspaces.len() {
             let ws = &self.workspaces[i];
             let keep = i == self.active_workspace
+                || shown.contains(&ws.id)
                 || Some(ws.id) == self.wm.special_shown
                 || !ws.windows().is_empty();
             if keep {
@@ -263,7 +290,15 @@ impl Hypr {
 
     /// `workspace, <selector>`.
     pub fn select_workspace(&mut self, sel: &WsSel) {
-        let infos = self.ws_infos();
+        let mut infos = self.ws_infos();
+        // `m+1`: only the workspaces of the focused monitor count.
+        if matches!(sel, WsSel::OnMonitor(_)) {
+            let mon = self.focused_mon_name();
+            infos.retain(|i| {
+                self.ws_index(i.id)
+                    .is_some_and(|x| self.ws_monitor(x) == mon)
+            });
+        }
         let Some(target) = resolve_ws(sel, self.active_id(), self.wm.previous_workspace, &infos)
         else {
             return;
@@ -306,6 +341,8 @@ impl Hypr {
                 return;
             };
             self.wm.special_shown = Some(self.workspaces[i].id);
+            // Shown on the focused monitor.
+            self.workspaces[i].monitor = self.focused_mon_name();
             let mon = self.mon_name();
             self.ipc.emit("activespecial", &format!("{full},{mon}"));
             let id = self.workspaces[i].id;
@@ -333,30 +370,33 @@ impl Hypr {
             return;
         }
         let old = self.active_workspace;
-        let pinned: Vec<Window> = self
-            .wm
-            .pinned
-            .iter()
-            .filter(|w| self.workspaces[old].is_floating(w))
-            .cloned()
-            .collect();
-        for w in self.workspaces[old].windows() {
-            if !pinned.contains(&w) {
-                self.space.unmap_elem(&w);
+        self.wm.previous_workspace = Some(self.workspaces[old].id);
+        let cur = self.wm.focused_mon;
+        match self.mon_showing(idx) {
+            // Shown on another monitor: focus moves there.
+            Some(m) => {
+                self.set_focused_mon(m);
+                self.warp_to_mon(m);
+            }
+            None if self.wm.mons.is_empty() => {
+                for w in self.workspaces[old].windows() {
+                    self.space.unmap_elem(&w);
+                }
+                self.active_workspace = idx;
+            }
+            None => {
+                // A workspace bound to another monitor opens there.
+                let m = self.mon_index(&self.workspaces[idx].monitor).unwrap_or(cur);
+                self.show_ws_on(m, idx);
+                self.set_focused_mon(m);
+                if m != cur {
+                    self.warp_to_mon(m);
+                }
             }
         }
-        for w in &pinned {
-            self.workspaces[old].remove(w);
-            self.workspaces[idx].floating.push(w.clone());
-        }
-        self.wm.previous_workspace = Some(self.workspaces[old].id);
-        self.active_workspace = idx;
         let (id, name) = (self.workspaces[idx].id, self.workspaces[idx].name.clone());
         self.ipc.emit("workspace", &name);
         self.ipc.emit("workspacev2", &format!("{id},{name}"));
-        // shortcut: single monitor, so emit on every workspace switch; only emit
-        // when the focused monitor changes once multi-monitor exists.
-        self.emit_focused_mon();
         self.relayout();
         let focus = self.workspaces[idx].last_focused.clone();
         self.focus_window(focus);
@@ -462,16 +502,16 @@ impl Hypr {
         self.sync_layouts();
         let open: Vec<Window> = self.workspaces.iter().flat_map(|ws| ws.windows()).collect();
         self.wm.pseudo.retain(|p| open.contains(p));
-        self.layout_ws(self.active_workspace);
-        if let Some(i) = self.special_index() {
+        for i in self.visible_ws() {
             self.layout_ws(i);
         }
     }
 
     fn layout_ws(&mut self, idx: usize) {
-        let area = self.tiling_area();
+        let mon = self.ws_monitor(idx);
+        let area = self.tiling_area_of(&mon);
         let gaps_in = self.config.general.gaps_in;
-        let output_geo = self.output_geometry();
+        let output_geo = self.mon_geometry(&mon).or_else(|| self.output_geometry());
         let ws = &mut self.workspaces[idx];
         let is_special = ws.is_special();
         // `special_scale_factor` shrinks tiled windows of special workspaces
@@ -631,6 +671,16 @@ impl Hypr {
         if let Some(w) = &window {
             if self.group_activate(w) {
                 self.relayout();
+            }
+        }
+        // Focusing a window on another monitor focuses that monitor.
+        if let Some(m) = window
+            .as_ref()
+            .and_then(|w| self.ws_of(w))
+            .and_then(|i| self.mon_showing(i))
+        {
+            if m != self.wm.focused_mon {
+                self.set_focused_mon(m);
             }
         }
         if let Some(w) = &window {
@@ -1075,7 +1125,7 @@ impl Hypr {
     }
 
     /// Moves the pointer with a real motion event, so enter and leave are sent.
-    fn warp_pointer(&mut self, pos: Point<f64, Logical>) {
+    pub(crate) fn warp_pointer(&mut self, pos: Point<f64, Logical>) {
         let Some(pointer) = self.seat.get_pointer() else {
             return;
         };
@@ -1280,6 +1330,47 @@ impl Hypr {
                 self.global_shortcut(name, true);
             }
             Dispatcher::Noop(..) => {}
+            Dispatcher::FocusMonitor(arg) => {
+                if let Some(m) = self.resolve_mon(arg) {
+                    self.focus_monitor_index(m);
+                }
+            }
+            Dispatcher::MoveCurrentWorkspaceToMonitor(arg) => {
+                if let Some(m) = self.resolve_mon(arg) {
+                    self.move_ws_to_monitor(self.active_workspace, m);
+                }
+            }
+            Dispatcher::MoveWorkspaceToMonitor(ws, mon) => {
+                let idx = if ws == "current" {
+                    Some(self.active_workspace)
+                } else {
+                    ws.parse::<WsSel>().ok().and_then(|sel| {
+                        let infos = self.ws_infos();
+                        let t =
+                            resolve_ws(&sel, self.active_id(), self.wm.previous_workspace, &infos)?;
+                        self.ensure_ws(&t)
+                    })
+                };
+                if let (Some(idx), Some(m)) = (idx, self.resolve_mon(mon)) {
+                    self.move_ws_to_monitor(idx, m);
+                }
+            }
+            Dispatcher::SwapActiveWorkspaces(a, b) => {
+                if let (Some(a), Some(b)) = (self.resolve_mon(a), self.resolve_mon(b)) {
+                    self.swap_active_workspaces(a, b);
+                }
+            }
+            Dispatcher::FocusWorkspaceOnCurrentMonitor(sel) => {
+                let infos = self.ws_infos();
+                if let Some(t) =
+                    resolve_ws(sel, self.active_id(), self.wm.previous_workspace, &infos)
+                {
+                    if let Some(idx) = self.ensure_ws(&t) {
+                        self.focus_ws_on_current(idx);
+                    }
+                }
+            }
+            Dispatcher::MoveWindowToMonitor(arg) => self.move_window_to_monitor(arg),
         }
         // Floating, fullscreen, pin or tags may have changed: dynamic rules.
         self.refresh_all_rules();

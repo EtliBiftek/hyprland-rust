@@ -47,7 +47,7 @@ pub fn init_winit(
     );
     output.set_preferred(mode);
 
-    state.space.map_output(&output, (0, 0));
+    state.add_output(&output);
 
     let mut damage_tracker = OutputDamageTracker::from_output(&output);
 

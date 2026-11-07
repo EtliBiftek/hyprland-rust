@@ -62,3 +62,6 @@ jobs:
       - name: Foreign toplevel and output management test (headless + wlrctl)
         timeout-minutes: 3
         run: sh tests/foreign-toplevel.sh
+      - name: Multi-monitor test (headless, 2 outputs)
+        timeout-minutes: 3
+        run: sh tests/multimon.sh

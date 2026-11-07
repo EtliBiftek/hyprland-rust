@@ -16,6 +16,7 @@ mod layout;
 mod lua_config;
 mod lua_host;
 mod master;
+mod monitors;
 mod options;
 mod reload;
 mod rules;

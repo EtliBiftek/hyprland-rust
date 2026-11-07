@@ -46,7 +46,7 @@ impl XdgShellHandler for Hypr {
     ) {
         if let Some((idx, window)) = self.window_for_surface(surface.wl_surface()) {
             self.workspaces[idx].fullscreen = Some(window);
-            if idx == self.active_workspace {
+            if self.visible_ws().contains(&idx) {
                 self.relayout();
             }
             self.ipc.emit("fullscreen", "1");
@@ -57,7 +57,7 @@ impl XdgShellHandler for Hypr {
         if let Some((idx, window)) = self.window_for_surface(surface.wl_surface()) {
             if self.workspaces[idx].fullscreen.as_ref() == Some(&window) {
                 self.workspaces[idx].fullscreen = None;
-                if idx == self.active_workspace {
+                if self.visible_ws().contains(&idx) {
                     self.relayout();
                 }
                 self.ipc.emit("fullscreen", "0");

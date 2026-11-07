@@ -87,7 +87,25 @@ pub fn handle(h: &mut Hypr, req: &Request) -> Option<String> {
         },
         "plugin" if args.starts_with("list") => "no plugins loaded".into(),
         "plugin" => "plugins are not supported".into(),
-        "output" => "creating and removing outputs is not supported by this backend".into(),
+        // `output create headless [NAME]` / `output remove NAME`: virtual
+        // outputs, on any backend (like Hyprland).
+        "output" => {
+            let w: Vec<&str> = args.split_whitespace().collect();
+            match w.as_slice() {
+                ["create", "headless" | "auto", rest @ ..] => {
+                    match h.create_virtual_output(rest.first().copied()) {
+                        Ok(_) => "ok".into(),
+                        Err(e) => e,
+                    }
+                }
+                ["create", other, ..] => format!("unsupported output type `{other}`"),
+                ["remove", name] => match h.remove_virtual_output(name) {
+                    Ok(()) => "ok".into(),
+                    Err(e) => e,
+                },
+                _ => "usage: output create headless [NAME] | output remove NAME".into(),
+            }
+        }
         "eval" => eval(h, args),
         _ => return None,
     })

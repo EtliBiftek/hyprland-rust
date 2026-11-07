@@ -22,6 +22,8 @@ pub struct Workspace<W> {
     /// `fullscreen, 1`: window fills the tiling area.
     pub maximized: Option<W>,
     pub last_focused: Option<W>,
+    /// Name of the monitor it belongs to (empty: not assigned yet).
+    pub monitor: String,
 }
 
 impl<W> Default for Workspace<W> {
@@ -41,6 +43,7 @@ impl<W> Workspace<W> {
             fullscreen: None,
             maximized: None,
             last_focused: None,
+            monitor: String::new(),
         }
     }
 

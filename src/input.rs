@@ -131,12 +131,9 @@ impl Hypr {
             InputEvent::PointerMotion { event, .. } => {
                 // Relative motion (libinput mice): move and clamp to the output.
                 let pointer = self.seat.get_pointer().unwrap();
-                let mut pos = pointer.current_location() + event.delta();
-                if let Some(geo) = self.output_geometry() {
-                    let geo = geo.to_f64();
-                    pos.x = pos.x.clamp(geo.loc.x, geo.loc.x + geo.size.w - 1.0);
-                    pos.y = pos.y.clamp(geo.loc.y, geo.loc.y + geo.size.h - 1.0);
-                }
+                let from = pointer.current_location();
+                let pos = self.clamp_to_outputs(from, from + event.delta());
+                self.pointer_on_monitor(pos);
                 self.follow_mouse(pos);
                 let under = self.surface_under(pos);
                 // Relative motion goes to the client even when the pointer is clamped.
@@ -161,9 +158,10 @@ impl Hypr {
                 pointer.frame(self);
             }
             InputEvent::PointerMotionAbsolute { event, .. } => {
-                let output = self.space.outputs().next().unwrap();
-
-                let output_geo = self.space.output_geometry(output).unwrap();
+                // Absolute devices (winit, tablets) map to the focused output.
+                let Some(output_geo) = self.output_geometry() else {
+                    return;
+                };
 
                 let pos = event.position_transformed(output_geo.size) + output_geo.loc.to_f64();
 
@@ -171,6 +169,7 @@ impl Hypr {
 
                 let pointer = self.seat.get_pointer().unwrap();
 
+                self.pointer_on_monitor(pos);
                 self.follow_mouse(pos);
                 let under = self.surface_under(pos);
 
