@@ -3,6 +3,7 @@ pub mod capture;
 mod compositor;
 mod ctm_control;
 mod dmabuf;
+mod ext_workspace;
 pub mod extra;
 mod fifo;
 pub mod focus_grab;
@@ -27,6 +28,7 @@ mod toplevel_export;
 mod toplevel_icon;
 mod toplevel_mapping;
 mod virtual_keyboard;
+mod virtual_pointer;
 mod xdg_dialog;
 mod xdg_shell;
 

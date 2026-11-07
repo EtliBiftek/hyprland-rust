@@ -8,10 +8,10 @@ use std::any::Any;
 use smithay::reexports::wayland_server::DisplayHandle;
 
 use super::{
-    alpha_modifier, capture::CaptureState, ctm_control::CtmState, dmabuf::DmabufHolder, fifo,
-    focus_grab::FocusGrabState, gamma_control::GammaState, input_method,
-    lock_notify::LockNotifyState, security_context, system_bell, tablet, text_input, toplevel_icon,
-    virtual_keyboard,
+    alpha_modifier, capture::CaptureState, ctm_control::CtmState, dmabuf::DmabufHolder,
+    ext_workspace::WorkspaceState, fifo, focus_grab::FocusGrabState, gamma_control::GammaState,
+    input_method, lock_notify::LockNotifyState, security_context, system_bell, tablet, text_input,
+    toplevel_icon, virtual_keyboard,
 };
 
 pub struct ExtraState {
@@ -21,6 +21,7 @@ pub struct ExtraState {
     pub lock_notify: LockNotifyState,
     pub gamma: GammaState,
     pub dmabuf: DmabufHolder,
+    pub workspaces: WorkspaceState,
     /// Smithay states that only need to stay alive.
     _keep: Vec<Box<dyn Any>>,
 }
@@ -34,6 +35,8 @@ impl ExtraState {
         super::hyprland_surface::init(dh);
         super::lock_notify::init(dh);
         super::gamma_control::init(dh);
+        super::virtual_pointer::init(dh);
+        super::ext_workspace::init(dh);
         super::image_copy_capture::init(dh);
         super::tearing_control::init(dh);
         super::xdg_dialog::init(dh);
@@ -57,6 +60,7 @@ impl ExtraState {
             lock_notify: Default::default(),
             gamma: Default::default(),
             dmabuf: Default::default(),
+            workspaces: Default::default(),
             _keep: keep,
         }
     }
