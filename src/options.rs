@@ -18,7 +18,7 @@ pub enum OptValue {
 }
 
 /// Gradient as Hyprland prints it: `aarrggbb [aarrggbb ...] 0deg`.
-fn gradient(c: [f32; 4]) -> String {
+pub(crate) fn gradient(c: [f32; 4]) -> String {
     let [r, g, b, a] = c.map(|v| (v * 255.0).round() as u32);
     format!("{:x} 0deg", a << 24 | r << 16 | g << 8 | b)
 }

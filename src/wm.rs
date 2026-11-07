@@ -289,6 +289,7 @@ impl Hypr {
         }
         let mon = self.mon_name();
         self.ipc.emit("activespecial", &format!(",{mon}"));
+        self.ipc.emit("activespecialv2", &format!(",,{mon}"));
     }
 
     /// `togglespecialworkspace`: shows the special workspace on top of the
@@ -307,6 +308,9 @@ impl Hypr {
             self.wm.special_shown = Some(self.workspaces[i].id);
             let mon = self.mon_name();
             self.ipc.emit("activespecial", &format!("{full},{mon}"));
+            let id = self.workspaces[i].id;
+            self.ipc
+                .emit("activespecialv2", &format!("{id},{full},{mon}"));
         }
         self.relayout();
         let f = self.focus_ws();

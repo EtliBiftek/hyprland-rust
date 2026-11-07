@@ -631,26 +631,26 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `animations` | parsed | Stub: empty animation list, no beziers. |
 | `rollinglog` | parsed | Stub: empty log. |
 | `configerrors` | partial | Lists load errors from `reload.rs`. |
-| `locked` | none | Not implemented. |
-| `descriptions` | none | Not implemented. |
-| `submap` | none | Not implemented. The current submap is only in events and dispatch. |
+| `locked` | tested | `tests/ipc-dots.sh`. |
+| `descriptions` | parsed | Stub: replies `[]` (no option description table). `tests/ipc-dots.sh`. |
+| `submap` | tested | `default` or the active submap; JSON string. `tests/ipc-dots.sh`. |
 | `status` | none | Not implemented. |
 | `deprecated-config` | none | Not implemented. |
-| `reloadshaders` | none | No shaders. |
-| `monitors` | partial | One output. JSON and text. No test. |
+| `reloadshaders` | parsed | Stub: replies `ok` (no shaders). |
+| `monitors` | partial | One output. JSON and text; description, make, model, physical size, `specialWorkspace` and `reserved` are real. `tests/ipc-dots.sh`. |
 | `reload` | tested | `tests/ipc-xvfb.sh` (`reload` and autoreload). |
-| `plugin` | none | No plugin system. |
+| `plugin` | parsed | `list` replies `no plugins loaded`, others an error. No plugin system. |
 | `notify` | partial | Returns `ok`; no notification overlay. |
 | `dismissnotify` | parsed | Argument check only; no notifications exist. |
-| `getprop` | none | Not implemented. |
+| `getprop` | tested | Window selectors `class:`, `title:`, `address:`, `pid:`, `active`; values are the `setprop` store plus Hyprland defaults. `tests/ipc-dots.sh`. |
 | `seterror` | partial | Sets the error shown by `configerrors`. |
 | `switchxkblayout` | tested | `tests/ipc-xvfb.sh`. |
-| `output` | none | Not implemented (no output create or remove). |
+| `output` | parsed | Replies with an error: no output create or remove. |
 | `dispatch` | tested | Legacy dispatcher names, `tests/ipc-xvfb.sh` and `tests/window-rules.sh`. The v0.57.1 Lua form is not implemented. |
-| `setcursor` | none | Not implemented. |
+| `setcursor` | parsed | Validates the size, replies `ok`; the cursor theme is not applied. |
 | `getoption` | tested | `tests/ipc-xvfb.sh`. Only the options in `options.rs` are answered. |
 | `decorations` | parsed | Stub: replies `none`. |
-| `eval` | none | No Lua runtime. |
+| `eval` | partial | `hl.dsp.*` runs as a dispatcher, other code runs like a config script and its settings are applied as keywords. `tests/ipc-dots.sh`. |
 | `repl` | none | No Lua runtime. |
 | `keyword` (repo only) | tested | Not in v0.57.1: `hyprctl keyword` was removed. The repo keeps it for hyprlang. |
 | `layouts` (repo only) | partial | Not in the v0.57.1 registration list. Returns dwindle and master. |
@@ -659,9 +659,9 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 
 | Item | Status | Notes |
 |------|--------|-------|
-| `activelayout` | none | Keyboard layout change event not emitted. |
+| `activelayout` | partial | Emitted by `hyprctl switchxkblayout`; not on keyboard-triggered layout switches. `tests/ipc-dots.sh`. |
 | `activespecial` | partial | Emitted from `wm.rs` on special workspace toggle. |
-| `activespecialv2` | none | Not emitted. |
+| `activespecialv2` | tested | `id,name,monitor` or `,,monitor`. `tests/ipc-dots.sh`. |
 | `activewindow` | partial | `class,title`; emitted from `ipc.rs`. |
 | `activewindowv2` | partial | Address only. |
 | `bell` | none | Not emitted. |
@@ -780,3 +780,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `zxdg_importer_v2` | none | Not registered by the repo. |
 | `zxdg_output_manager_v1` | partial | `OutputManagerState::new_with_xdg_output`. No test. |
 | `wl_drm / zwp_linux_dmabuf_v1` | none | No linux-dmabuf global (CLAUDE.md). |
+
+## hyprctl command line (dotfile compatibility)
+
+`src/bin/hyprctl.rs` accepts `-j -r -a -c --config -f --follow -q --quiet -i --instance --batch --` in any position (`hyprctl clients -j`, `hyprctl getoption x -j`, `hyprctl dispatch x -q`), like Hyprland's hyprctl. `hyprctl hyprpaper ...` and `hyprctl hyprsunset ...` go to `.hyprpaper.sock` / `.hyprsunset.sock` and fail with `Couldn't connect to ... (3)` when those daemons are not there. Tested by `tests/ipc-dots.sh`.

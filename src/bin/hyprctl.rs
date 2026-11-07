@@ -21,17 +21,24 @@ commands:
     decorations <win>   Lists the decorations of a window
     devices             Lists all connected keyboards and mice
     dismissnotify [n]   Dismisses all or up to n notifications
+    descriptions        Lists the config option descriptions
     dispatch <name> [args]  Issues a dispatcher
+    eval <lua>          Evaluates Lua code (hl.* API)
+    getprop <win> <prop>  Gets a window property
     getoption <option>  Gets a config option and whether it is set
     globalshortcuts     Lists all global shortcuts
     instances           Lists all running instances
     keyword <name> <value>  Applies a config line at runtime
     kill                Enters kill mode
+    locked              Whether the session is locked
     layouts             Lists the available layouts
     monitors            Lists active outputs ('monitors all': all of them)
     notify <icon> <ms> <color> [fontsize:N] <text>  Sends a notification
-    reload              Reloads the config file
+    plugin <list|load|unload>  Plugins (not supported)
+    reload [config-only]  Reloads the config file
     rollinglog          Prints the tail of the log
+    setcursor <theme> <size>  Sets the cursor theme and size
+    submap              Gets the active submap
     seterror <color> <message>|disable  Sets the hyprctl error string
     splash              Gets the current splash
     switchxkblayout <kb|main|all> <next|prev|index>  Switches the xkb layout
@@ -156,60 +163,114 @@ fn instance_dir(instance: Option<String>) -> Result<PathBuf, String> {
         .ok_or_else(|| "no Hyprland instance found (is HYPRLAND_INSTANCE_SIGNATURE set?)".into())
 }
 
-fn run() -> Result<(), String> {
-    let mut flags = String::new();
-    let mut quiet = false;
-    let mut instance = None;
-    let mut batch = None;
-    let mut words = Vec::new();
-    let mut args = std::env::args().skip(1);
+/// Command line split the way Hyprland's `hyprctl` does it: flags are
+/// recognised anywhere (`hyprctl clients -j` works), `--` ends flag parsing
+/// and a negative number is an argument. Unknown dashed words stay arguments
+/// (real hyprctl prints the usage instead).
+#[derive(Default, Debug, PartialEq)]
+struct Cli {
+    flags: String,
+    quiet: bool,
+    instance: Option<String>,
+    batch: Option<String>,
+    words: Vec<String>,
+    help: bool,
+}
+
+fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
+    let mut c = Cli::default();
+    let mut parse = true;
+    let mut args = args.into_iter();
     while let Some(a) = args.next() {
-        // Options are only recognised before the command word.
-        if !words.is_empty() {
-            words.push(a);
+        if parse && a == "--" {
+            parse = false;
+            continue;
+        }
+        let is_num = a
+            .strip_prefix('-')
+            .is_some_and(|n| n.trim_end_matches(',').parse::<f64>().is_ok());
+        if !parse || !a.starts_with('-') || a.len() < 2 || is_num {
+            c.words.push(a);
             continue;
         }
         match a.as_str() {
-            "-j" | "-r" | "-a" | "-c" | "-f" => {
-                let f = &a[1..];
-                if !flags.contains(f) {
-                    flags.push_str(f);
+            "-j" | "-r" | "-a" | "-c" | "--config" | "-f" | "--follow" => {
+                let f = if a.starts_with("--") {
+                    &a[2..3]
+                } else {
+                    &a[1..]
+                };
+                if !c.flags.contains(f) {
+                    c.flags.push_str(f);
                 }
             }
-            "-q" | "--quiet" => quiet = true,
-            "-i" | "--instance" => instance = Some(args.next().ok_or("missing instance")?),
-            "--batch" => batch = Some(args.next().ok_or("missing batch commands")?),
-            "-h" | "--help" => {
-                print!("{USAGE}");
-                return Ok(());
-            }
-            _ => words.push(a),
+            "-q" | "--quiet" => c.quiet = true,
+            "-i" | "--instance" => c.instance = Some(args.next().ok_or("missing instance")?),
+            "--batch" => c.batch = Some(args.next().ok_or("missing batch commands")?),
+            "-h" | "--help" => c.help = true,
+            _ => c.words.push(a),
         }
     }
-    if words.is_empty() && batch.is_none() {
+    Ok(c)
+}
+
+/// Commands answered by another program's socket in the instance directory.
+/// We run neither daemon; the connect error is the clean failure.
+fn side_socket(word: &str) -> Option<&'static str> {
+    match word {
+        "hyprpaper" => Some(".hyprpaper.sock"),
+        "hyprsunset" => Some(".hyprsunset.sock"),
+        _ => None,
+    }
+}
+
+fn roundtrip(sock: &std::path::Path, req: &str) -> Result<String, String> {
+    let mut s = UnixStream::connect(sock)
+        .map_err(|_| format!("Couldn't connect to {}. (3)", sock.display()))?;
+    s.write_all(req.as_bytes())
+        .map_err(|_| "Couldn't write (4)".to_string())?;
+    let mut reply = String::new();
+    s.read_to_string(&mut reply)
+        .map_err(|_| "Couldn't read (5)".to_string())?;
+    Ok(reply)
+}
+
+fn run() -> Result<i32, String> {
+    let c = parse_args(std::env::args().skip(1))?;
+    if c.help {
+        print!("{USAGE}");
+        return Ok(1);
+    }
+    if c.words.is_empty() && c.batch.is_none() {
         return Err(USAGE.trim_end().to_string());
     }
-    if words.first().map(String::as_str) == Some("instances") {
-        println!("{}", instances_text(&instances(), flags.contains('j')));
-        return Ok(());
+    if c.words.first().map(String::as_str) == Some("instances") {
+        println!("{}", instances_text(&instances(), c.flags.contains('j')));
+        return Ok(0);
     }
 
-    let sock = instance_dir(instance)?.join(".socket.sock");
-    let mut s = UnixStream::connect(&sock).map_err(|e| format!("{}: {e}", sock.display()))?;
-    s.write_all(build_request(&flags, batch.as_deref(), &words).as_bytes())
-        .map_err(|e| e.to_string())?;
-    let mut reply = String::new();
-    s.read_to_string(&mut reply).map_err(|e| e.to_string())?;
-    if !quiet {
+    let dir = instance_dir(c.instance.clone())?;
+    let reply = match c.words.first().and_then(|w| side_socket(w)) {
+        Some(name) => roundtrip(&dir.join(name), &c.words[1..].join(" "))?,
+        None => roundtrip(
+            &dir.join(".socket.sock"),
+            &build_request(&c.flags, c.batch.as_deref(), &c.words),
+        )?,
+    };
+    if !c.quiet {
         println!("{}", reply.trim_end_matches('\n'));
     }
-    Ok(())
+    Ok(0)
 }
 
 fn main() {
-    if let Err(e) = run() {
-        eprintln!("{e}");
-        std::process::exit(1);
+    match run() {
+        Ok(0) => {}
+        Ok(code) => std::process::exit(code),
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
     }
 }
 
@@ -227,6 +288,26 @@ mod tests {
         );
         assert_eq!(build_request("", Some("a; b;"), &[]), "[[BATCH]]/a;/b");
         assert_eq!(build_request("jr", Some("a"), &[]), "[[BATCH]]jr/a");
+    }
+
+    #[test]
+    fn flags_anywhere() {
+        let a = |s: &str| parse_args(s.split(' ').map(String::from)).unwrap();
+        let c = a("clients -j");
+        assert_eq!(c.flags, "j");
+        assert_eq!(c.words, ["clients"]);
+        let c = a("getoption -j general:border_size -q");
+        assert!(c.quiet && c.flags == "j" && c.words.len() == 2);
+        assert_eq!(
+            a("dispatch resizeactive -10 0").words,
+            ["dispatch", "resizeactive", "-10", "0"]
+        );
+        assert_eq!(a("--config -a monitors all").flags, "ca");
+        assert_eq!(
+            a("-j -- dispatch exec -j").words,
+            ["dispatch", "exec", "-j"]
+        );
+        assert_eq!(a("--batch x -i 2").instance.as_deref(), Some("2"));
     }
 
     #[test]

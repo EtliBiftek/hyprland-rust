@@ -60,6 +60,35 @@ pub fn handle(h: &mut Hypr, req: &Request) -> Option<String> {
         "globalshortcuts" => "none".into(),
         "workspacerules" if json => "[]".into(),
         "workspacerules" => String::new(),
+        "submap" => {
+            let s = if h.wm.submap.is_empty() {
+                "default"
+            } else {
+                h.wm.submap.as_str()
+            };
+            if json {
+                format!("{}\n", serde_json::to_string(s).unwrap_or_default())
+            } else {
+                format!("{s}\n")
+            }
+        }
+        "locked" if json => format!("{{\n    \"locked\": {}\n}}\n", h.session_locked),
+        "locked" => h.session_locked.to_string(),
+        // shortcut: no option descriptions are kept, upgrade when config.rs has a table.
+        "descriptions" => "[]\n".into(),
+        "reloadshaders" if json => r#"{"ok": true}"#.into(),
+        "reloadshaders" => "ok".into(),
+        "getprop" => getprop(h, args, json),
+        // shortcut: only validated, the cursor is not themed yet (see tty.rs gaps).
+        "setcursor" => match args.split_whitespace().last().map(str::parse::<i32>) {
+            Some(Ok(n)) if n > 0 => "ok".into(),
+            Some(Ok(_)) => "size not positive".into(),
+            _ => "size not int".into(),
+        },
+        "plugin" if args.starts_with("list") => "no plugins loaded".into(),
+        "plugin" => "plugins are not supported".into(),
+        "output" => "creating and removing outputs is not supported by this backend".into(),
+        "eval" => eval(h, args),
         _ => return None,
     })
 }
@@ -237,6 +266,11 @@ fn switch_xkb_layout(h: &mut Hypr, args: &str) -> String {
             kb.with_xkb_state(h, |mut ctx| ctx.set_layout(Layout(target as _)));
         }
     }
+    // Quickshell and waybar read the new layout name from this event.
+    if let Some((_, name, _)) = keymap_info(h) {
+        h.ipc
+            .emit("activelayout", &format!("{KEYBOARD_NAME},{name}"));
+    }
     "ok".into()
 }
 
@@ -259,9 +293,196 @@ fn system_info(h: &Hypr) -> String {
     )
 }
 
+/// `eval <lua>`: `hl.dsp.*` expressions run as dispatchers, anything else
+/// runs like a config script and its settings are applied as keywords.
+fn eval(h: &mut Hypr, code: &str) -> String {
+    use crate::{config::Dispatcher, lua_config};
+    if code.is_empty() {
+        return "not enough args".into();
+    }
+    if code.starts_with("hl.dsp.") {
+        let (name, arg) = match lua_config::eval_dispatch(code) {
+            Ok(p) => p,
+            Err(e) => return e,
+        };
+        return match Dispatcher::parse(&name, &arg) {
+            Ok(d) => {
+                h.dispatch(&d);
+                "ok".into()
+            }
+            Err(e) => e,
+        };
+    }
+    let (lines, mut errors) = match lua_config::to_hyprlang(code, std::path::Path::new("."), "eval")
+    {
+        Ok(r) => r,
+        Err(e) => return e,
+    };
+    for l in lines.lines().filter(|l| !l.trim().is_empty()) {
+        let Some((k, v)) = l.split_once('=') else {
+            continue;
+        };
+        let r = h.keyword(&format!("{} {}", k.trim(), v.trim()));
+        if r != "ok" {
+            errors.push(r);
+        }
+    }
+    if errors.is_empty() {
+        "ok".into()
+    } else {
+        errors.join("\n")
+    }
+}
+
+/// Value of a window property as `(text, json)`; `stored` is what `setprop`
+/// saved. Defaults follow Hyprland's rule applicator for an untouched window.
+fn prop_value(
+    prop: &str,
+    stored: Option<&str>,
+    cfg: &crate::config::Config,
+) -> Option<(String, String)> {
+    use crate::options::{get_option, gradient, OptValue};
+    let quote = |t: &str| serde_json::to_string(t).unwrap_or_default();
+    let same = |t: String| (t.clone(), t);
+    let opt_int = |k: &str| match get_option(cfg, k) {
+        Some(OptValue::Int(i)) => i.to_string(),
+        _ => "0".into(),
+    };
+    Some(match prop {
+        "animation" => (
+            stored.unwrap_or("(unset)").into(),
+            quote(stored.unwrap_or("")),
+        ),
+        "min_size" | "max_size" => {
+            let d = if prop == "max_size" { "inf" } else { "20" };
+            let v: Vec<&str> =
+                stored.map_or_else(|| vec![d, d], |s| s.split_whitespace().collect());
+            let j: Vec<&str> = v
+                .iter()
+                .map(|x| {
+                    if x.parse::<f64>().is_ok_and(f64::is_finite) {
+                        *x
+                    } else {
+                        "null"
+                    }
+                })
+                .collect();
+            (v.join(" "), format!("[{}]", j.join(",")))
+        }
+        "opacity" | "opacity_inactive" | "opacity_fullscreen" | "scroll_mouse"
+        | "scroll_touchpad" => same(stored.unwrap_or("1").into()),
+        "rounding_power" => same(stored.unwrap_or("2").into()),
+        "idle_inhibit" => same(stored.unwrap_or("0").into()),
+        "rounding" => same(stored.map_or_else(|| opt_int("decoration:rounding"), Into::into)),
+        "border_size" => same(stored.map_or_else(|| opt_int("general:border_size"), Into::into)),
+        "active_border_color" | "inactive_border_color" => {
+            let t = match stored.map(crate::config::parse_color) {
+                Some(Ok(c)) => gradient(c),
+                _ => match get_option(cfg, &format!("general:col.{}", &prop[..prop.len() - 6])) {
+                    Some(OptValue::Custom(s)) => s,
+                    _ => return None,
+                },
+            };
+            let j = quote(&t);
+            (t, j)
+        }
+        "opacity_override"
+        | "opacity_inactive_override"
+        | "opacity_fullscreen_override"
+        | "allows_input"
+        | "decorate"
+        | "focus_on_activate"
+        | "keep_aspect_ratio"
+        | "nearest_neighbor"
+        | "no_anim"
+        | "no_blur"
+        | "no_dim"
+        | "no_focus"
+        | "no_max_size"
+        | "no_shadow"
+        | "no_shortcuts_inhibit"
+        | "opaque"
+        | "dim_around"
+        | "force_rgbx"
+        | "sync_fullscreen"
+        | "immediate"
+        | "xray"
+        | "render_unfocused"
+        | "no_follow_mouse"
+        | "no_screen_share"
+        | "no_vrr"
+        | "persistent_size"
+        | "stay_focused" => {
+            let v = match stored {
+                Some(s) => matches!(s, "true" | "1" | "on" | "yes"),
+                None => prop == "decorate",
+            };
+            same(v.to_string())
+        }
+        _ => return None,
+    })
+}
+
+/// `getprop <window> <prop>`.
+fn getprop(h: &Hypr, args: &str, json: bool) -> String {
+    let mut w = args.split_whitespace();
+    let (Some(sel), Some(prop)) = (w.next(), w.next()) else {
+        return "not enough args".into();
+    };
+    let win = if matches!(sel, "active" | "activewindow") {
+        h.focused_window()
+    } else {
+        sel.parse::<crate::selectors::WinSel>()
+            .ok()
+            .and_then(|s| h.find_window(&s))
+            .map(|(_, w)| w)
+    };
+    let Some(win) = win else {
+        return "window not found".into();
+    };
+    let stored =
+        h.wm.props
+            .iter()
+            .rev()
+            .find(|(x, p, _)| x == &win && p == prop)
+            .map(|(_, _, v)| v.as_str());
+    match prop_value(prop, stored, &h.config) {
+        Some((t, _)) if !json => t,
+        Some((_, j)) => format!("{{\"{prop}\": {j}}}"),
+        None => "prop not found".into(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn getprop_values() {
+        let cfg = crate::config::Config::default();
+        let v = |p: &str, s: Option<&str>| prop_value(p, s, &cfg);
+        assert_eq!(
+            v("animation", None),
+            Some(("(unset)".into(), "\"\"".into()))
+        );
+        assert_eq!(
+            v("max_size", None),
+            Some(("inf inf".into(), "[null,null]".into()))
+        );
+        assert_eq!(
+            v("min_size", Some("100 50")),
+            Some(("100 50".into(), "[100,50]".into()))
+        );
+        assert_eq!(v("opacity", None).unwrap().0, "1");
+        assert_eq!(v("allows_input", Some("true")).unwrap().1, "true");
+        assert_eq!(v("allows_input", None).unwrap().0, "false");
+        assert_eq!(
+            v("active_border_color", Some("rgb(abcdef)")).unwrap().0,
+            "ffabcdef 0deg"
+        );
+        assert!(v("inactive_border_color", None).unwrap().0.ends_with("deg"));
+        assert!(v("nonexistantprop", None).is_none());
+    }
 
     #[test]
     fn config_errors_shapes() {
