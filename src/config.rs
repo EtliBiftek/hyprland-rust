@@ -1220,6 +1220,30 @@ impl Parser {
 
     fn apply_inner(&mut self, key: &str, value: &str, file: &Path) -> Result<(), String> {
         let cfg = &mut self.config;
+        // `windowrule[NAME]:enable = false` toggles a named rule (keys are
+        // lowercased before this, so names compare case-insensitively).
+        if let Some(rest) = key.strip_prefix("windowrule[") {
+            let (name, prop) = rest
+                .split_once("]:")
+                .ok_or("expected `windowrule[NAME]:enable`")?;
+            let rule = cfg
+                .rules
+                .window
+                .iter_mut()
+                .find(|r| {
+                    r.name
+                        .as_deref()
+                        .is_some_and(|n| n.eq_ignore_ascii_case(name))
+                })
+                .ok_or_else(|| format!("no window rule named `{name}`"))?;
+            return match prop {
+                "enable" | "enabled" => {
+                    rule.enabled = parse_bool(value)?;
+                    Ok(())
+                }
+                _ => Err(format!("windowrule[{name}]: cannot change `{prop}`")),
+            };
+        }
         match key {
             k if BindFlags::from_keyword(k).is_some() => {
                 let flags = BindFlags::from_keyword(k).unwrap_or_default();
@@ -1869,6 +1893,21 @@ mod tests {
         assert!(errors.is_empty(), "{errors:?}");
         assert!(cfg.binds[0].mods.logo);
         assert!(!cfg.binds[0].mods.alt);
+    }
+
+    #[test]
+    fn named_rule_toggle() {
+        let (mut cfg, errors) = Config::parse_str(
+            "windowrule {\n  name = Mode-Float\n  match:class = .*\n  float = on\n}\nwindowrule[mode-float]:enable = false",
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(!cfg.rules.window[0].enabled);
+        cfg.apply_keyword("windowrule[Mode-Float]:enable", "true")
+            .unwrap();
+        assert!(cfg.rules.window[0].enabled);
+        assert!(cfg
+            .apply_keyword("windowrule[nope]:enable", "true")
+            .is_err());
     }
 
     #[test]

@@ -1107,6 +1107,13 @@ fn translate(path: &str, a: &A) -> Result<String, String> {
             };
             format!("fullscreen, {mode}")
         }
+        // shortcut: no separate client fullscreen state; internal 2/1 map to
+        // fullscreen/maximize and a client-only "spoof" (internal 0) is a no-op.
+        "window.fullscreen_state" => match a.s("internal").as_deref() {
+            Some("2") => "fullscreen, 0".into(),
+            Some("1") => "fullscreen, 1".into(),
+            _ => "forcerendererreload".into(),
+        },
         "window.pseudo" => "togglepseudo".into(),
         "window.move" => {
             if let Some(d) = a.s("direction") {
@@ -1398,13 +1405,53 @@ fn install(lua: &Lua, st: &Shared, dir: Option<&Path>) -> mlua::Result<()> {
         )?;
     }
 
+    // mlua's safe stdlib has no `debug` (it can break memory safety); config
+    // scripts use `debug.getinfo(1, "S").source` to find their own path, so
+    // provide that much.
+    if dir.is_some() && matches!(g.get::<Value>("debug")?, Value::Nil) {
+        let debug = lua.create_table()?;
+        debug.set(
+            "getinfo",
+            lua.create_function(|lua, (what, _): (Value, Value)| {
+                let level = match what {
+                    Value::Integer(l) if l >= 0 => l as usize,
+                    _ => return Ok(Value::Nil),
+                };
+                let Some(info) = lua.inspect_stack(level) else {
+                    return Ok(Value::Nil);
+                };
+                let src = info.source();
+                let t = lua.create_table()?;
+                t.set("source", src.source.as_deref().unwrap_or("=?"))?;
+                t.set("short_src", src.short_src.as_deref().unwrap_or("?"))?;
+                t.set("what", src.what)?;
+                t.set("linedefined", src.line_defined.map_or(-1, |l| l as i64))?;
+                t.set("currentline", info.curr_line())?;
+                Ok(Value::Table(t))
+            })?,
+        )?;
+        debug.set(
+            "traceback",
+            lua.create_function(|_, msg: Option<String>| Ok(msg.unwrap_or_default()))?,
+        )?;
+        g.set("debug", debug)?;
+    }
+
     let hl = lua.create_table()?;
 
     // hl.dsp.*
     let dsp = lua.create_table()?;
     for &p in DSP {
-        let f = lua.create_function(move |_, v: Value| {
-            translate(p, &A(v)).map_err(mlua::Error::external)
+        let s = st.clone();
+        let sandboxed = dir.is_none();
+        let f = lua.create_function(move |_, v: Value| match translate(p, &A(v)) {
+            Ok(d) => Ok(d),
+            Err(e) if sandboxed => Err(mlua::Error::external(e)),
+            // A config error, not a script abort: the bind does nothing.
+            Err(e) => {
+                s.borrow_mut().errors.push(e);
+                Ok("forcerendererreload".into())
+            }
         })?;
         match p.split_once('.') {
             Some((group, name)) => {
@@ -1623,13 +1670,39 @@ fn install(lua: &Lua, st: &Shared, dir: Option<&Path>) -> mlua::Result<()> {
         hl.set(
             name,
             lua.create_function(move |lua, t: Table| {
+                // Window rules are always named so `rule:set_enabled()` can
+                // address them (`windowrule[NAME]:enable`).
+                let rule_name = if kind == 0 {
+                    let n = match t.get::<Value>("name")? {
+                        Value::String(n) => n.to_string_lossy(),
+                        _ => format!("lua-rule-{}", s.borrow().lines.len()),
+                    };
+                    t.set("name", n.as_str())?;
+                    Some(n)
+                } else {
+                    None
+                };
                 let r = match kind {
                     0 => window_rule_block(&t),
                     1 => layer_rule_line(&t),
                     2 => workspace_rule_line(&t),
                     _ => device_block(&t),
                 };
-                emit(lua, &s, r.map_err(|e| format!("hl.{name}: {e}")))
+                emit(lua, &s, r.map_err(|e| format!("hl.{name}: {e}")))?;
+                let Some(n) = rule_name else {
+                    return Ok(Value::Nil);
+                };
+                let obj = lua.create_table()?;
+                obj.set("name", n.as_str())?;
+                let s = s.clone();
+                obj.set(
+                    "set_enabled",
+                    lua.create_function(move |lua, (_, on): (Value, Value)| {
+                        let on = !matches!(on, Value::Boolean(false) | Value::Nil);
+                        emit(lua, &s, Ok(format!("windowrule[{n}]:enable = {on}")))
+                    })?,
+                )?;
+                Ok(Value::Table(obj))
             })?,
         )?;
     }
@@ -2013,6 +2086,37 @@ mod tests {
     }
 
     #[test]
+    fn dotfile_lua_idioms() {
+        let dir = std::env::temp_dir().join(format!("hypr-lua-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("lib.lua"),
+            r#"return assert(debug.getinfo(1, "S").source:match("^@(.*)/"))"#,
+        )
+        .unwrap();
+        let src = format!(
+            r#"local root = dofile("{}/lib.lua")
+               assert(root:find("hypr%-lua"), root)
+               local r = hl.window_rule({{ name = "Mode", match = {{ class = ".*" }}, float = true }})
+               r:set_enabled(false)
+               local anon = hl.window_rule({{ match = {{ class = "x" }}, float = true }})
+               assert(anon.name:find("^lua%-rule%-"))
+               hl.bind("SUPER + ALT + F", hl.dsp.window.fullscreen_state({{ internal = 0, client = 3 }}))
+               hl.bind("SUPER + B", hl.dsp.window.move({{ bogus = 1 }}))"#,
+            dir.display().to_string().replace('\\', "/")
+        );
+        let (text, errors) = to_hyprlang(&src, &dir, "test.lua").unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(text.contains("windowrule[Mode]:enable = false"), "{text}");
+        assert!(
+            text.contains("bind = SUPER ALT, F, forcerendererreload"),
+            "{text}"
+        );
+        // A bad hl.dsp.* call is a config error, not a script abort.
+        assert_eq!(errors.len(), 1, "{errors:?}");
+    }
+
+    #[test]
     fn ipc_events_map_to_lua_events() {
         let w = |a: &str| EvArg::Window(a.into());
         assert_eq!(
@@ -2086,7 +2190,7 @@ mod tests {
             eval_dispatch("hl.dsp.focus({ workspace = 3 })").unwrap(),
             ("workspace".into(), "3".into())
         );
-        assert!(eval_dispatch("hl.dsp.window.fullscreen_state({})").is_err());
+        assert!(eval_dispatch("hl.dsp.send_key_state({})").is_err());
     }
 
     #[test]
