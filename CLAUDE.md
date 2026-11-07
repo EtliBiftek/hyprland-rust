@@ -13,10 +13,29 @@ Turkish; reply in Turkish. Code, docs, commits and this file stay in English
 
 ## Current status
 
-- Backends: `winit` (nested), `tty` (DRM/KMS + libinput + libseat; compiles in
-  CI, never run on real hardware), `headless` (virtual output, no rendering,
-  for CI). Selected with `--backend`; default is winit if `WAYLAND_DISPLAY` or
-  `DISPLAY` is set, else tty.
+- Backends: `winit` (nested), `tty` (DRM/KMS + libinput + libseat; one
+  `DrmOutput` per connector, udev hotplug, modes from `monitor =` rules,
+  xcursor cursor, GPU from `AQ_DRM_DEVICES`/`WLR_DRM_DEVICES`; runs in CI on
+  the kernel's VKMS device with seatd, `tests/tty-vkms.sh`, never on real
+  hardware), `headless` (`HYPR_HEADLESS_OUTPUTS=N` virtual outputs, no
+  rendering, for CI). Selected with `--backend`; default is winit if
+  `WAYLAND_DISPLAY` or `DISPLAY` is set, else tty.
+- Multi-monitor (`monitors.rs`): every output shows its own workspace
+  (`WmState::mons`), `active_workspace` is the focused monitor's; `monitor =`
+  rules (mode, position incl. auto-*, scale, transform, disable, `desc:`),
+  `workspace = N, monitor:X, default:true`, focusmonitor,
+  (move)currentworkspacetomonitor, moveworkspacetomonitor,
+  swapactiveworkspaces, focusworkspaceoncurrentmonitor, `movewindow mon:`,
+  pointer focus follows monitors, `hyprctl output create headless|remove`,
+  monitoradded/removed(v2), moveworkspace(v2), focusedmon only on monitor
+  change. shortcut: one special workspace at a time (on the focused monitor).
+- Touchpad gestures (`gestures.rs`, pure): libinput swipe/pinch run
+  `gesture =` actions (workspace, dispatcher incl. Lua callbacks, special,
+  close, float, fullscreen, live move/resize); unclaimed gestures go to
+  clients through pointer-gestures-v1.
+- Visual effects (`src/render/`, `animation.rs`): rounded corners, gradient
+  borders with angle, shadows, dual-kawase blur (windows, layerrule `blur`),
+  opacity/dim, Bézier animations (windows, fade, border, workspaces).
 - Target Hyprland release: **v0.57.1** (IPC JSON, rules, master layout and
   dispatcher names were checked against that tag's source/wiki). **Caveat:**
   v0.57 reads only `hyprland.lua` (Lua 5.5, `src/config/lua/`); v0.55-0.56
@@ -73,7 +92,7 @@ Turkish; reply in Turkish. Code, docs, commits and this file stay in English
   togglesplit, layoutmsg, submap, pass, tagwindow, group dispatchers,
   renameworkspace, bringactivetotop, alterzorder, movecursor(tocorner),
   togglepseudo/pseudo, setprop (stored only), killwindow, signal, event,
-  dpms, global, monitor dispatchers as single-monitor no-ops.
+  dpms, global, monitor dispatchers (see Multi-monitor).
 - Protocols (`handlers/protocols.rs`): primary selection, wlr/ext
   data-control, viewporter, fractional-scale (1.0), presentation-time,
   single-pixel-buffer, content-type, cursor-shape, idle-inhibit,
@@ -92,7 +111,7 @@ Turkish; reply in Turkish. Code, docs, commits and this file stay in English
   locked, setcursor (validated only), `[[BATCH]]`; hyprpaper/hyprsunset are
   forwarded to their own sockets. `src/bin/hyprctl.rs` is a std-only client
   (flags anywhere on the command line, like Hyprland's).
-- Tests: unit tests for all pure modules plus fifteen shell tests in
+- Tests: unit tests for all pure modules plus twenty shell tests in
   `tests/` run by CI: keybinds (Xvfb + xdotool), headless smoke, IPC,
   IPC as used by dotfile scripts, layer-shell (waybar), window rules, master
   layout + groups, protocols (wl-clipboard), dispatchers, Lua config,
@@ -132,30 +151,26 @@ Phase 0, infrastructure
       counterpart), `hl.dsp.send_shortcut`/`send_key_state`, client-only
       fullscreen state, `get_urgent_window`/`get_last_workspace` are nil,
       runtime `hl.window_rule` blocks (multi-line keywords) unsupported.
-- [ ] Touchpad gestures are parsed but never executed (no libinput
-      swipe/pinch plumbing); `bindm` on a keyboard key is accepted but inert.
+- [ ] `bindm` on a keyboard key is accepted but inert; gesture `cursorZoom`
+      and `scroll_move` do nothing.
 
 TTY backend known gaps
-- [ ] Never run on real hardware.
-- [ ] Single GPU only; first connected monitor only; no udev hotplug.
-- [ ] No `monitor=` rules (resolution, refresh, position, scale, transform,
-      disable); one `DrmOutput` per CRTC and per-monitor active workspace.
-- [ ] Cursor is an 8x8 square: xcursor theme, client cursor surface,
-      cursor-shape, hardware cursor plane.
-- [ ] No linux-dmabuf global.
+- [ ] Never run on real hardware (VKMS in CI only).
+- [ ] Single GPU only; no DRM leasing; `monitor =` mode changes apply on
+      reconnect; borders are not scaled on fractional-scale outputs.
+- [ ] No hardware cursor plane.
 
 IPC known gaps
 - [ ] JSON shapes were checked against the v0.57.1 source, not a running
       Hyprland.
 - [ ] Many placeholder fields (list in the `src/ipc.rs` header comment).
-- [ ] Missing events: `monitoradded/removed` (single monitor), and other
-      v0.57.1 events not emitted in `ipc.rs`.
+- [ ] Missing events: other v0.57.1 events not emitted in `ipc.rs`.
 - [ ] `seterror` / `notify` are not drawn on screen; `rollinglog` is empty.
 
 Not started
 - [ ] XWayland extras: lazy start, HiDPI scaling (`force_zero_scaling`), X11
       client-initiated move/resize, `WM_NORMAL_HINTS` limits while resizing.
-- [ ] Remaining dispatchers (`movecurrentworkspacetomonitor`, `dpms`,
+- [ ] Remaining dispatchers (`dpms`,
       `alterzorder`, `sendshortcut`, `setprop`, ...).
 - [ ] Bind flags `l`, `o`, `t` behave like plain binds (no lock screen,
       long-press or shortcut inhibit); `bindm` has no CI test.
@@ -167,11 +182,10 @@ Not started
       removes it until it maps again); needs an "unmapped windows" list.
 - [ ] Config error overlay; empty `is_known_unimplemented`; inotify instead
       of mtime polling.
-- [ ] Animations (Bézier), rounded corners, gradient borders, blur, shadows.
-- [ ] Remaining protocols (see `docs/PARITY.md`): ext-image-copy-capture,
-      screencopy dmabuf/cursor/scale and headless rendering, output
-      management apply, foreign-toplevel minimize, gamma, tablet,
-      input-method/text-input, drm-lease, ...
+- [ ] Effects shortcuts: see `shortcut:` comments in `src/render/` (blur cost, no damage tracking of effects).
+- [ ] Remaining protocols (see `docs/PARITY.md`): drm-lease, input-capture,
+      applying gamma/CTM/surface opacity, screencopy dmabuf/cursor/scale and
+      headless rendering, output-management apply, foreign-toplevel minimize.
 - [ ] Protocol shortcuts: pointer lock/confine not enforced; presentation
       feedback not fed; fractional scale fixed at 1.0; no lock-screen test.
 - [ ] Dispatchers missing: `sendshortcut`, `sendkeystate`,
@@ -217,7 +231,13 @@ Open decisions for the owner
 | `src/state.rs` | `Hypr` compositor state (Smithay states, seat, config, workspaces) |
 | `src/input.rs` | keyboard bind matching (xkb keysym names, lowercased), VT switch, relative pointer motion, click-to-focus |
 | `src/winit.rs` | winit backend, rendering (space + SolidColorRenderElement borders) |
-| `src/tty.rs` | DRM/KMS + libinput + libseat backend (simplified from anvil) |
+| `src/tty.rs` | DRM/KMS + libinput + libseat backend: one output per connector, udev hotplug (from anvil) |
+| `src/monitors.rs` | multi-monitor: per-monitor workspaces, `monitor =` rules, monitor dispatchers, virtual outputs |
+| `src/gestures.rs` | touchpad gesture recognition (pure, unit-tested) |
+| `src/cursor.rs` | xcursor theme, named and client cursors for the tty backend |
+| `src/render/` | effects: rounding, gradient borders, shadows, blur, opacity (GLES shaders) |
+| `src/animation.rs` | Bézier curves and the `animation =` tree (pure) |
+| `src/handlers/extra.rs` | state of the second protocol batch (hyprland protocols, capture, input method, ...) |
 | `src/headless.rs` | headless backend, virtual output, size from `HYPR_HEADLESS_SIZE=WxH` (default 1920x1080) |
 | `src/ipc.rs` | IPC: pure request/JSON/text half (unit tested) + sockets and events |
 | `src/bin/hyprctl.rs` | std-only `hyprctl` client |
@@ -239,8 +259,12 @@ Open decisions for the owner
 | `tests/x11-win.py` | helper: one X11 window of a given kind (python3-xlib) |
 | `tests/screencopy.sh` | grim against winit in Xvfb |
 | `tests/foreign-toplevel.sh` | wlrctl toplevel list/focus/close, wlr-randr |
+| `tests/multimon.sh` | 2 headless outputs: rules, monitor dispatchers, output create/remove |
+| `tests/tty-vkms.sh` | tty backend on VKMS + seatd: 2 connectors, render, hotplug |
+| `tests/render-fx.sh` | rounding, gradient, shadow, blur, animation pixels (grim) |
+| `tests/globals.sh` / `tests/probe.sh` | protocol globals; toplevel-export and focus-grab probe |
 | `docs/ROADMAP.md` | Turkish roadmap, phases 0-9 |
-| `.github/workflows/ci.yml` | fmt, build, test, clippy, check-config, the 15 shell tests |
+| `.github/workflows/ci.yml` | fmt, build, test, clippy, check-config, the 20 shell tests |
 
 `state.rs`, `winit.rs`, `input.rs`, `grabs/`, `handlers/` started from
 Smithay's `smallvil` example (MIT, see `docs/SMITHAY-LICENSE`); `tty.rs` is
