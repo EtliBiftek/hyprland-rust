@@ -226,8 +226,13 @@ impl Pending {
                     )
                 };
                 // GL gives R,G,B,A; wl_shm Xrgb8888 is B,G,R,X in memory.
-                for (o, i) in dst.chunks_exact_mut(4).zip(src.chunks_exact(4)) {
-                    o.copy_from_slice(&[i[2], i[1], i[0], 255]);
+                for (o, i) in dst
+                    .as_chunks_mut::<4>()
+                    .0
+                    .iter_mut()
+                    .zip(src.as_chunks::<4>().0)
+                {
+                    *o = [i[2], i[1], i[0], 255];
                 }
             }
         })
