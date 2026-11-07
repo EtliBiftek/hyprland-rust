@@ -79,7 +79,7 @@ timeout 4 wlsunset -S 06:00 -s 18:00 -t 4000 -T 6500 >"$T/wlsunset.log" 2>&1 || 
 [ "$rc" = 124 ] || { cat "$T/wlsunset.log"; fail "wlsunset exited early (rc=$rc)"; }
 
 # wtype types into wev, which gets keyboard focus when its window maps.
-wev >"$T/wev.out" 2>&1 &
+stdbuf -oL wev >"$T/wev.out" 2>&1 &
 N=0
 for _ in $(seq 50); do
     N=$("$CTL" -j clients 2>/dev/null | grep -o '"stableId"' | wc -l || true)
@@ -90,6 +90,6 @@ done
 sleep 1
 wtype hello || fail "wtype failed"
 sleep 1
-grep -q "sym: h " "$T/wev.out" || { cat "$T/wev.out"; fail "wev did not receive the typed keys"; }
+grep -q "sym: h" "$T/wev.out" || { cat "$T/wev.out"; fail "wev did not receive the typed keys"; }
 kill -0 "$COMP" 2>/dev/null || fail "compositor died"
 echo "OK"
