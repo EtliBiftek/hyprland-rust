@@ -47,3 +47,6 @@ jobs:
       - name: Lua config test (headless + hyprland.lua)
         timeout-minutes: 3
         run: sh tests/lua-config.sh
+      - name: Popular dotfiles load without config errors
+        timeout-minutes: 5
+        run: sh tests/dots-conf.sh

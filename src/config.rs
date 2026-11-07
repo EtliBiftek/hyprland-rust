@@ -34,6 +34,8 @@ impl Mods {
         let mut mods = Mods::default();
         for part in s.split([' ', '_', '+', '&']).filter(|p| !p.is_empty()) {
             match part.to_ascii_uppercase().as_str() {
+                // `ALT_L`: Hyprland matches modifiers by substring.
+                "L" | "R" => {}
                 "SHIFT" => mods.shift = true,
                 "CTRL" | "CONTROL" => mods.ctrl = true,
                 "ALT" | "MOD1" => mods.alt = true,
@@ -435,7 +437,7 @@ impl Dispatcher {
                     _ => return Err(format!("movecursor: expected `X Y`, got `{arg}`")),
                 }
             }
-            "togglepseudo" => Dispatcher::TogglePseudo,
+            "togglepseudo" | "pseudo" => Dispatcher::TogglePseudo,
             "setprop" => {
                 let (sel, rest) = split_word(arg);
                 let (prop, value) = split_word(rest);
@@ -901,6 +903,7 @@ pub struct Config {
     pub workspace_rules: Vec<WorkspaceRule>,
     pub input: Input,
     pub binds: Vec<Bind>,
+    pub gestures: Vec<Gesture>,
     pub exec_once: Vec<String>,
     pub exec: Vec<String>,
     /// `windowrule` / `layerrule` (see `rules.rs`).
@@ -1053,9 +1056,39 @@ impl Parser {
         }
         let mut categories: Vec<String> = Vec::new();
 
+        // `# hyprlang noerror true|false` and `# hyprlang if [!]VAR` / `endif`.
+        let mut noerror = false;
+        let mut mark = self.errors.len();
+        let mut ifs: Vec<bool> = Vec::new();
+
         for (idx, raw_line) in text.lines().enumerate() {
             let line_no = idx + 1;
-            let line = strip_comment(raw_line).trim();
+            if noerror {
+                self.errors.truncate(mark);
+            }
+            mark = self.errors.len();
+            if let Some(d) = raw_line.trim().strip_prefix('#').map(str::trim) {
+                if let Some(d) = d.strip_prefix("hyprlang").map(str::trim) {
+                    if let Some(v) = d.strip_prefix("noerror") {
+                        noerror = v.trim() == "true";
+                    } else if let Some(c) = d.strip_prefix("if ") {
+                        let c = c.trim();
+                        let (neg, name) = match c.strip_prefix('!') {
+                            Some(n) => (true, n.trim()),
+                            None => (false, c),
+                        };
+                        ifs.push(self.vars.contains_key(name) != neg);
+                    } else if d.starts_with("endif") {
+                        ifs.pop();
+                    }
+                }
+                continue;
+            }
+            if ifs.contains(&false) {
+                continue;
+            }
+            let stripped = strip_comment(raw_line);
+            let line = stripped.trim();
             if line.is_empty() {
                 continue;
             }
@@ -1121,6 +1154,9 @@ impl Parser {
             }
         }
 
+        if noerror {
+            self.errors.truncate(mark);
+        }
         if !categories.is_empty() {
             self.errors.push(ConfigError {
                 file: file.to_path_buf(),
@@ -1147,8 +1183,9 @@ impl Parser {
         }
     }
 
-    /// Replaces `$name` with variable values, longest names first so that
-    /// `$mainMod` isn't clobbered by `$main`.
+    /// Replaces `$name` with config variable values (longest names first so
+    /// that `$mainMod` isn't clobbered by `$main`), then like hyprlang falls
+    /// back to environment variables for the remaining `$NAME`s.
     fn expand(&self, value: &str) -> String {
         let mut names: Vec<&String> = self.vars.keys().collect();
         names.sort_by_key(|n| std::cmp::Reverse(n.len()));
@@ -1156,7 +1193,7 @@ impl Parser {
         for name in names {
             out = out.replace(&format!("${name}"), &self.vars[name]);
         }
-        out
+        expand_env(&out)
     }
 
     fn apply(&mut self, key: &str, value: &str, file: &Path) -> Result<(), String> {
@@ -1221,12 +1258,22 @@ impl Parser {
                 if self.depth > 16 {
                     return Err("`source` nested too deeply".into());
                 }
-                let text = std::fs::read_to_string(&path)
-                    .map_err(|e| format!("cannot read `{}`: {e}", path.display()))?;
-                self.depth += 1;
-                self.parse(&text, &path);
-                self.depth -= 1;
+                // Like hyprland: glob, no match is an error, directories are skipped.
+                let files = glob_files(&path);
+                if files.is_empty() {
+                    return Err(format!(
+                        "source= globbing error: found no match for `{value}`"
+                    ));
+                }
+                for path in files {
+                    let text = std::fs::read_to_string(&path)
+                        .map_err(|e| format!("cannot read `{}`: {e}", path.display()))?;
+                    self.depth += 1;
+                    self.parse(&text, &path);
+                    self.depth -= 1;
+                }
             }
+            "gesture" | "gesturep" => cfg.gestures.push(parse_gesture(value)?),
             "general:gaps_in" => cfg.general.gaps_in = parse_int(value)?,
             "general:gaps_out" => cfg.general.gaps_out = parse_int(value)?,
             "general:border_size" => cfg.general.border_size = parse_int(value)?,
@@ -1351,6 +1398,17 @@ fn is_known_unimplemented(key: &str) -> bool {
         "bezier",
         "gestures:",
         "misc:",
+        "render:",
+        "opengl:",
+        "debug:",
+        "ecosystem:",
+        "quirks:",
+        "experimental:",
+        "plugin",
+        "permission",
+        "layout:",
+        "scrolling:",
+        "monitorv2",
         // Options of implemented categories that have no effect yet (the
         // implemented ones are matched before this list is consulted).
         "dwindle:pseudotile",
@@ -1372,22 +1430,45 @@ fn is_known_unimplemented(key: &str) -> bool {
     PREFIXES.iter().any(|p| key.starts_with(p))
 }
 
-fn strip_comment(line: &str) -> &str {
-    // `##` is an escaped `#` in hyprlang; keep it simple and treat a single `#`
-    // as the start of a comment.
-    let bytes = line.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'#' {
-            if bytes.get(i + 1) == Some(&b'#') {
-                i += 2;
-                continue;
+/// hyprlang comments: a line starting with `#` is one; elsewhere `#` starts
+/// a comment unless doubled (`##` is a literal `#`).
+fn strip_comment(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut it = line.chars().peekable();
+    while let Some(c) = it.next() {
+        if c == '#' {
+            if it.peek() == Some(&'#') {
+                it.next();
+            } else {
+                break;
             }
-            return &line[..i];
         }
-        i += 1;
+        out.push(c);
     }
-    line
+    out
+}
+
+/// Replaces `$NAME` with the environment variable when it is set.
+fn expand_env(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find('$') {
+        out.push_str(&rest[..i]);
+        rest = &rest[i + 1..];
+        let n = rest
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .unwrap_or(rest.len());
+        match std::env::var(&rest[..n]) {
+            Ok(v) if n > 0 => out.push_str(&v),
+            _ => {
+                out.push('$');
+                out.push_str(&rest[..n]);
+            }
+        }
+        rest = &rest[n..];
+    }
+    out.push_str(rest);
+    out
 }
 
 fn parse_bind(value: &str, flags: BindFlags) -> Result<Bind, String> {
@@ -1500,6 +1581,121 @@ pub fn parse_color(value: &str) -> Result<[f32; 4], String> {
         return Err(bad());
     };
     Ok([r, g, b, a].map(|c| c as f32 / 255.0))
+}
+
+/// A touchpad `gesture = FINGERS, DIRECTION, [mod:M] [scale:S] ACTION [ARG]`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Gesture {
+    pub fingers: u32,
+    pub direction: String,
+    pub mods: Mods,
+    pub scale: f32,
+    /// `workspace`, `dispatcher`, `resize`, `move`, `special`, `close`,
+    /// `float`, `fullscreen`, `cursorZoom` or `unset`.
+    pub action: String,
+    pub args: Vec<String>,
+}
+
+// shortcut: gestures are parsed and stored only, the tty backend does not
+// feed libinput swipe/pinch events to them yet.
+fn parse_gesture(value: &str) -> Result<Gesture, String> {
+    let parts: Vec<&str> = value.split(',').map(str::trim).collect();
+    let fingers: u32 = parts[0]
+        .parse()
+        .ok()
+        .filter(|n| (2..10).contains(n))
+        .ok_or_else(|| format!("Invalid value {} for finger count", parts[0]))?;
+    let direction = parts.get(1).copied().unwrap_or("");
+    const DIRS: &[&str] = &[
+        "swipe",
+        "horizontal",
+        "vertical",
+        "left",
+        "right",
+        "up",
+        "down",
+        "pinch",
+        "pinchin",
+        "pinchout",
+    ];
+    if !DIRS.contains(&direction) {
+        return Err(format!("Invalid direction: {direction}"));
+    }
+    let (mut mods, mut scale, mut i) = (Mods::default(), 1.0, 2);
+    loop {
+        match parts.get(i) {
+            Some(p) if p.starts_with("mod:") => mods = Mods::parse(&p[4..])?,
+            Some(p) if p.starts_with("scale:") => scale = parse_float(&p[6..])?.clamp(0.1, 10.0),
+            _ => break,
+        }
+        i += 1;
+    }
+    let action = parts.get(i).copied().unwrap_or("");
+    const ACTIONS: &[&str] = &[
+        "dispatcher",
+        "workspace",
+        "resize",
+        "move",
+        "special",
+        "close",
+        "float",
+        "fullscreen",
+        "cursorZoom",
+        "unset",
+    ];
+    if !ACTIONS.contains(&action) {
+        return Err(format!("Invalid gesture: {action}"));
+    }
+    Ok(Gesture {
+        fingers,
+        direction: direction.into(),
+        mods,
+        scale,
+        action: action.into(),
+        args: parts[i + 1..].iter().map(|s| s.to_string()).collect(),
+    })
+}
+
+/// Expands `*`, `?` and `[..]` in a path; plain paths match themselves when
+/// they are regular files. Results are sorted; directories are skipped.
+fn glob_files(path: &Path) -> Vec<PathBuf> {
+    let mut cur = vec![PathBuf::new()];
+    for comp in path.components() {
+        let name = comp.as_os_str().to_string_lossy();
+        let mut next = Vec::new();
+        for base in &cur {
+            if !name.contains(['*', '?', '[']) {
+                next.push(base.join(comp));
+                continue;
+            }
+            let mut re = String::from("^");
+            for c in name.chars() {
+                match c {
+                    '*' => re.push_str("[^/]*"),
+                    '?' => re.push_str("[^/]"),
+                    '[' | ']' => re.push(c),
+                    c => re.push_str(&regex::escape(&c.to_string())),
+                }
+            }
+            re.push('$');
+            let Ok(re) = regex::Regex::new(&re) else {
+                continue;
+            };
+            let Ok(rd) = std::fs::read_dir(base) else {
+                continue;
+            };
+            let mut found: Vec<_> = rd
+                .flatten()
+                .filter(|e| re.is_match(&e.file_name().to_string_lossy()))
+                .map(|e| e.path())
+                .collect();
+            found.sort();
+            next.extend(found);
+        }
+        cur = next;
+    }
+    cur.retain(|p| p.is_file());
+    cur
 }
 
 fn expand_home(path: &str) -> PathBuf {
@@ -1657,6 +1853,63 @@ mod tests {
         assert!(errors.is_empty(), "{errors:?}");
         assert!(cfg.binds[0].mods.logo);
         assert!(!cfg.binds[0].mods.alt);
+    }
+
+    #[test]
+    fn dotfile_syntax() {
+        // `##...` lines are comments; `##` inside a value is a literal `#`.
+        let (cfg, errors) = Config::parse_str(
+            "################\n##\n  ## x\nbind = SUPER, A, exec, echo a##b # c\n",
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(cfg.binds[0].dispatcher, Dispatcher::Exec("echo a#b".into()));
+        // Environment fallback for undefined variables; config vars win.
+        std::env::set_var("HYPR_TEST_ENV", "/e");
+        let (cfg, errors) = Config::parse_str(
+            "$v = V\nbind = SUPER, A, exec, $HYPR_TEST_ENV/$v/$HYPR_TEST_UNSET/$(x)",
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(
+            cfg.binds[0].dispatcher,
+            Dispatcher::Exec("/e/V/$HYPR_TEST_UNSET/$(x)".into())
+        );
+        // Aliases, `ALT_L` modifiers, hyprlang directives.
+        let (cfg, errors) = Config::parse_str(
+            "bind = SUPER, P, pseudo,\nbindlnd = ALT_L, SHIFT_L, d, exec, x\n# hyprlang noerror true\nbogus = 1\n# hyprlang noerror false\n$f = 1\n# hyprlang if f\nbind = SUPER, B, killactive,\n# hyprlang endif\n# hyprlang if !f\nbind = SUPER, C, killactive,\n# hyprlang endif",
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(cfg.binds.len(), 3);
+        assert_eq!(cfg.binds[0].dispatcher, Dispatcher::TogglePseudo);
+        assert!(cfg.binds[1].mods.alt && cfg.binds[1].key == "shift_l");
+    }
+
+    #[test]
+    fn gestures() {
+        let (cfg, errors) = Config::parse_str(
+            "gesture = 3, horizontal, workspace\ngesture = 4, up, mod:SUPER, scale:2, dispatcher, exec, a, b\ngesture = 1, left, close\ngesture = 3, bogus, close",
+        );
+        assert_eq!(errors.len(), 2, "{errors:?}");
+        assert_eq!(cfg.gestures.len(), 2);
+        assert_eq!(cfg.gestures[1].scale, 2.0);
+        assert!(cfg.gestures[1].mods.logo);
+        assert_eq!(cfg.gestures[1].args, ["exec", "a", "b"]);
+    }
+
+    #[test]
+    fn source_glob_and_env() {
+        let dir = std::env::temp_dir().join(format!("hypr-src-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("c")).unwrap();
+        std::fs::write(dir.join("c/a.conf"), "exec-once = a\n").unwrap();
+        std::fs::write(dir.join("c/b.conf"), "exec-once = b\n").unwrap();
+        std::env::set_var("HYPR_TEST_DIR", &dir);
+        let main = dir.join("main.conf");
+        std::fs::write(&main, "source = $HYPR_TEST_DIR/c/*.conf\n").unwrap();
+        let (cfg, errors) = Config::load(&main).unwrap();
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(cfg.exec_once, ["a", "b"]);
+        std::fs::write(&main, "source = c/none-*.conf\n").unwrap();
+        assert_eq!(Config::load(&main).unwrap().1.len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

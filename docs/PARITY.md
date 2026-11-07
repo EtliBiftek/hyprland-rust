@@ -491,8 +491,11 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `workspace =` (workspace rules) | partial | Stored in `workspace_rules` and read by `wm.rs`. Only the fields `wm.rs` reads take effect. |
 | `exec-once` | tested | `tests/headless-smoke.sh`, `tests/ipc-xvfb.sh`. v0.57.1: `hl.exec_cmd` at startup. |
 | `exec` | partial | Runs after each config load (`main.rs`). No test. |
-| `source` | partial | Relative paths resolve against the including file; depth limit 16. No test for nesting. |
-| `$var` variables | tested | Unit test `variables_longest_first`. |
+| `source` | tested | Globs (`*`, `?`, `[..]`); no match is an error; `$ENVVAR` expanded; depth limit 16. Unit test `source_glob_and_env`, `tests/dots-conf.sh`. |
+| `$var` variables | tested | Unit tests `variables_longest_first`, `dotfile_syntax`: an undefined `$NAME` falls back to the environment like hyprlang. |
+| `# hyprlang noerror/if/endif`, `##` | tested | A line starting with `#` (also `####`) is a comment; `##` inside a value is a literal `#`. Unit test `dotfile_syntax`. |
+| `gesture =`, `gesturep =` | parsed | Validated and stored in `Config::gestures`. shortcut: touchpad gestures are not executed, needs libinput swipe/pinch events in tty/input. |
+| dispatcher `pseudo` | tested | Hyprland's name for `togglepseudo`; both accepted. |
 | `category { }` blocks and `cat:key` shorthand | tested | Unit test `categories_and_shorthand`. |
 | `monitor =` | parsed | Ignored (`is_known_unimplemented` prefix `monitor`). No monitor rules. v0.57.1 equivalent: `hl.monitor`. |
 | `env =` | parsed | Ignored (prefix `env`). v0.57.1 equivalent: `hl.env`. |
