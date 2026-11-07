@@ -239,6 +239,7 @@ impl Hypr {
     /// Frame callbacks for windows and layer surfaces on `output`.
     pub fn send_frames(&mut self, output: &Output) {
         self.sync_toplevels();
+        self.sync_ext_workspaces();
         let time = self.start_time.elapsed();
         self.space.elements().for_each(|window| {
             window.send_frame(output, time, Some(Duration::ZERO), |_, _| {

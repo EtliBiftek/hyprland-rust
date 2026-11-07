@@ -4,6 +4,7 @@ use smithay::{
             damage::OutputDamageTracker,
             element::{solid::SolidColorRenderElement, surface::WaylandSurfaceRenderElement},
             gles::GlesRenderer,
+            ImportDma,
         },
         winit::{self, WinitEvent},
     },
@@ -50,6 +51,7 @@ pub fn init_winit(
     state.add_output(&output);
 
     let mut damage_tracker = OutputDamageTracker::from_output(&output);
+    state.init_dmabuf(backend.renderer().dmabuf_formats());
 
     std::env::set_var("WAYLAND_DISPLAY", &state.socket_name);
 

@@ -21,6 +21,10 @@ wayland-server = "0.31"
 wayland-scanner = "0.31"
 # xcursor themes for the TTY cursor (same crate anvil uses).
 xcursor = "0.3"
+# Client side of the same protocols for src/bin/protocol-probe.rs.
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging", "unstable"] }
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 
 [dependencies.smithay]
 version = "0.7.0"

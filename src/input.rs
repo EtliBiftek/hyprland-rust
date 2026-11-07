@@ -342,6 +342,9 @@ impl Hypr {
 
                 let button_state = event.state();
 
+                if ButtonState::Pressed == button_state {
+                    self.focus_grab_button(pointer.current_location());
+                }
                 if ButtonState::Pressed == button_state
                     && !pointer.is_grabbed()
                     && !self.session_locked

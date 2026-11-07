@@ -39,6 +39,7 @@ pub fn init_headless(
     for _ in 0..n {
         state.create_virtual_output(None)?;
     }
+    state.init_dmabuf_fallback();
 
     std::env::set_var("WAYLAND_DISPLAY", &state.socket_name);
 

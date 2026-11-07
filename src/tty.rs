@@ -29,6 +29,7 @@ use smithay::{
                 surface::WaylandSurfaceRenderElement,
             },
             gles::GlesRenderer,
+            ImportDma,
         },
         session::{libseat::LibSeatSession, Event as SessionEvent, Session},
         udev::{all_gpus, primary_gpu, UdevBackend, UdevEvent},
@@ -381,6 +382,7 @@ pub fn init_tty(
 
     std::env::set_var("WAYLAND_DISPLAY", &data.state.socket_name);
     data.state.session = Some(session);
+    data.state.init_dmabuf(tty.renderer.dmabuf_formats());
     data.tty = Some(tty);
     handle.insert_idle(render_all);
     Ok(())

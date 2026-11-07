@@ -99,6 +99,16 @@ Turkish; reply in Turkish. Code, docs, commits and this file stay in English
   dotfiles (conf and Lua), screencopy (grim), foreign toplevel (wlrctl).
 - Smoke-tested in Xvfb with 3 `weston-terminal`s (`docs/screenshot.png`).
 
+- Protocols batch 2 (`handlers/extra.rs` owns the state): hyprland focus-grab,
+  toplevel-export/mapping, ctm-control (stored), surface (stored), lock-notify,
+  global-shortcuts (real XML), wlr-gamma (stored), ext-image-copy-capture,
+  linux-dmabuf v3, xdg-dialog/toplevel-icon/system-bell, alpha-modifier,
+  tearing-control, fifo/commit-timing (unmanaged), security-context, tablet,
+  text-input/input-method/virtual-keyboard, wlr-virtual-pointer, ext-workspace.
+  Capture jobs go through `handlers/capture.rs`. Tests: `tests/globals.sh`
+  (wayland-info, wlsunset, wtype+wev), `tests/probe.sh` (`src/bin/protocol-probe.rs`).
+  Missing: drm-lease, input-capture (libei), applying gamma/CTM/opacity.
+
 ## Roadmap
 
 The full plan is `docs/ROADMAP.md` (Turkish, phases 0-9). Short form:

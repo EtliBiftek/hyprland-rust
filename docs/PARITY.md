@@ -718,17 +718,17 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `ext_data_control_manager_v1` | none | Not registered by the repo. |
 | `ext_foreign_toplevel_list_v1` | partial | `handlers/foreign_toplevel.rs` (Smithay list, synced every frame). No test client. |
 | `ext_idle_notifier_v1` | none | Not registered by the repo. |
-| `ext_image_copy_capture_manager_v1` | none | Not registered by the repo. |
+| `ext_image_copy_capture_manager_v1` | tested | `handlers/image_copy_capture.rs` (output + foreign-toplevel sources, shm). `tests/probe.sh` (`protocol-probe copycap`). Cursor sessions inert, no dmabuf. |
 | `ext_session_lock_manager_v1` | none | Not registered by the repo. |
-| `ext_workspace_manager_v1` | none | Not registered by the repo. |
-| `hyprland_ctm_control_manager_v1` | none | Not registered by the repo. |
-| `hyprland_focus_grab_manager_v1` | none | Not registered by the repo. |
-| `hyprland_global_shortcuts_manager_v1` | partial | `handlers/global_shortcuts.rs` + `global` dispatcher (press on bind press, release on key release; `hyprctl dispatch` sends pressed only). No test client. |
-| `hyprland_input_capture_manager_v1` | none | Not registered by the repo. |
-| `hyprland_lock_notifier_v1` | none | Not registered by the repo. |
-| `hyprland_surface_manager_v1` | none | Not registered by the repo. |
-| `hyprland_toplevel_export_manager_v1` | none | Not registered by the repo. |
-| `hyprland_toplevel_mapping_manager_v1` | none | Not registered by the repo. |
+| `ext_workspace_manager_v1` | partial | `handlers/ext_workspace.rs`: one group, normal workspaces, activate only. Global listed by `tests/globals.sh`. |
+| `hyprland_ctm_control_manager_v1` | partial | `handlers/ctm_control.rs`: validated and stored per output, not applied to the screen. `tests/globals.sh`. |
+| `hyprland_focus_grab_manager_v1` | tested | `handlers/focus_grab.rs`: `cleared` on an outside click, keyboard focus on commit. `tests/probe.sh`. Pointer focus not restricted. |
+| `hyprland_global_shortcuts_manager_v1` | partial | `handlers/global_shortcuts.rs` + `global` dispatcher; XML is now the real hyprland-protocols v0.8.0 one (duplicate id posts `already_taken`). No test client. |
+| `hyprland_input_capture_manager_v1` | none | Needs libei (EIS fd); not implemented. |
+| `hyprland_lock_notifier_v1` | partial | `handlers/lock_notify.rs`: locked/unlocked from ext-session-lock. Global in `tests/globals.sh`. |
+| `hyprland_surface_manager_v1` | partial | `handlers/hyprland_surface.rs`: opacity validated and stored, not applied; visible region ignored. |
+| `hyprland_toplevel_export_manager_v1` | tested | `handlers/toplevel_export.rs` (shm, v2 buffer_done, wlr handle variant). `tests/probe.sh` checks the pixels. No dmabuf. |
+| `hyprland_toplevel_mapping_manager_v1` | tested | `handlers/toplevel_mapping.rs`, used by `tests/probe.sh` to find the export address. |
 | `org_kde_kwin_server_decoration_manager` | none | Not registered by the repo. |
 | `vicinae_hotkey_manager_v1` | none | Not registered by the repo. |
 | `wl_compositor` | tested | Smithay `CompositorState`; used by every test client. |
@@ -738,53 +738,54 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `wl_seat` | tested | Keyboard input in `tests/keybinds-xvfb.sh`. |
 | `wl_shm` | tested | `weston-simple-shm` in the shell tests. |
 | `wl_subcompositor` | partial | Smithay `CompositorState`. No test. |
-| `wp_alpha_modifier_v1` | none | Not registered by the repo. |
+| `wp_alpha_modifier_v1` | partial | `handlers/alpha_modifier.rs`: Smithay state, multiplier not applied when drawing. |
 | `wp_color_manager_v1` | none | Not registered by the repo. |
-| `wp_commit_timing_manager_v1` | none | Not registered by the repo. |
+| `wp_commit_timing_manager_v1` | partial | `handlers/fifo.rs`: unmanaged, accepted but commits are never held. |
 | `wp_content_type_manager_v1` | none | Not registered by the repo. |
 | `wp_cursor_shape_manager_v1` | none | Not registered by the repo. |
 | `wp_drm_lease_device_v1` | none | Not registered by the repo. |
-| `wp_fifo_manager_v1` | none | Not registered by the repo. |
+| `wp_fifo_manager_v1` | partial | `handlers/fifo.rs`: unmanaged, barriers have no effect. |
 | `wp_fractional_scale_manager_v1` | none | Not registered by the repo. |
 | `wp_linux_drm_syncobj_manager_v1` | none | Not registered by the repo. |
 | `wp_pointer_warp_v1` | none | Not registered by the repo. |
 | `wp_presentation` | none | Not registered by the repo. |
-| `wp_security_context_manager_v1` | none | Not registered by the repo. |
+| `wp_security_context_manager_v1` | partial | `handlers/security_context.rs`: sandboxed clients are tagged; only virtual keyboard, input method and this global are hidden from them. |
 | `wp_single_pixel_buffer_manager_v1` | none | Not registered by the repo. |
-| `wp_tearing_control_manager_v1` | none | Not registered by the repo. |
+| `wp_tearing_control_manager_v1` | partial | `handlers/tearing_control.rs`: hint accepted and ignored. |
 | `wp_viewporter` | none | Not registered by the repo. |
 | `xdg_activation_v1` | partial | `delegate_xdg_activation`; marks windows urgent. No test. |
-| `xdg_system_bell_v1` | none | Not registered by the repo. |
+| `xdg_system_bell_v1` | partial | `handlers/system_bell.rs`: ring is logged only. |
 | `xdg_toplevel_tag_manager_v1` | none | Not registered by the repo. |
+| `xdg_toplevel_icon_manager_v1` | partial | `handlers/toplevel_icon.rs`: Smithay state, icons not drawn. `tests/globals.sh`. |
+| `ext_output_image_capture_source_manager_v1` / `ext_foreign_toplevel_image_capture_source_manager_v1` | tested | With `ext_image_copy_capture_manager_v1` (`tests/probe.sh`). |
 | `xdg_wm_base` | tested | `delegate_xdg_shell`; every test client. |
-| `xdg_wm_dialog_v1` | none | Not registered by the repo. |
+| `xdg_wm_dialog_v1` | partial | `handlers/xdg_dialog.rs`: modal state ignored. |
 | `xwayland_shell_v1` | implemented | Smithay `XWaylandShellState`, visible to the Xwayland client only (`xwayland.rs`). |
 | `xx_hotkey_manager_v1` | none | Not registered by the repo. |
-| `zwlr_data_control_manager_v1` | none | Not registered by the repo. |
+| `zwlr_data_control_manager_v1` | tested | `tests/protocols.sh` (wl-clipboard). |
 | `zwlr_foreign_toplevel_manager_v1` | tested | `handlers/foreign_toplevel.rs`, `tests/foreign-toplevel.sh` (wlrctl list/fullscreen/close). Minimize and set_rectangle ignored. |
-| `zwlr_gamma_control_manager_v1` | none | Not registered by the repo. |
+| `zwlr_gamma_control_manager_v1` | tested | `handlers/gamma_control.rs`: ramps validated and stored, not applied on any backend. `tests/globals.sh` runs wlsunset. |
 | `zwlr_layer_shell_v1` | tested | `tests/layer-shell.sh` (waybar). |
 | `zwlr_output_manager_v1` | partial | `handlers/output_management.rs`: read-only heads announced at bind (`wlr-randr` in `tests/foreign-toplevel.sh`); apply/test answer `failed`. |
 | `zwlr_output_power_manager_v1` | none | Not registered by the repo. |
 | `zwlr_screencopy_manager_v1` | tested | `handlers/screencopy.rs`, `tests/screencopy.sh` (grim, winit in Xvfb). shm only, no cursor overlay, headless answers `failed`. |
-| `zwlr_virtual_pointer_manager_v1` | none | Not registered by the repo. |
+| `zwlr_virtual_pointer_manager_v1` | partial | `handlers/virtual_pointer.rs`: motion, absolute motion, button, axis. No client test (global in `tests/globals.sh`). |
 | `zwp_idle_inhibit_manager_v1` | none | Not registered by the repo. |
-| `zwp_input_method_manager_v2` | none | Not registered by the repo. |
+| `zwp_input_method_manager_v2` | partial | `handlers/input_method.rs`: popups tracked but not drawn. No client test. |
 | `zwp_keyboard_shortcuts_inhibit_manager_v1` | none | Not registered by the repo. |
-| `zwp_linux_dmabuf_v1` | none | Not registered by the repo. |
+| `zwp_linux_dmabuf_v1` | partial | `handlers/dmabuf.rs`: v3, renderer formats (winit, tty) or linear ARGB/XRGB (headless); imports accepted untested; no feedback, capture stays shm. |
 | `zwp_pointer_constraints_v1` | none | Not registered by the repo. |
 | `zwp_pointer_gestures_v1` | none | Not registered by the repo. |
-| `zwp_primary_selection_device_manager_v1` | none | Not registered by the repo. |
+| `zwp_primary_selection_device_manager_v1` | tested | Smithay primary selection; `tests/protocols.sh`. |
 | `zwp_relative_pointer_manager_v1` | none | Not registered by the repo. |
-| `zwp_tablet_manager_v2` | none | Not registered by the repo. |
+| `zwp_tablet_manager_v2` | partial | `handlers/tablet.rs`: global only, no tablet events. |
 | `zwp_text_input_manager_v1` | none | Not registered by the repo. |
-| `zwp_text_input_manager_v3` | none | Not registered by the repo. |
-| `zwp_virtual_keyboard_manager_v1` | none | Not registered by the repo. |
+| `zwp_text_input_manager_v3` | partial | `handlers/text_input.rs`: focus follows keyboard focus. No client test. |
+| `zwp_virtual_keyboard_manager_v1` | tested | `handlers/virtual_keyboard.rs`; `tests/globals.sh` types with wtype into wev. |
 | `zxdg_decoration_manager_v1` | partial | `delegate_xdg_decoration`. No test. |
 | `zxdg_exporter_v2` | none | Not registered by the repo. |
 | `zxdg_importer_v2` | none | Not registered by the repo. |
 | `zxdg_output_manager_v1` | partial | `OutputManagerState::new_with_xdg_output`. No test. |
-| `wl_drm / zwp_linux_dmabuf_v1` | none | No linux-dmabuf global (CLAUDE.md). |
 
 ## hyprctl command line (dotfile compatibility)
 
