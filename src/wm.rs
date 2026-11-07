@@ -78,6 +78,8 @@ pub struct WmState {
     pub key_grab: Option<u32>,
     /// Toplevels that committed a null buffer (out of every workspace).
     pub unmapped: Vec<Window>,
+    /// Keymap settings in effect (`KB_KEYS` order).
+    pub keymap: Option<[String; 5]>,
     /// Windows whose client-side fullscreen state is forced on.
     pub client_fs: Vec<Window>,
     /// `o` bind waiting for its key to be held long enough.
@@ -110,6 +112,7 @@ impl WmState {
             gesture: None,
             key_grab: None,
             unmapped: Vec::new(),
+            keymap: None,
             client_fs: Vec::new(),
             long_press: None,
         }

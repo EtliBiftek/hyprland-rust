@@ -1175,6 +1175,9 @@ pub struct DeviceOpts {
     pub tap_to_click: Option<bool>,
     pub disable_while_typing: Option<bool>,
     pub scroll_factor: Option<f32>,
+    /// Keyboard: `kb_layout`, `kb_variant`, `kb_model`, `kb_options`, `kb_rules`
+    /// (`device { }` only; the keymap switches when that keyboard types).
+    pub kb: [Option<String>; 5],
 }
 
 impl DeviceOpts {
@@ -1187,6 +1190,11 @@ impl DeviceOpts {
         self.tap_to_click = other.tap_to_click.or(self.tap_to_click);
         self.disable_while_typing = other.disable_while_typing.or(self.disable_while_typing);
         self.scroll_factor = other.scroll_factor.or(self.scroll_factor);
+        for (a, b) in self.kb.iter_mut().zip(&other.kb) {
+            if b.is_some() {
+                a.clone_from(b);
+            }
+        }
     }
 
     /// Sets one option by its Hyprland name. `Ok(false)` if the name is unknown.
@@ -1211,6 +1219,10 @@ impl DeviceOpts {
             "left_handed" => self.left_handed = Some(parse_bool(value)?),
             "tap-to-click" => self.tap_to_click = Some(parse_bool(value)?),
             "disable_while_typing" => self.disable_while_typing = Some(parse_bool(value)?),
+            k if KB_KEYS.contains(&k) => {
+                let i = KB_KEYS.iter().position(|x| *x == k).unwrap_or(0);
+                self.kb[i] = Some(value.to_string());
+            }
             "scroll_factor" => {
                 self.scroll_factor = Some(
                     value
@@ -1223,6 +1235,15 @@ impl DeviceOpts {
         Ok(true)
     }
 }
+
+/// Order of `DeviceOpts::kb`.
+pub const KB_KEYS: [&str; 5] = [
+    "kb_layout",
+    "kb_variant",
+    "kb_model",
+    "kb_options",
+    "kb_rules",
+];
 
 /// A `device { name = ...; ... }` block.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -2432,6 +2453,22 @@ mod tests {
         assert!(errors.is_empty(), "{errors:?}");
         assert!(cfg.binds[0].mods.logo);
         assert!(!cfg.binds[0].mods.alt);
+    }
+
+    #[test]
+    fn device_keyboard_layout() {
+        let (cfg, errors) = Config::parse_str(
+            "device {
+ name = AT Translated Set 2 keyboard
+ kb_layout = tr
+ kb_variant = f
+}",
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+        let d = &cfg.input.devices[0];
+        assert_eq!(d.name, "at-translated-set-2-keyboard");
+        assert_eq!(d.opts.kb[0].as_deref(), Some("tr"));
+        assert_eq!(d.opts.kb[1].as_deref(), Some("f"));
     }
 
     #[test]

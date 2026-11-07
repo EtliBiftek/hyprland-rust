@@ -174,7 +174,7 @@ Not started
 - [ ] Master: no per-window weights (`resizeactive` only moves `mfact`).
       Groupbar has no titles and reserves no layout space; drag-into-group
       and group window rules are missing.
-- [ ] Per-device `kb_*` overrides are ignored (one keyboard per seat).
+- [ ] Per-device `kb_*`: the keymap switches when a keyboard with a `device { kb_* }` block types (one seat keymap, as Hyprland).
 - [ ] Config error overlay; empty `is_known_unimplemented`; inotify instead
       of mtime polling.
 - [ ] Effects shortcuts: see `shortcut:` comments in `src/render/` (blur cost, no damage tracking of effects).

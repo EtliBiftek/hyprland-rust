@@ -201,20 +201,62 @@ struct KeyOutcome {
 impl Hypr {
     /// Applies `input { }` to the keyboard (layout, repeat, numlock) and to
     /// the libinput devices seen so far. Call again after a config reload.
-    pub fn apply_input_config(&mut self) {
-        let i = self.config.input.clone();
+    /// The keymap settings (`KB_KEYS` order) for a keyboard: `input { }`
+    /// overridden by its `device { }` block.
+    fn keymap_for(&self, device: Option<&str>) -> [String; 5] {
+        let i = &self.config.input;
+        let mut k = [
+            i.kb_layout.clone(),
+            i.kb_variant.clone(),
+            i.kb_model.clone(),
+            i.kb_options.clone(),
+            i.kb_rules.clone(),
+        ];
+        if let Some(d) = device.and_then(|n| {
+            let n = n.to_lowercase().replace(' ', "-");
+            i.devices.iter().find(|d| d.name == n)
+        }) {
+            for (a, b) in k.iter_mut().zip(&d.opts.kb) {
+                if let Some(b) = b {
+                    a.clone_from(b);
+                }
+            }
+        }
+        k
+    }
+
+    fn set_keymap(&mut self, k: [String; 5]) {
+        if self.wm.keymap.as_ref() == Some(&k) {
+            return;
+        }
         let kb = self.seat.get_keyboard().unwrap();
         let xkb_config = XkbConfig {
-            rules: &i.kb_rules,
-            model: &i.kb_model,
-            layout: &i.kb_layout,
-            variant: &i.kb_variant,
-            options: (!i.kb_options.is_empty()).then(|| i.kb_options.clone()),
+            layout: &k[0],
+            variant: &k[1],
+            model: &k[2],
+            options: (!k[3].is_empty()).then(|| k[3].clone()),
+            rules: &k[4],
         };
         // An invalid layout keeps the previous keymap.
         if let Err(e) = kb.set_xkb_config(self, xkb_config) {
             tracing::warn!("invalid keyboard layout settings: {e:?}");
+            return;
         }
+        self.wm.keymap = Some(k);
+    }
+
+    /// A key from `device`: switch to its `device { kb_* }` keymap if it has one.
+    fn keymap_follow_device(&mut self, device: &str) {
+        let k = self.keymap_for(Some(device));
+        self.set_keymap(k);
+    }
+
+    pub fn apply_input_config(&mut self) {
+        let i = self.config.input.clone();
+        let kb = self.seat.get_keyboard().unwrap();
+        self.wm.keymap = None;
+        let k = self.keymap_for(None);
+        self.set_keymap(k);
         kb.change_repeat_info(i.repeat_rate, i.repeat_delay);
         if i.numlock_by_default {
             let mut m = kb.modifier_state();
@@ -281,6 +323,10 @@ impl Hypr {
         self.notify_idle_activity();
         match event {
             InputEvent::Keyboard { event, .. } => {
+                if event.state() == KeyState::Pressed {
+                    let name = smithay::backend::input::Device::name(&event.device());
+                    self.keymap_follow_device(&name);
+                }
                 self.on_key(event.key_code(), event.state(), Event::time_msec(&event));
             }
             InputEvent::PointerMotion { event, .. } => {
