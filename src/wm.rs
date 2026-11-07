@@ -610,7 +610,11 @@ impl Hypr {
                 let is_floating = floating.contains(&window);
                 let keep_size = (is_floating || pseudo.contains(&window))
                     && self.space.element_geometry(&window).is_some();
-                let size = if keep_size { x.geometry().size } else { rect.size };
+                let size = if keep_size {
+                    x.geometry().size
+                } else {
+                    rect.size
+                };
                 let _ = x.set_fullscreen(is_fullscreen);
                 let _ = x.configure(Rectangle::new(rect.loc, size));
             }

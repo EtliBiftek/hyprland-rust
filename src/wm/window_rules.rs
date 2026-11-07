@@ -121,12 +121,11 @@ impl Hypr {
             (s.applied, s.last != (class.clone(), title.clone()))
         };
         if !applied {
-            let has_buffer = crate::xwayland::wl_surface_of(w)
-                .is_some_and(|s| with_renderer_surface_state(&s, |s| s.buffer().is_some()).unwrap_or(false));
+            let has_buffer = crate::xwayland::wl_surface_of(w).is_some_and(|s| {
+                with_renderer_surface_state(&s, |s| s.buffer().is_some()).unwrap_or(false)
+            });
             // X11 windows have no initial configure: class is known at map.
-            let before_configure = w
-                .toplevel()
-                .is_none_or(|t| !t.is_initial_configure_sent());
+            let before_configure = w.toplevel().is_none_or(|t| !t.is_initial_configure_sent());
             if (before_configure && !class.is_empty()) || has_buffer {
                 self.apply_static_rules(w);
             }

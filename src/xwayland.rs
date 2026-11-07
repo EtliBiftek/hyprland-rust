@@ -17,6 +17,7 @@ use smithay::{
     },
     utils::{Logical, Point, Rectangle, Size},
     wayland::{
+        seat::WaylandFocus,
         selection::{
             data_device::{
                 clear_data_device_selection, current_data_device_selection_userdata,
@@ -28,7 +29,6 @@ use smithay::{
             },
             SelectionSource, SelectionTarget,
         },
-        seat::WaylandFocus,
         xwayland_shell::{XWaylandShellHandler, XWaylandShellState},
     },
     xwayland::{
@@ -272,7 +272,8 @@ impl XwmHandler for Hypr {
             // Floating windows keep the size they asked for, centered
             // (add_window had configured them to a tile).
             if let (true, Some(out)) = (own.w > 1 && own.h > 1, self.output_geometry()) {
-                let loc = out.loc + Point::from(((out.size.w - own.w) / 2, (out.size.h - own.h) / 2));
+                let loc =
+                    out.loc + Point::from(((out.size.w - own.w) / 2, (out.size.h - own.h) / 2));
                 let _ = x.configure(Rectangle::new(loc, own));
                 self.space.map_element(window.clone(), loc, false);
             }
@@ -343,7 +344,13 @@ impl XwmHandler for Hypr {
         _above: Option<X11Window>,
     ) {
         // Override-redirect windows move and resize on their own.
-        if let Some(w) = self.x11.or_windows.iter().find(|w| same_x11(w, &x)).cloned() {
+        if let Some(w) = self
+            .x11
+            .or_windows
+            .iter()
+            .find(|w| same_x11(w, &x))
+            .cloned()
+        {
             self.space.map_element(w, geometry.loc, false);
             self.raise_override_redirect();
         }
@@ -423,11 +430,11 @@ impl XwmHandler for Hypr {
     ) {
         let r = match selection {
             SelectionTarget::Clipboard => {
-                request_data_device_client_selection(&self.seat, mime_type, fd).map_err(|e| e.to_string())
+                request_data_device_client_selection(&self.seat, mime_type, fd)
+                    .map_err(|e| e.to_string())
             }
-            SelectionTarget::Primary => {
-                request_primary_client_selection(&self.seat, mime_type, fd).map_err(|e| e.to_string())
-            }
+            SelectionTarget::Primary => request_primary_client_selection(&self.seat, mime_type, fd)
+                .map_err(|e| e.to_string()),
         };
         if let Err(e) = r {
             tracing::warn!("cannot send the Wayland selection to X11: {e}");
@@ -535,7 +542,8 @@ impl XwmHandler for CalloopData {
         h: Option<u32>,
         reorder: Option<Reorder>,
     ) {
-        self.state.configure_request(xwm, window, x, y, w, h, reorder)
+        self.state
+            .configure_request(xwm, window, x, y, w, h, reorder)
     }
     fn configure_notify(
         &mut self,
