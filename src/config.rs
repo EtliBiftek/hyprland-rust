@@ -965,6 +965,15 @@ impl Config {
             match crate::lua_config::Runtime::load(&text, dir, &name) {
                 Ok((rt, hyprlang, lua_errors)) => {
                     parser.parse(&hyprlang, path);
+                    // Line numbers of the generated text mean nothing to the
+                    // user: name the generated line instead.
+                    let generated: Vec<&str> = hyprlang.lines().collect();
+                    for e in parser.errors.iter_mut().filter(|e| e.file == path) {
+                        if let Some(l) = e.line.checked_sub(1).and_then(|i| generated.get(i)) {
+                            e.message = format!("{} (from `{}`)", e.message, l.trim());
+                        }
+                        e.line = 0;
+                    }
                     parser.config.lua = crate::lua_config::Handle(Some(std::rc::Rc::new(rt)));
                     parser
                         .errors
