@@ -41,14 +41,22 @@ if sudo mkdir -p /sys/kernel/config 2>/dev/null && { mountpoint -q /sys/kernel/c
 fi
 sleep 1
 ls -l /dev/dri
-# The VKMS card: the one whose driver is vkms (the newest when two exist).
+# The VKMS card: the one with the most `Virtual-N` connectors that is not
+# the VM's own display (hyperv_drm also names its connector Virtual).
 CARD=
+best=0
 for c in /sys/class/drm/card[0-9]; do
-    drv=$(basename "$(readlink -f "$c/device/driver")" 2>/dev/null || true)
-    [ "$drv" = vkms ] || readlink -f "$c/device" | grep -q vkms || continue
-    CARD=/dev/dri/$(basename "$c")
+    dev=$(readlink -f "$c/device")
+    echo "$(basename "$c"): $dev $(ls -d "$c"-* 2>/dev/null | xargs -n1 basename | tr '\n' ' ')"
+    echo "$dev" | grep -qi 'hyperv\|vmbus\|pci' && continue
+    k=$(ls -d "$c"-Virtual-* 2>/dev/null | wc -l)
+    if [ "$k" -gt "$best" ]; then
+        best=$k
+        CARD=/dev/dri/$(basename "$c")
+    fi
 done
 [ -n "$CARD" ] || { echo "FAIL: no vkms card"; exit 1; }
+[ "$best" -ge 2 ] || TWO=0
 echo "using $CARD (two connectors: $TWO)"
 
 sudo seatd -g "$(id -gn)" -l info >"$T/seatd.log" 2>&1 &
@@ -108,9 +116,13 @@ d = open(sys.argv[1], "rb").read()
 parts = d.split(b"\n", 3)
 w, h = map(int, parts[1].split())
 px = parts[3]
-red = sum(1 for i in range(0, len(px) - 2, 3) if px[i] > 200 and px[i+1] < 60 and px[i+2] < 60)
-print("red pixels:", red, "of", w * h)
-sys.exit(0 if red > 100 else 1)
+from collections import Counter
+cols = Counter(px[i:i+3] for i in range(0, len(px) - 2, 3))
+print("size", w, h, "top colors:", [(tuple(c), n) for c, n in cols.most_common(6)])
+red = sum(n for c, n in cols.items() if c[0] > 200 and c[1] < 60 and c[2] < 60)
+other = sum(n for c, n in cols.items() if abs(c[0] - 25) > 8 or abs(c[1] - 25) > 8 or abs(c[2] - 25) > 8)
+print("red border pixels:", red, "non-background pixels:", other)
+sys.exit(0 if red > 100 and other > 1000 else 1)
 PY
 echo "ok: tty backend renders (window + border visible in screencopy)"
 
