@@ -49,15 +49,55 @@ impl CompositorHandler for Hypr {
                 }
                 self.rules_on_commit(&window);
                 self.check_window_mapped(&window);
+                // A null buffer unmaps the toplevel: it leaves the layout
+                // until it maps again (like Hyprland).
+                if window.toplevel().is_some()
+                    && crate::ipc::is_mapped(&window)
+                    && !has_buffer(&root)
+                {
+                    self.unmap_toplevel(&window);
+                }
+            } else if let Some(w) = self.unmapped_window(&root) {
+                w.on_commit();
+                if has_buffer(&root) {
+                    self.wm.unmapped.retain(|x| x != &w);
+                    self.add_window(w.clone());
+                    self.check_window_mapped(&w);
+                }
             }
         };
 
         self.layer_commit(surface);
         let toplevel = self
             .window_for_surface(surface)
-            .and_then(|(_, w)| w.toplevel().cloned());
+            .map(|(_, w)| w)
+            .or_else(|| self.unmapped_window(surface))
+            .and_then(|w| w.toplevel().cloned());
         xdg_shell::handle_commit(&mut self.popups, toplevel.as_ref(), surface);
         resize_grab::handle_commit(&mut self.space, surface);
+    }
+}
+
+fn has_buffer(s: &WlSurface) -> bool {
+    smithay::backend::renderer::utils::with_renderer_surface_state(s, |st| st.buffer().is_some())
+        .unwrap_or(false)
+}
+
+impl Hypr {
+    pub fn unmapped_window(&self, s: &WlSurface) -> Option<smithay::desktop::Window> {
+        self.wm
+            .unmapped
+            .iter()
+            .find(|w| w.toplevel().is_some_and(|t| t.wl_surface() == s))
+            .cloned()
+    }
+
+    /// Takes a toplevel that committed a null buffer out of its workspace;
+    /// it comes back through `add_window` on its next buffer.
+    fn unmap_toplevel(&mut self, w: &smithay::desktop::Window) {
+        self.remove_window_obj(w);
+        crate::ipc::clear_mapped(w);
+        self.wm.unmapped.push(w.clone());
     }
 }
 

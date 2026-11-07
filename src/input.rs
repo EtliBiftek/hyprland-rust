@@ -190,6 +190,12 @@ struct KeyOutcome {
     pass_release: Option<WlSurface>,
     /// `global` binds whose key was released (they get `released`).
     global_release: Vec<String>,
+    /// `o` binds: run after the key is held for `repeat_delay`.
+    long_press: Option<Dispatcher>,
+    /// `bindm` on a keyboard key: start (`Some(resize)`) a pointer grab.
+    key_grab: Option<bool>,
+    /// The key that holds a keyboard `bindm` grab was released.
+    end_key_grab: bool,
 }
 
 impl Hypr {
@@ -530,6 +536,32 @@ impl Hypr {
         if let Some(d) = out.repeat {
             self.start_repeat(code.raw(), d);
         }
+        if let Some(d) = out.long_press {
+            let raw = code.raw();
+            let delay = Duration::from_millis(self.config.input.repeat_delay.max(1) as u64);
+            if let Ok(token) =
+                self.wm
+                    .loop_handle
+                    .insert_source(Timer::from_duration(delay), move |_, _, data| {
+                        // Still held: the release would have cancelled us.
+                        data.state.wm.long_press = None;
+                        data.state.dispatch(&d);
+                        TimeoutAction::Drop
+                    })
+            {
+                self.wm.long_press = Some((raw, token));
+            }
+        }
+        if let Some(resize) = out.key_grab {
+            if self.start_mouse_grab(resize, 0) {
+                self.wm.key_grab = Some(code.raw());
+            }
+        }
+        if out.end_key_grab {
+            if let Some(p) = self.seat.get_pointer() {
+                p.unset_grab(self, SERIAL_COUNTER.next_serial(), time);
+            }
+        }
     }
 
     /// Decides what a key event triggers. Runs inside the keyboard filter, so
@@ -589,10 +621,19 @@ impl Hypr {
         }
         // Match on the unshifted key so `SUPER SHIFT, 1` works
         // regardless of keyboard layout's shifted symbol.
-        // Lock screen and inhibited shortcuts: keys go straight to the client.
-        if self.session_locked || self.seat.keyboard_shortcuts_inhibited() {
-            return out;
+        if !pressed && self.wm.key_grab == Some(raw) {
+            self.wm.key_grab = None;
+            out.end_key_grab = true;
+            out.consume = true;
         }
+        if !pressed && self.wm.long_press.as_ref().is_some_and(|l| l.0 == raw) {
+            if let Some((_, token)) = self.wm.long_press.take() {
+                self.wm.loop_handle.remove(token);
+            }
+        }
+        // Locked: only `l` binds; inhibited shortcuts: only `p` binds.
+        let locked = self.session_locked;
+        let inhibited = self.seat.keyboard_shortcuts_inhibited();
         let syms: Vec<String> = handle
             .raw_syms()
             .into_iter()
@@ -600,7 +641,22 @@ impl Hypr {
             .map(|s| xkb::keysym_get_name(s).to_ascii_lowercase())
             .collect();
         for b in &self.config.binds {
-            if b.flags.mouse || b.submap != self.wm.submap {
+            if b.submap != self.wm.submap
+                || (locked && !b.flags.locked)
+                || (inhibited && !b.flags.bypass)
+            {
+                continue;
+            }
+            // `bindm` on a keyboard key: hold it to drag/resize.
+            if b.flags.mouse {
+                if pressed
+                    && !b.key.starts_with("mouse:")
+                    && b.mods == mods
+                    && syms.contains(&b.key)
+                {
+                    out.key_grab = Some(b.dispatcher == Dispatcher::MouseResize);
+                    out.consume = true;
+                }
                 continue;
             }
             let key_ok = match b.key.strip_prefix("code:") {
@@ -616,6 +672,11 @@ impl Hypr {
                 if let (Dispatcher::Global(name), false) = (&b.dispatcher, pressed) {
                     out.global_release.push(name.clone());
                 }
+                continue;
+            }
+            if b.flags.long_press && pressed {
+                out.long_press = Some(b.dispatcher.clone());
+                out.consume = true;
                 continue;
             }
             out.run.push(b.dispatcher.clone());

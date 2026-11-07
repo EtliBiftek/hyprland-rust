@@ -589,6 +589,11 @@ fn mapped_flag(w: &Window) -> &Mapped {
         .get_or_insert(|| Mapped(AtomicBool::new(false)))
 }
 
+/// Forgets that `openwindow` was sent (the window unmapped).
+pub fn clear_mapped(w: &Window) {
+    mapped_flag(w).0.store(false, Ordering::Relaxed);
+}
+
 /// True once `openwindow` was sent for this window.
 pub fn is_mapped(w: &Window) -> bool {
     mapped_flag(w).0.load(Ordering::Relaxed)
