@@ -1,7 +1,7 @@
 //! hyprland-ctm-control-v1 (hyprsunset): per-output 3x3 colour transform matrix.
-//! shortcuts: matrices are validated and stored (`CtmState::applied`, keyed by
-//! output name) but not applied to the screen; the TTY backend would write the
-//! DRM `CTM` property (or a render shader) from this map.
+//! Matrices are stored in `CtmState::applied` (keyed by output name); the tty
+//! backend folds their diagonal into the DRM gamma ramps (`gamma_control.rs`).
+//! shortcuts: not applied on winit/headless; off-diagonal entries are ignored.
 
 use std::{collections::HashMap, sync::Mutex};
 
@@ -24,7 +24,6 @@ pub fn init(dh: &DisplayHandle) {
 #[derive(Default)]
 pub struct CtmState {
     /// Committed matrix per output name (row-major, as sent).
-    #[allow(dead_code)]
     pub applied: HashMap<String, [f64; 9]>,
 }
 
