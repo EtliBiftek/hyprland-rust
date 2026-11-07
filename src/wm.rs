@@ -1276,6 +1276,9 @@ impl Hypr {
             Dispatcher::Signal(sig, sel) => self.signal_window(*sig, sel.as_ref()),
             Dispatcher::Event(data) => self.ipc.emit("custom", data),
             Dispatcher::Dpms(t) => self.wm.dpms_on = t.apply(self.wm.dpms_on),
+            Dispatcher::Global(name) => {
+                self.global_shortcut(name, true);
+            }
             Dispatcher::Noop(..) => {}
         }
         // Floating, fullscreen, pin or tags may have changed: dynamic rules.

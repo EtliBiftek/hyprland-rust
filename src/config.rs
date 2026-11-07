@@ -196,6 +196,9 @@ pub enum Dispatcher {
     Event(String),
     /// `dpms on|off|toggle`.
     Dpms(Toggle),
+    /// `global, appid:name`: press the shortcut a client registered through
+    /// hyprland-global-shortcuts-v1.
+    Global(String),
     /// Accepted for compatibility, no effect on a single monitor or yet.
     Noop(&'static str, String),
 }
@@ -330,6 +333,7 @@ impl Dispatcher {
             Dispatcher::Signal(n, None) => ("signal", n.to_string()),
             Dispatcher::Event(d) => ("event", d.clone()),
             Dispatcher::Dpms(t) => ("dpms", t.name().into()),
+            Dispatcher::Global(name) => ("global", name.clone()),
             Dispatcher::Noop(name, arg) => (*name, arg.clone()),
         }
     }
@@ -469,6 +473,7 @@ impl Dispatcher {
             }
             "event" => Dispatcher::Event(arg.to_string()),
             "dpms" => Dispatcher::Dpms(Toggle::parse(split_word(arg).0)?),
+            "global" => Dispatcher::Global(arg.trim().to_string()),
             "focusmonitor" => Dispatcher::Noop("focusmonitor", arg.to_string()),
             "movecurrentworkspacetomonitor" => {
                 Dispatcher::Noop("movecurrentworkspacetomonitor", arg.to_string())
@@ -2083,6 +2088,10 @@ dwindle:nope = 1",
         assert!(p("alterzorder", "middle").is_err());
         assert_eq!(p("togglepseudo", ""), Ok(Dispatcher::TogglePseudo));
         assert_eq!(p("bringactivetotop", ""), Ok(Dispatcher::BringActiveToTop));
+        assert_eq!(
+            p("global", "quickshell:searchToggle"),
+            Ok(Dispatcher::Global("quickshell:searchToggle".into()))
+        );
         assert_eq!(p("dpms", "toggle"), Ok(Dispatcher::Dpms(Toggle::Flip)));
         assert_eq!(p("dpms", "off"), Ok(Dispatcher::Dpms(Toggle::Disable)));
         assert_eq!(

@@ -258,6 +258,8 @@ fn render(data: &mut CalloopData) {
         return;
     }
 
+    state.screencopy_process(&mut tty.renderer, &tty.output);
+
     // Front to back: cursor, borders, windows. Locked: cursor and lock surfaces.
     let pointer = state.seat.get_pointer().unwrap().current_location();
     let mut elements = vec![TtyElement::Solid(SolidColorRenderElement::from_buffer(

@@ -39,6 +39,8 @@ struct KeyOutcome {
     repeat: Option<Dispatcher>,
     /// Surface that must get the release of a key we `pass`ed to it.
     pass_release: Option<WlSurface>,
+    /// `global` binds whose key was released (they get `released`).
+    global_release: Vec<String>,
 }
 
 impl Hypr {
@@ -322,6 +324,9 @@ impl Hypr {
         if let Some(surface) = out.pass_release {
             self.forward_key(surface, code, key_state, time);
         }
+        for name in out.global_release {
+            self.global_shortcut(&name, false);
+        }
         for d in out.run {
             match d {
                 Dispatcher::Pass(sel) => self.pass_key(&sel, code, key_state, time),
@@ -414,6 +419,9 @@ impl Hypr {
             }
             // Release binds fire on release, all others on press.
             if b.flags.release == pressed {
+                if let (Dispatcher::Global(name), false) = (&b.dispatcher, pressed) {
+                    out.global_release.push(name.clone());
+                }
                 continue;
             }
             out.run.push(b.dispatcher.clone());

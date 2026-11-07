@@ -61,6 +61,8 @@ pub fn init_headless(
         Timer::from_duration(Duration::from_millis(16)),
         move |_, _, data| {
             let state = &mut data.state;
+            // shortcut: no renderer here, so screencopy cannot be served.
+            state.screencopy_fail_all();
             state.send_frames(&output);
             state.space.refresh();
             state.popups.cleanup();
