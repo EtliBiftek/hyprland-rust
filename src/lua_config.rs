@@ -1342,7 +1342,8 @@ fn emit(lua: &Lua, st: &Shared, r: Result<String, String>) -> mlua::Result<()> {
         Ok(line) => match host(lua, "keyword", &line, "")? {
             Some(err) if !err.is_empty() => st.borrow_mut().errors.push(err),
             Some(_) => {}
-            None => st.borrow_mut().lines.push(line),
+            // `#` starts a hyprlang comment; Lua strings mean it literally.
+            None => st.borrow_mut().lines.push(line.replace('#', "##")),
         },
         Err(e) => st.borrow_mut().errors.push(e),
     }
@@ -1538,7 +1539,10 @@ fn install(lua: &Lua, st: &Shared, dir: Option<&Path>) -> mlua::Result<()> {
                 Some(_) => {}
                 // A multi-line command cannot be a hyprlang line.
                 None if cmd.contains('\n') => s.borrow_mut().deferred.push(format!("exec, {cmd}")),
-                None => s.borrow_mut().lines.push(format!("exec = {cmd}")),
+                None => s
+                    .borrow_mut()
+                    .lines
+                    .push(format!("exec = {}", cmd.replace('#', "##"))),
             }
             Ok(())
         })?,
@@ -2127,6 +2131,15 @@ mod tests {
         );
         // A bad hl.dsp.* call is a config error, not a script abort.
         assert_eq!(errors.len(), 1, "{errors:?}");
+
+        // `#` is literal in Lua but a comment in hyprlang.
+        let (text, errors) = conv(
+            r#"hl.bind("SUPER + C", hl.dsp.exec_cmd("hyprpicker -a"), { description = "Pick #RRGGBB" })"#,
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+        let (cfg, errors) = crate::config::Config::parse_str(&text);
+        assert!(errors.is_empty(), "{errors:?} in {text}");
+        assert_eq!(cfg.binds[0].description, "Pick #RRGGBB");
 
         // Multi-line shell commands cannot be hyprlang lines.
         let (rt, text, errors) = load(
