@@ -1415,6 +1415,8 @@ pub struct Config {
     pub workspace_rules: Vec<WorkspaceRule>,
     /// `monitor =` rules.
     pub monitors: Vec<MonitorRule>,
+    /// `env = KEY,VALUE`, in config order (exported before `exec(-once)`).
+    pub env: Vec<(String, String)>,
     pub input: Input,
     pub binds: Vec<Bind>,
     pub gestures: Vec<Gesture>,
@@ -1950,6 +1952,10 @@ impl Parser {
                 cfg.group.groupbar.col_locked_inactive = parse_color(value)?
             }
             "binds:ignore_group_lock" => cfg.ignore_group_lock = parse_bool(value)?,
+            "env" => {
+                let (k, v) = value.split_once(',').ok_or("env: expected `KEY,VALUE`")?;
+                cfg.env.push((k.trim().to_string(), v.trim().to_string()));
+            }
             "monitor" => {
                 let rule = parse_monitor_rule(value)?;
                 // A later rule for the same monitor replaces the earlier one.
@@ -2009,7 +2015,6 @@ fn is_known_unimplemented(key: &str) -> bool {
         "binds:",
         "xwayland:",
         "cursor:",
-        "env",
         "workspace",
     ];
     PREFIXES.iter().any(|p| key.starts_with(p))
@@ -2453,6 +2458,23 @@ mod tests {
         assert!(errors.is_empty(), "{errors:?}");
         assert!(cfg.binds[0].mods.logo);
         assert!(!cfg.binds[0].mods.alt);
+    }
+
+    #[test]
+    fn env_lines() {
+        let (cfg, errors) = Config::parse_str(
+            "env = QT_QPA_PLATFORM,wayland;xcb
+env = A , b",
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(
+            cfg.env,
+            vec![
+                ("QT_QPA_PLATFORM".into(), "wayland;xcb".into()),
+                ("A".into(), "b".into())
+            ]
+        );
+        assert!(!Config::parse_str("env = NOVALUE").1.is_empty());
     }
 
     #[test]

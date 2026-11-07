@@ -81,3 +81,6 @@ jobs:
       - name: Protocol probe test (winit in Xvfb)
         timeout-minutes: 4
         run: sh tests/probe.sh
+      - name: Session environment test (headless)
+        timeout-minutes: 2
+        run: sh tests/session-env.sh

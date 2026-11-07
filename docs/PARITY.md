@@ -503,7 +503,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | dispatcher `pseudo` | tested | Hyprland's name for `togglepseudo`; both accepted. |
 | `category { }` blocks and `cat:key` shorthand | tested | Unit test `categories_and_shorthand`. |
 | `monitor =` | parsed | Ignored (`is_known_unimplemented` prefix `monitor`). No monitor rules. v0.57.1 equivalent: `hl.monitor`. |
-| `env =` | parsed | Ignored (prefix `env`). v0.57.1 equivalent: `hl.env`. |
+| `env =` | tested | Exported before `exec(-once)` and on reload, after XDG_CURRENT_DESKTOP/XDG_SESSION_TYPE/XDG_SESSION_DESKTOP; `tests/session-env.sh`. v0.57.1 equivalent: `hl.env`. |
 | `device { }` blocks | tested | `Input` device overrides in `config.rs`, unit test `input_config`. v0.57.1 equivalent: `hl.device`. |
 | `animations { }`, `bezier =`, `animation =` | parsed | Ignored (prefixes `animations`, `bezier`). v0.57.1 equivalent: `hl.animation`, `hl.curve`. |
 | `gestures { }` category | parsed | Ignored (prefix `gestures:`). v0.57.1 equivalent: `hl.gesture`. |

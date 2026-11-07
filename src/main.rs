@@ -128,6 +128,20 @@ impl std::io::Write for Tee {
     }
 }
 
+/// What Hyprland exports for the session, then the `env =` lines.
+pub fn apply_env(cfg: &Config) {
+    for (k, v) in [
+        ("XDG_CURRENT_DESKTOP", "Hyprland"),
+        ("XDG_SESSION_TYPE", "wayland"),
+        ("XDG_SESSION_DESKTOP", "Hyprland"),
+    ] {
+        std::env::set_var(k, v);
+    }
+    for (k, v) in &cfg.env {
+        std::env::set_var(k, v);
+    }
+}
+
 pub fn rolling_log() -> String {
     ROLLING.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
@@ -212,6 +226,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     data.state.start_xwayland(&event_loop.handle());
 
+    apply_env(&data.state.config);
     for cmd in data
         .state
         .config
