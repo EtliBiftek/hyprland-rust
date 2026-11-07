@@ -33,7 +33,7 @@ use smithay::{
     desktop::{layer_map_for_output, PopupManager, Window},
     output::Output,
     utils::{Logical, Physical, Point, Rectangle, Scale, Transform},
-    wayland::shell::wlr_layer::Layer,
+    wayland::{seat::WaylandFocus, shell::wlr_layer::Layer},
 };
 
 use crate::{
