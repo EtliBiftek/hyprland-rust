@@ -57,8 +57,8 @@ pub struct WmState {
     pub groups_locked: bool,
     /// `togglepseudo`: tiled windows that keep their own size.
     pub pseudo: Vec<Window>,
-    /// `setprop`: (window, prop, value). shortcut: stored only, nothing
-    /// reads them yet.
+    /// `setprop`: (window, prop, value), applied over the rule effects by
+    /// `window_dynp` (`rules::apply_setprops`).
     pub props: Vec<(Window, String, String)>,
     /// `dpms`: false while the output is switched off.
     pub dpms_on: bool,
@@ -1323,7 +1323,7 @@ impl Hypr {
         }
     }
 
-    /// `setprop`. shortcut: stored only, no rendering or rule reads it yet.
+    /// `setprop`: stored per window, read by `window_dynp`.
     fn set_prop(&mut self, sel: Option<&WinSel>, prop: &str, value: &str) {
         let Some(w) = self.target_window(sel) else {
             return;

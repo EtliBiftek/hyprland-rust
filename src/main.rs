@@ -100,7 +100,6 @@ struct Tee;
 
 impl std::io::Write for Tee {
     fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
-        use std::io::Write as _;
         let _ = std::io::stderr().write_all(b);
         let mut r = ROLLING.lock().unwrap_or_else(|e| e.into_inner());
         let text = String::from_utf8_lossy(b);
