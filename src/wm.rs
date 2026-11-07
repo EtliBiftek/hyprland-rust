@@ -77,6 +77,8 @@ pub struct WmState {
         String,
         smithay::reexports::wayland_server::backend::GlobalId,
     )>,
+    /// Touchpad gesture in progress and whether a `gesture =` owns it.
+    pub gesture: Option<(crate::gestures::Tracker, bool)>,
 }
 
 impl WmState {
@@ -102,6 +104,7 @@ impl WmState {
             focused_mon: 0,
             next_mon_id: 0,
             output_globals: Vec::new(),
+            gesture: None,
         }
     }
 }

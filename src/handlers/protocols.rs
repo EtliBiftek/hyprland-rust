@@ -377,6 +377,8 @@ impl PointerConstraintsHandler for Hypr {
 }
 delegate_pointer_constraints!(Hypr);
 delegate_relative_pointer!(Hypr);
+// Touchpad gestures that no `gesture =` claims go to the client.
+smithay::delegate_pointer_gestures!(Hypr);
 
 //
 // Keyboard shortcuts inhibit: `input.rs` skips binds while it is active.

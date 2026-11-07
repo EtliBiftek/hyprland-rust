@@ -1141,6 +1141,8 @@ pub struct Config {
     pub input: Input,
     pub binds: Vec<Bind>,
     pub gestures: Vec<Gesture>,
+    /// `gestures:workspace_swipe_distance/invert/cancel_ratio`.
+    pub swipe: crate::gestures::SwipeOpts,
     pub exec_once: Vec<String>,
     pub exec: Vec<String>,
     /// `windowrule` / `layerrule` (see `rules.rs`).
@@ -1556,6 +1558,13 @@ impl Parser {
             }
             "misc:disable_autoreload" => cfg.misc.disable_autoreload = parse_bool(value)?,
             "cursor:no_warps" => cfg.cursor_no_warps = parse_bool(value)?,
+            "gestures:workspace_swipe_distance" => {
+                cfg.swipe.distance = parse_float(value)?.max(1.0) as f64
+            }
+            "gestures:workspace_swipe_invert" => cfg.swipe.invert = parse_bool(value)?,
+            "gestures:workspace_swipe_cancel_ratio" => {
+                cfg.swipe.cancel_ratio = parse_float(value)?.clamp(0.0, 1.0) as f64
+            }
             "decoration:rounding" => cfg.decoration.rounding = parse_int(value)?,
             "dwindle:preserve_split" => cfg.dwindle.preserve_split = parse_bool(value)?,
             "dwindle:default_split_ratio" => {
@@ -1885,8 +1894,6 @@ pub struct Gesture {
     pub args: Vec<String>,
 }
 
-// shortcut: gestures are parsed and stored only, the tty backend does not
-// feed libinput swipe/pinch events to them yet.
 fn parse_gesture(value: &str) -> Result<Gesture, String> {
     let parts: Vec<&str> = value.split(',').map(str::trim).collect();
     let fingers: u32 = parts[0]

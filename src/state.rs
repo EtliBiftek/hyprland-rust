@@ -82,6 +82,7 @@ pub struct Hypr {
     pub keyboard_shortcuts_inhibit_state: KeyboardShortcutsInhibitState,
     pub pointer_constraints_state: PointerConstraintsState,
     pub relative_pointer_state: RelativePointerManagerState,
+    pub pointer_gestures_state: smithay::wayland::pointer_gestures::PointerGesturesState,
     pub xdg_foreign_state: XdgForeignState,
     pub session_lock_state: SessionLockManagerState,
     /// ext-idle-notify timers and idle-inhibit surfaces.
@@ -212,6 +213,9 @@ impl Hypr {
             keyboard_shortcuts_inhibit_state: KeyboardShortcutsInhibitState::new::<Self>(&dh),
             pointer_constraints_state: PointerConstraintsState::new::<Self>(&dh),
             relative_pointer_state: RelativePointerManagerState::new::<Self>(&dh),
+            pointer_gestures_state: smithay::wayland::pointer_gestures::PointerGesturesState::new::<
+                Self,
+            >(&dh),
             xdg_foreign_state: XdgForeignState::new::<Self>(&dh),
             session_lock_state,
             idle: IdleState::default(),
