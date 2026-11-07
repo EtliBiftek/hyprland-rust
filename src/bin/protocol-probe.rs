@@ -221,7 +221,9 @@ fn red_share(f: &File, w: u32, h: u32) -> f64 {
     let mut v = vec![0u8; (w * h * 4) as usize];
     f.read_exact_at(&mut v, 0).unwrap();
     let red = v
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .filter(|p| p[2] > 200 && p[1] < 50 && p[0] < 50)
         .count();
     red as f64 / (w * h) as f64
@@ -526,7 +528,6 @@ impl Dispatch<HyprlandToplevelWindowMappingHandleV1, ()> for P {
                 address,
             } => p.map_addr = Some(((address_hi as u64) << 32) | address as u64),
             hyprland_toplevel_window_mapping_handle_v1::Event::Failed => p.map_failed = true,
-            _ => {}
         }
     }
 }
@@ -571,9 +572,8 @@ impl Dispatch<HyprlandFocusGrabV1, ()> for P {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let hyprland_focus_grab_v1::Event::Cleared = event {
-            p.cleared = true;
-        }
+        let hyprland_focus_grab_v1::Event::Cleared = event;
+        p.cleared = true;
     }
 }
 
