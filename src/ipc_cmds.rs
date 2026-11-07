@@ -227,6 +227,11 @@ fn devices(h: &mut Hypr, json: bool) -> String {
     // from the input config once `kb_layout` & co exist.
     let (idx, keymap, _) = keymap_info(h).unwrap_or((0, String::new(), 1));
     let layout = std::env::var("XKB_DEFAULT_LAYOUT").unwrap_or_else(|_| "us".into());
+    let mods = h
+        .seat
+        .get_keyboard()
+        .map(|k| k.modifier_state())
+        .unwrap_or_default();
     let d = Devices {
         mice: vec![Mouse {
             address: format!("0x{MOUSE_ADDR:x}"),
@@ -244,8 +249,8 @@ fn devices(h: &mut Hypr, json: bool) -> String {
             options: String::new(),
             active_layout_index: idx as i32,
             active_keymap: keymap.clone(),
-            caps_lock: false,
-            num_lock: false,
+            caps_lock: mods.caps_lock,
+            num_lock: mods.num_lock,
             main: true,
         }],
         tablets: vec![],

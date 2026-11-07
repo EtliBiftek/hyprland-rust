@@ -152,6 +152,7 @@ grep -q '^submap>>resize$' "$T/events" || fail "submap event"
 grep -q '^activelayout>>' "$T/events" || fail "activelayout event: $(cat "$T/events")"
 echo "ok: events"
 
+ctl -j devices | python3 -c "import json,sys; k=json.load(sys.stdin)[\"keyboards\"][0]; assert k[\"capsLock\"] is False and k[\"numLock\"] in (True, False)" || fail "devices capsLock/numLock"
 ctl rollinglog | grep -q "IPC at" || fail "rollinglog has no log lines"
 ctl -j rollinglog | python3 -c "import json,sys; assert json.load(sys.stdin)[\"log\"]" || fail "rollinglog -j"
 echo "ok: rollinglog"
