@@ -1494,6 +1494,17 @@ fn install(lua: &Lua, st: &Shared, dir: Option<&Path>) -> mlua::Result<()> {
         lua.create_function(
             move |lua, (keys, d, opts): (String, Value, Option<Table>)| {
                 let r = match d {
+                    // hyprlang lines cannot hold a newline (e.g. a multi-line
+                    // shell command): run such a dispatcher through a callback.
+                    Value::String(d) if d.to_string_lossy().contains('\n') => {
+                        let text = d.to_string_lossy();
+                        let f = lua.create_function(move |lua, ()| {
+                            let (name, args) = split_dsp(&text);
+                            host(lua, "dispatch", &name, &args)?;
+                            Ok(())
+                        })?;
+                        Ok(bind_line(&keys, &callback(&s, f), opts.as_ref()))
+                    }
                     Value::String(d) => Ok(bind_line(&keys, &d.to_string_lossy(), opts.as_ref())),
                     Value::Function(f) if !sandboxed => {
                         Ok(bind_line(&keys, &callback(&s, f), opts.as_ref()))
@@ -1525,6 +1536,8 @@ fn install(lua: &Lua, st: &Shared, dir: Option<&Path>) -> mlua::Result<()> {
             match host(lua, "dispatch", "exec", &cmd)? {
                 Some(err) if !err.is_empty() => s.borrow_mut().errors.push(err),
                 Some(_) => {}
+                // A multi-line command cannot be a hyprlang line.
+                None if cmd.contains('\n') => s.borrow_mut().deferred.push(format!("exec, {cmd}")),
                 None => s.borrow_mut().lines.push(format!("exec = {cmd}")),
             }
             Ok(())
@@ -2114,6 +2127,18 @@ mod tests {
         );
         // A bad hl.dsp.* call is a config error, not a script abort.
         assert_eq!(errors.len(), 1, "{errors:?}");
+
+        // Multi-line shell commands cannot be hyprlang lines.
+        let (rt, text, errors) = load(
+            "hl.bind(\"SUPER + N\", hl.dsp.exec_cmd(\"echo a\\necho b\"))\nhl.exec_cmd(\"x\\ny\")",
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(text.contains("bind = SUPER, N, __lua, 0"), "{text}");
+        assert!(!text.contains("echo"), "{text}");
+        assert_eq!(rt.take_deferred(), ["exec, x\ny"]);
+        let mut h = Fake::default();
+        rt.call_bind(0, &mut h);
+        assert_eq!(h.log, ["dispatch exec echo a\necho b"]);
     }
 
     #[test]

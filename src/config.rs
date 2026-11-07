@@ -1532,8 +1532,12 @@ fn parse_bind(value: &str, flags: BindFlags) -> Result<Bind, String> {
         _ => Dispatcher::parse(dispatcher, arg)?,
     };
     let key = key.to_ascii_lowercase();
+    // shortcut: Hyprland also lets a held keyboard key drive a mouse bind
+    // (`bindm = SUPER, Z, movewindow`); it is accepted but inert here, since
+    // grabs start on a pointer button. Upgrade: start the grab from
+    // `input.rs` on key press and end it on release.
     if flags.mouse && !key.starts_with("mouse:") {
-        return Err(format!("bindm: key must be `mouse:<code>`, got `{key}`"));
+        tracing::debug!("bindm on keyboard key `{key}` is accepted but does nothing yet");
     }
     Ok(Bind {
         mods: Mods::parse(mods)?,
@@ -1681,6 +1685,8 @@ fn parse_gesture(value: &str) -> Result<Gesture, String> {
         "float",
         "fullscreen",
         "cursorZoom",
+        "cursor_zoom",
+        "scroll_move",
         "unset",
     ];
     if !ACTIONS.contains(&action) {
@@ -1797,8 +1803,9 @@ mod tests {
         assert_eq!(cfg.binds[2].key, "mouse:272");
         assert!(cfg.binds[4].flags.non_consuming);
         assert_eq!(cfg.binds[4].key, "code:10");
-        let (_, errors) = Config::parse_str("bindm = SUPER, Q, movewindow");
-        assert_eq!(errors.len(), 1);
+        // A keyboard key in bindm is accepted (Hyprland allows it), but inert.
+        let (_, errors) = Config::parse_str("bindm = SUPER, Z, movewindow");
+        assert!(errors.is_empty(), "{errors:?}");
     }
 
     #[test]
