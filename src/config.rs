@@ -1479,7 +1479,10 @@ impl Parser {
                 cfg.general.inactive_border = g;
             }
             "misc:disable_autoreload" => cfg.misc.disable_autoreload = parse_bool(value)?,
-            "animations:enabled" => cfg.anim.enabled = parse_bool(value)?,
+            "animations:enabled" => {
+                // The stock example says `yes, please :)`.
+                cfg.anim.enabled = parse_bool(value.split([',', ' ']).next().unwrap_or(""))?
+            }
             "bezier" | "animations:bezier" => cfg.anim.curves.add(value)?,
             "animation" | "animations:animation" => cfg.anim.add(value)?,
             k if k.starts_with("decoration:") && cfg.decoration.set(&k[11..], value)? => {}
