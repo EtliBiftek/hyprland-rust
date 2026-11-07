@@ -1,10 +1,32 @@
+mod alpha_modifier;
+pub mod capture;
 mod compositor;
+mod ctm_control;
+mod dmabuf;
+pub mod extra;
+mod fifo;
+pub mod focus_grab;
 pub mod foreign_toplevel;
+mod gamma_control;
 pub mod global_shortcuts;
+mod hyprland_protocols;
+mod hyprland_surface;
+mod input_method;
 pub mod layer_shell;
+mod lock_notify;
 pub mod output_management;
 pub mod protocols;
 pub mod screencopy;
+mod security_context;
+mod system_bell;
+mod tablet;
+mod tearing_control;
+mod text_input;
+mod toplevel_export;
+mod toplevel_icon;
+mod toplevel_mapping;
+mod virtual_keyboard;
+mod xdg_dialog;
 mod xdg_shell;
 
 use crate::Hypr;
@@ -22,6 +44,7 @@ use smithay::wayland::selection::data_device::{
     ServerDndGrabHandler,
 };
 use smithay::wayland::selection::SelectionHandler;
+use smithay::wayland::text_input::TextInputSeat;
 use smithay::wayland::xdg_activation::{
     XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
 };
@@ -49,6 +72,10 @@ impl SeatHandler for Hypr {
         let dh = &self.display_handle;
         let client = focused.and_then(|s| dh.get_client(s.id()).ok());
         set_data_device_focus(dh, seat, client);
+        let text_input = seat.text_input();
+        text_input.leave();
+        text_input.set_focus(focused.cloned());
+        text_input.enter();
     }
 }
 

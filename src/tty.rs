@@ -27,6 +27,7 @@ use smithay::{
                 Kind,
             },
             gles::GlesRenderer,
+            ImportDma,
         },
         session::{libseat::LibSeatSession, Event as SessionEvent, Session},
         udev::{all_gpus, primary_gpu},
@@ -230,6 +231,7 @@ pub fn init_tty(
 
     std::env::set_var("WAYLAND_DISPLAY", &data.state.socket_name);
     data.state.session = Some(session);
+    data.state.init_dmabuf(renderer.dmabuf_formats());
     data.tty = Some(Tty {
         handle: handle.clone(),
         manager,

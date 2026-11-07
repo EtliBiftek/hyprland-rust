@@ -54,6 +54,7 @@ pub fn init_headless(
     output.set_preferred(mode);
     state.space.map_output(&output, (0, 0));
     state.relayout();
+    state.init_dmabuf_fallback();
 
     std::env::set_var("WAYLAND_DISPLAY", &state.socket_name);
 

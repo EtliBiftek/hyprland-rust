@@ -10,25 +10,7 @@ use smithay::reexports::wayland_server::{
 
 use crate::Hypr;
 
-/// Server side of protocols/hyprland-global-shortcuts-v1.xml (not in any crate).
-mod proto {
-    pub mod server {
-        #![allow(dead_code, non_camel_case_types, unused_unsafe, unused_imports)]
-        #![allow(non_upper_case_globals, non_snake_case, missing_docs, clippy::all)]
-        use wayland_server;
-        use wayland_server::protocol::*;
-
-        pub mod __interfaces {
-            use wayland_server::protocol::__interfaces::*;
-            wayland_scanner::generate_interfaces!("protocols/hyprland-global-shortcuts-v1.xml");
-        }
-        use self::__interfaces::*;
-
-        wayland_scanner::generate_server_code!("protocols/hyprland-global-shortcuts-v1.xml");
-    }
-}
-
-use proto::server::{
+use super::hyprland_protocols::global_shortcuts::server::{
     hyprland_global_shortcut_v1::{self, HyprlandGlobalShortcutV1},
     hyprland_global_shortcuts_manager_v1::{self, HyprlandGlobalShortcutsManagerV1},
 };
@@ -65,7 +47,7 @@ impl Dispatch<HyprlandGlobalShortcutsManagerV1, ()> for Hypr {
     fn request(
         state: &mut Self,
         _client: &Client,
-        _resource: &HyprlandGlobalShortcutsManagerV1,
+        resource: &HyprlandGlobalShortcutsManagerV1,
         request: hyprland_global_shortcuts_manager_v1::Request,
         _data: &(),
         _handle: &DisplayHandle,
@@ -78,15 +60,19 @@ impl Dispatch<HyprlandGlobalShortcutsManagerV1, ()> for Hypr {
             ..
         } = request
         {
-            let resource = data_init.init(shortcut, ());
+            let obj = data_init.init(shortcut, ());
             let key = format!("{app_id}:{id}");
             let shortcuts = &mut state.global_shortcuts.shortcuts;
-            // A duplicate app_id + id is ignored: the new object stays inert.
-            if !shortcuts
+            if shortcuts
                 .iter()
                 .any(|s| s.key == key && s.resource.is_alive())
             {
-                shortcuts.push(Shortcut { resource, key });
+                resource.post_error(
+                    hyprland_global_shortcuts_manager_v1::Error::AlreadyTaken,
+                    "shortcut already taken",
+                );
+            } else {
+                shortcuts.push(Shortcut { resource: obj, key });
             }
         }
     }
