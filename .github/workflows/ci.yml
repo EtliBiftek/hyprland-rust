@@ -15,7 +15,7 @@ jobs:
           sudo apt-get install -y libwayland-dev libxkbcommon-dev libudev-dev \
             libinput-dev libseat-dev libgbm-dev libegl-dev libdrm-dev libgles-dev \
             pkg-config xvfb xdotool weston waybar dbus gdb libxkbcommon-x11-0 libgl1-mesa-dri \
-            wl-clipboard
+            wl-clipboard grim wlrctl wlr-randr
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
@@ -31,6 +31,9 @@ jobs:
         run: sh tests/headless-smoke.sh
       - name: IPC test (Xvfb + hyprctl)
         run: sh tests/ipc-xvfb.sh
+      - name: Dotfile IPC test (headless + hyprctl)
+        timeout-minutes: 3
+        run: sh tests/ipc-dots.sh
       - name: Layer-shell test (headless + waybar)
         run: sh tests/layer-shell.sh
       - name: Master layout and groups test (headless)
@@ -47,3 +50,15 @@ jobs:
       - name: Lua config test (headless + hyprland.lua)
         timeout-minutes: 3
         run: sh tests/lua-config.sh
+      - name: Popular dotfiles load without config errors
+        timeout-minutes: 5
+        run: sh tests/dots-conf.sh
+      - name: Popular hyprland.lua dotfiles load and run
+        timeout-minutes: 6
+        run: sh tests/dots-lua.sh
+      - name: Screencopy test (winit in Xvfb + grim)
+        timeout-minutes: 3
+        run: sh tests/screencopy.sh
+      - name: Foreign toplevel and output management test (headless + wlrctl)
+        timeout-minutes: 3
+        run: sh tests/foreign-toplevel.sh

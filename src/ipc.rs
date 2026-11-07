@@ -14,9 +14,8 @@
 //! `pinFullscreened`, `fullscreenHandler`, `allowedOverFullscreen`,
 //! `tags`, `swallowing`, `inhibitingIdle`, `xdgTag`, `xdgDescription`,
 //! `contentType`, `tearingHint`, `initialClass`/`initialTitle` (current
-//! values); workspaces `ispersistent`; monitors
-//! `description`, `make`, `model`, `serial`, `physicalWidth/Height`,
-//! `specialWorkspace`, `reserved`, `transform`, `vrr`, `solitary*`,
+//! values); workspaces `ispersistent`; monitors `serial`,
+//! `transform`, `vrr`, `solitary*`,
 //! `activelyTearing`, `tearingBlockedBy`, `directScanout*`, `disabled`,
 //! `currentFormat`, `mirrorOf`, `colorManagementPreset`, `sdr*`,
 //! `hardwareDetails`; version `commit*`, `tag`, `build*`/`system*`, `abiHash`,
@@ -32,7 +31,7 @@ use std::{
 use serde::Serialize;
 use smithay::{
     backend::renderer::utils::with_renderer_surface_state,
-    desktop::Window,
+    desktop::{layer_map_for_output, Window},
     reexports::{
         calloop::{generic::Generic, Interest, LoopHandle, Mode, PostAction},
         wayland_server::{protocol::wl_surface::WlSurface, Resource},
@@ -617,6 +616,8 @@ pub struct Ipc {
     dir: Option<PathBuf>,
     events: Vec<UnixStream>,
     last_active: Option<String>,
+    /// Events since the last loop iteration, for `hl.on` (`lua_host.rs`).
+    pub lua_events: Vec<(String, String)>,
     /// Backend name shown in `monitors` (`winit`, `tty`, `headless`).
     pub backend: String,
 }
@@ -624,6 +625,7 @@ pub struct Ipc {
 impl Ipc {
     /// Sends `EVENT>>DATA\n` to all event clients, dropping dead ones.
     pub fn emit(&mut self, event: &str, data: &str) {
+        self.lua_events.push((event.into(), data.into()));
         let line = format!("{event}>>{data}\n");
         self.events
             .retain_mut(|s| s.write_all(line.as_bytes()).is_ok());
@@ -748,6 +750,7 @@ pub fn init(handle: &LoopHandle<'_, CalloopData>) -> Ipc {
         dir: None,
         events: Vec::new(),
         last_active: None,
+        lua_events: Vec::new(),
         backend: String::new(),
     };
     let runtime = std::env::var_os("XDG_RUNTIME_DIR")
@@ -1030,23 +1033,40 @@ fn snapshot(h: &Hypr) -> Snapshot {
                 (m.size.w, m.size.h, m.refresh as f64 / 1000.0)
             });
             let loc = o.current_location();
+            let phys = o.physical_properties();
+            let special =
+                h.wm.special_shown
+                    .and_then(|id| h.ws_index(id))
+                    .map_or_else(WsRef::empty, |i| {
+                        WsRef::of(h.workspaces[i].id, &h.workspaces[i].name)
+                    });
+            // [left, top, right, bottom] taken by layer-shell exclusive zones.
+            let reserved = {
+                let z = layer_map_for_output(o).non_exclusive_zone();
+                [
+                    z.loc.x,
+                    z.loc.y,
+                    w - z.loc.x - z.size.w,
+                    hh - z.loc.y - z.size.h,
+                ]
+            };
             MonitorInfo {
                 id: 0,
                 name: mon_name.clone(),
-                description: String::new(),
-                make: String::new(),
-                model: String::new(),
+                description: format!("{} {} ({})", phys.make, phys.model, mon_name),
+                make: phys.make.clone(),
+                model: phys.model.clone(),
                 serial: String::new(),
                 width: w,
                 height: hh,
-                physical_width: 0,
-                physical_height: 0,
+                physical_width: phys.size.w,
+                physical_height: phys.size.h,
                 refresh_rate: hz,
                 x: loc.x,
                 y: loc.y,
                 active_workspace: active.clone(),
-                special_workspace: WsRef::empty(),
-                reserved: [0; 4],
+                special_workspace: special,
+                reserved,
                 scale: o.current_scale().fractional_scale(),
                 transform: 0,
                 focused: true,

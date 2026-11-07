@@ -119,6 +119,7 @@ pub fn init_winit(
                         backend.submit(Some(damage)).unwrap();
                     }
 
+                    state.screencopy_process(backend.renderer(), &output);
                     state.send_frames(&output);
 
                     state.space.refresh();

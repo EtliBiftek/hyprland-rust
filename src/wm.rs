@@ -289,6 +289,7 @@ impl Hypr {
         }
         let mon = self.mon_name();
         self.ipc.emit("activespecial", &format!(",{mon}"));
+        self.ipc.emit("activespecialv2", &format!(",,{mon}"));
     }
 
     /// `togglespecialworkspace`: shows the special workspace on top of the
@@ -307,6 +308,9 @@ impl Hypr {
             self.wm.special_shown = Some(self.workspaces[i].id);
             let mon = self.mon_name();
             self.ipc.emit("activespecial", &format!("{full},{mon}"));
+            let id = self.workspaces[i].id;
+            self.ipc
+                .emit("activespecialv2", &format!("{id},{full},{mon}"));
         }
         self.relayout();
         let f = self.focus_ws();
@@ -1177,7 +1181,11 @@ impl Hypr {
             Dispatcher::Exec(cmd) => spawn(cmd),
             Dispatcher::KillActive => self.kill_window(None, false),
             Dispatcher::ForceKillActive => self.kill_window(None, true),
-            Dispatcher::Exit => self.loop_signal.stop(),
+            Dispatcher::Exit => {
+                self.lua_fire("hyprland.shutdown", &[]);
+                self.loop_signal.stop()
+            }
+            Dispatcher::Lua(id) => self.lua_bind(*id),
             Dispatcher::Workspace(sel) => self.select_workspace(sel),
             Dispatcher::MoveToWorkspace(sel) => self.move_to_workspace(sel, false),
             Dispatcher::MoveToWorkspaceSilent(sel) => self.move_to_workspace(sel, true),
@@ -1268,6 +1276,9 @@ impl Hypr {
             Dispatcher::Signal(sig, sel) => self.signal_window(*sig, sel.as_ref()),
             Dispatcher::Event(data) => self.ipc.emit("custom", data),
             Dispatcher::Dpms(t) => self.wm.dpms_on = t.apply(self.wm.dpms_on),
+            Dispatcher::Global(name) => {
+                self.global_shortcut(name, true);
+            }
             Dispatcher::Noop(..) => {}
         }
         // Floating, fullscreen, pin or tags may have changed: dynamic rules.

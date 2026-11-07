@@ -596,6 +596,9 @@ dependencies = [
  "smithay",
  "tracing",
  "tracing-subscriber",
+ "wayland-backend",
+ "wayland-scanner",
+ "wayland-server",
 ]
 
 [[package]]

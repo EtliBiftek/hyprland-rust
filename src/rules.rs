@@ -64,7 +64,10 @@ impl Re {
             Some(r) => (true, r),
             None => (false, pat),
         };
-        let re = Regex::new(&format!("(?s)^(?:{src})$"))
+        let build = |s: &str| Regex::new(&format!("(?s)^(?:{s})$"));
+        // `^(*)$` (seen in JaKooLit) is invalid RE2; read `(*` as `(.*`.
+        let re = build(src)
+            .or_else(|e| build(&src.replace("(*", "(.*")).map_err(|_| e))
             .map_err(|e| format!("invalid regex `{src}`: {e}"))?;
         Ok(Re {
             src: src.to_string(),

@@ -27,7 +27,7 @@ Status meaning: `none` = not supported (for a config option, a config load error
 | Section | none | parsed | partial | full | tested | Total |
 |---------|-----:|-------:|--------:|-----:|-------:|------:|
 | Config options (v0.57.1 registry, 407 options) | 63 | 282 | 19 | 0 | 43 | 407 |
-| Keywords: v0.57.1 Lua API (`hl.*`) | 22 | 0 | 0 | 0 | 0 | 22 |
+| Keywords: v0.57.1 Lua API (`hl.*`) | 0 | 6 | 4 | 1 | 14 | 25 |
 | Keywords: hyprlang (repo only, not parsed by v0.57.1) | 2 | 6 | 4 | 0 | 8 | 20 |
 | Dispatchers: v0.57.1 Lua (`hl.dsp.*`) | 24 | 0 | 20 | 0 | 7 | 51 |
 | Dispatchers: hyprlang names (repo only) | 0 | 0 | 34 | 0 | 9 | 43 |
@@ -453,30 +453,35 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 
 ## Keywords: v0.57.1 Lua API (`hl.*`)
 
+`hyprland.lua` runs in mlua (Lua 5.4) through `src/lua_config.rs`; the Lua state stays alive after the load (`Config::lua`) and callbacks run against the compositor through `src/lua_host.rs`. While loading, each `hl.*` call becomes a hyprlang line for the normal parser; inside a callback it applies like `hyprctl keyword`. Unit tests in `lua_config.rs`; `tests/lua-config.sh`; `tests/dots-lua.sh` loads and boots end-4, ML4W and HyDE with zero errors.
+
 | Item | Status | Notes |
 |------|--------|-------|
-| `hl.bind(keys, dispatcher, opts)` | none | Keybind registration. Repo equivalent: hyprlang `bind`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.unbind(keys)` | none | Removes a keybind. Repo equivalent: `unbind`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.config(table)` | none | Sets config options from Lua. Repo equivalent: hyprlang option lines. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.get_config(name)` | none | Reads a config option. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.define_submap(name, fn)` | none | Submap definition. Repo equivalent: `submap =`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.device(table)` | none | Per-device input options. Repo equivalent: `device { }`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.env(name, value)` | none | Environment variables. Repo equivalent: `env =`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.monitor(table)` | none | Monitor rules. Repo equivalent: `monitor =`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.window_rule(table)` | none | Window rules. Repo equivalent: `windowrule`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.layer_rule(table)` | none | Layer rules. Repo equivalent: `layerrule`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.workspace_rule(table)` | none | Workspace rules. Repo equivalent: `workspace =`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.gesture(table)` | none | Touch and touchpad gestures. Repo equivalent: `gestures {}`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.animation(table) / hl.curve(name, points)` | none | Animations and Bezier curves. Repo equivalent: `animations {}`, `bezier =`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.on(event, fn)` | none | Event subscriptions, the Lua counterpart of socket2 events. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.timer(fn, opts)` | none | Timers. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.permission(table)` | none | Permission rules for privileged clients. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.dispatch(dsp)` | none | Runs a `hl.dsp.*` dispatcher. Also what `hyprctl dispatch` evaluates. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.exec_cmd(cmd)` | none | Runs a command. Repo equivalent: `exec` and `exec-once`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.get_monitors / get_windows / get_workspaces / get_*` | none | Query functions. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.load(path)` | none | Loads another Lua file. Repo equivalent: `source`. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.version()` | none | Version query. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
-| `hl.is_key_down(key)` | none | Key state query. The repo has no Lua runtime (Cargo.toml has no Lua dependency). |
+| `hl.bind(keys, dispatcher, opts)` | tested | `hl.dsp.*` or a Lua function (dispatcher `__lua, N`). Opts `locked`, `release`, `repeating`, `non_consuming`, `mouse`, `transparent`, `ignore_mods`, `long_press`, `description`. |
+| `hl.unbind(keys)` | tested | As `unbind`. |
+| `hl.config(table)` | tested | Nested tables flatten to `cat:key`; also works inside callbacks. |
+| `hl.get_config(name)` | tested | From `getoption`; returns `nil, msg` for unknown keys. |
+| `hl.define_submap(name, fn)` | tested | As `submap =` ... `submap = reset`. |
+| `hl.device(table)` | partial | As `device { }`. |
+| `hl.env(name, value)` | tested | Sets the variable and emits `env =`. |
+| `hl.monitor(table)` | parsed | As `monitor =` (monitor rules are not applied yet). |
+| `hl.window_rule(table)` | tested | As a named `windowrule { }`; returns an object whose `set_enabled(bool)` toggles it (`windowrule[NAME]:enable`). |
+| `hl.layer_rule(table)` | parsed | As `layerrule =`. |
+| `hl.workspace_rule(table)` | partial | As `workspace =`. |
+| `hl.gesture(table)` | parsed | As `gesture =`; a function `action` becomes `dispatcher, __lua, N`. Gestures are not executed yet. |
+| `hl.animation(table) / hl.curve(name, points)` | parsed | As `animation =` / `bezier =`; no animations are drawn. |
+| `hl.on(event, fn)` | tested | Fed from the socket2 events once per loop iteration (`window.open/close/active/title/urgent/pin/move_to_workspace`, `workspace.active/created/removed/special_active`, `monitor.focused/added/removed`, `keybinds.submap`, `layer.opened/closed`, `config.reloaded`), plus `hyprland.start` and `hyprland.shutdown`. Handlers get object tables. Returns a subscription with `remove()`. No `window.fullscreen`, `window.update_state`, `*_early`. |
+| `hl.timer(fn, { timeout, type })` | tested | calloop timers, `oneshot` or `repeat`; `stop()`/`cancel()`; dropped on reload. |
+| `hl.notification.create(table)` | partial | Becomes `hyprctl notify` (logged, not drawn). |
+| `hl.permission(table)` | parsed | Accepted, ignored. |
+| `hl.dispatch(dsp)` | tested | Runs at once inside a callback; while loading it runs once the compositor is up. |
+| `hl.exec_cmd(cmd)` | tested | Inside a callback runs at once; while loading it is `exec =`. |
+| `hl.get_windows / get_window / get_active_window / get_last_window / get_workspaces / get_workspace / get_active_workspace / get_active_special_workspace / get_workspace_windows / get_monitors / get_monitor / get_active_monitor / get_monitor_at / get_monitor_at_cursor / get_cursor_pos / get_layers / get_devices / get_current_submap` | tested | Tables built from the hyprctl JSON with the field names of Hyprland's Lua objects (`at.x`, `workspace.monitor.name`, ...); `nil` while loading. `get_urgent_window`, `get_last_workspace` return nil. |
+| `hl.load(path)` / `require` | tested | Relative to the config directory (`?.lua`, `?/init.lua`). |
+| `debug.getinfo` / `debug.traceback` | partial | mlua's safe stdlib has no `debug`; a minimal safe one is provided for config scripts. |
+| `hl.version()` | full | Crate version. |
+| `hl.is_key_down(key)` | parsed | Always false. |
+| `hyprctl eval <lua>` | tested | Runs in the config's live Lua state. |
 
 ## Keywords: hyprlang (repo only, not parsed by v0.57.1)
 
@@ -491,8 +496,11 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `workspace =` (workspace rules) | partial | Stored in `workspace_rules` and read by `wm.rs`. Only the fields `wm.rs` reads take effect. |
 | `exec-once` | tested | `tests/headless-smoke.sh`, `tests/ipc-xvfb.sh`. v0.57.1: `hl.exec_cmd` at startup. |
 | `exec` | partial | Runs after each config load (`main.rs`). No test. |
-| `source` | partial | Relative paths resolve against the including file; depth limit 16. No test for nesting. |
-| `$var` variables | tested | Unit test `variables_longest_first`. |
+| `source` | tested | Globs (`*`, `?`, `[..]`); no match is an error; `$ENVVAR` expanded; depth limit 16. Unit test `source_glob_and_env`, `tests/dots-conf.sh`. |
+| `$var` variables | tested | Unit tests `variables_longest_first`, `dotfile_syntax`: an undefined `$NAME` falls back to the environment like hyprlang. |
+| `# hyprlang noerror/if/endif`, `##` | tested | A line starting with `#` (also `####`) is a comment; `##` inside a value is a literal `#`. Unit test `dotfile_syntax`. |
+| `gesture =`, `gesturep =` | parsed | Validated and stored in `Config::gestures`. shortcut: touchpad gestures are not executed, needs libinput swipe/pinch events in tty/input. |
+| dispatcher `pseudo` | tested | Hyprland's name for `togglepseudo`; both accepted. |
 | `category { }` blocks and `cat:key` shorthand | tested | Unit test `categories_and_shorthand`. |
 | `monitor =` | parsed | Ignored (`is_known_unimplemented` prefix `monitor`). No monitor rules. v0.57.1 equivalent: `hl.monitor`. |
 | `env =` | parsed | Ignored (prefix `env`). v0.57.1 equivalent: `hl.env`. |
@@ -628,26 +636,26 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `animations` | parsed | Stub: empty animation list, no beziers. |
 | `rollinglog` | parsed | Stub: empty log. |
 | `configerrors` | partial | Lists load errors from `reload.rs`. |
-| `locked` | none | Not implemented. |
-| `descriptions` | none | Not implemented. |
-| `submap` | none | Not implemented. The current submap is only in events and dispatch. |
+| `locked` | tested | `tests/ipc-dots.sh`. |
+| `descriptions` | parsed | Stub: replies `[]` (no option description table). `tests/ipc-dots.sh`. |
+| `submap` | tested | `default` or the active submap; JSON string. `tests/ipc-dots.sh`. |
 | `status` | none | Not implemented. |
 | `deprecated-config` | none | Not implemented. |
-| `reloadshaders` | none | No shaders. |
-| `monitors` | partial | One output. JSON and text. No test. |
+| `reloadshaders` | parsed | Stub: replies `ok` (no shaders). |
+| `monitors` | partial | One output. JSON and text; description, make, model, physical size, `specialWorkspace` and `reserved` are real. `tests/ipc-dots.sh`. |
 | `reload` | tested | `tests/ipc-xvfb.sh` (`reload` and autoreload). |
-| `plugin` | none | No plugin system. |
+| `plugin` | parsed | `list` replies `no plugins loaded`, others an error. No plugin system. |
 | `notify` | partial | Returns `ok`; no notification overlay. |
 | `dismissnotify` | parsed | Argument check only; no notifications exist. |
-| `getprop` | none | Not implemented. |
+| `getprop` | tested | Window selectors `class:`, `title:`, `address:`, `pid:`, `active`; values are the `setprop` store plus Hyprland defaults. `tests/ipc-dots.sh`. |
 | `seterror` | partial | Sets the error shown by `configerrors`. |
 | `switchxkblayout` | tested | `tests/ipc-xvfb.sh`. |
-| `output` | none | Not implemented (no output create or remove). |
+| `output` | parsed | Replies with an error: no output create or remove. |
 | `dispatch` | tested | Legacy dispatcher names, `tests/ipc-xvfb.sh` and `tests/window-rules.sh`. The v0.57.1 Lua form is not implemented. |
-| `setcursor` | none | Not implemented. |
+| `setcursor` | parsed | Validates the size, replies `ok`; the cursor theme is not applied. |
 | `getoption` | tested | `tests/ipc-xvfb.sh`. Only the options in `options.rs` are answered. |
 | `decorations` | parsed | Stub: replies `none`. |
-| `eval` | none | No Lua runtime. |
+| `eval` | partial | `hl.dsp.*` runs as a dispatcher, other code runs like a config script and its settings are applied as keywords. `tests/ipc-dots.sh`. |
 | `repl` | none | No Lua runtime. |
 | `keyword` (repo only) | tested | Not in v0.57.1: `hyprctl keyword` was removed. The repo keeps it for hyprlang. |
 | `layouts` (repo only) | partial | Not in the v0.57.1 registration list. Returns dwindle and master. |
@@ -656,9 +664,9 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 
 | Item | Status | Notes |
 |------|--------|-------|
-| `activelayout` | none | Keyboard layout change event not emitted. |
+| `activelayout` | partial | Emitted by `hyprctl switchxkblayout`; not on keyboard-triggered layout switches. `tests/ipc-dots.sh`. |
 | `activespecial` | partial | Emitted from `wm.rs` on special workspace toggle. |
-| `activespecialv2` | none | Not emitted. |
+| `activespecialv2` | tested | `id,name,monitor` or `,,monitor`. `tests/ipc-dots.sh`. |
 | `activewindow` | partial | `class,title`; emitted from `ipc.rs`. |
 | `activewindowv2` | partial | Address only. |
 | `bell` | none | Not emitted. |
@@ -708,14 +716,14 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 |------|--------|-------|
 | `ext_background_effect_manager_v1` | none | Not registered by the repo. |
 | `ext_data_control_manager_v1` | none | Not registered by the repo. |
-| `ext_foreign_toplevel_list_v1` | none | Not registered by the repo. |
+| `ext_foreign_toplevel_list_v1` | partial | `handlers/foreign_toplevel.rs` (Smithay list, synced every frame). No test client. |
 | `ext_idle_notifier_v1` | none | Not registered by the repo. |
 | `ext_image_copy_capture_manager_v1` | none | Not registered by the repo. |
 | `ext_session_lock_manager_v1` | none | Not registered by the repo. |
 | `ext_workspace_manager_v1` | none | Not registered by the repo. |
 | `hyprland_ctm_control_manager_v1` | none | Not registered by the repo. |
 | `hyprland_focus_grab_manager_v1` | none | Not registered by the repo. |
-| `hyprland_global_shortcuts_manager_v1` | none | Not registered by the repo. |
+| `hyprland_global_shortcuts_manager_v1` | partial | `handlers/global_shortcuts.rs` + `global` dispatcher (press on bind press, release on key release; `hyprctl dispatch` sends pressed only). No test client. |
 | `hyprland_input_capture_manager_v1` | none | Not registered by the repo. |
 | `hyprland_lock_notifier_v1` | none | Not registered by the repo. |
 | `hyprland_surface_manager_v1` | none | Not registered by the repo. |
@@ -753,12 +761,12 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `xwayland_shell_v1` | none | Not registered by the repo. |
 | `xx_hotkey_manager_v1` | none | Not registered by the repo. |
 | `zwlr_data_control_manager_v1` | none | Not registered by the repo. |
-| `zwlr_foreign_toplevel_manager_v1` | none | Not registered by the repo. |
+| `zwlr_foreign_toplevel_manager_v1` | tested | `handlers/foreign_toplevel.rs`, `tests/foreign-toplevel.sh` (wlrctl list/fullscreen/close). Minimize and set_rectangle ignored. |
 | `zwlr_gamma_control_manager_v1` | none | Not registered by the repo. |
 | `zwlr_layer_shell_v1` | tested | `tests/layer-shell.sh` (waybar). |
-| `zwlr_output_manager_v1` | none | Not registered by the repo. |
+| `zwlr_output_manager_v1` | partial | `handlers/output_management.rs`: read-only heads announced at bind (`wlr-randr` in `tests/foreign-toplevel.sh`); apply/test answer `failed`. |
 | `zwlr_output_power_manager_v1` | none | Not registered by the repo. |
-| `zwlr_screencopy_manager_v1` | none | Not registered by the repo. |
+| `zwlr_screencopy_manager_v1` | tested | `handlers/screencopy.rs`, `tests/screencopy.sh` (grim, winit in Xvfb). shm only, no cursor overlay, headless answers `failed`. |
 | `zwlr_virtual_pointer_manager_v1` | none | Not registered by the repo. |
 | `zwp_idle_inhibit_manager_v1` | none | Not registered by the repo. |
 | `zwp_input_method_manager_v2` | none | Not registered by the repo. |
@@ -777,3 +785,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `zxdg_importer_v2` | none | Not registered by the repo. |
 | `zxdg_output_manager_v1` | partial | `OutputManagerState::new_with_xdg_output`. No test. |
 | `wl_drm / zwp_linux_dmabuf_v1` | none | No linux-dmabuf global (CLAUDE.md). |
+
+## hyprctl command line (dotfile compatibility)
+
+`src/bin/hyprctl.rs` accepts `-j -r -a -c --config -f --follow -q --quiet -i --instance --batch --` in any position (`hyprctl clients -j`, `hyprctl getoption x -j`, `hyprctl dispatch x -q`), like Hyprland's hyprctl. `hyprctl hyprpaper ...` and `hyprctl hyprsunset ...` go to `.hyprpaper.sock` / `.hyprsunset.sock` and fail with `Couldn't connect to ... (3)` when those daemons are not there. Tested by `tests/ipc-dots.sh`.
