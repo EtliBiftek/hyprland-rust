@@ -93,6 +93,7 @@ impl Hypr {
                 }
                 self.reload.set_errors(&errors);
                 self.config = config;
+                self.apply_monitor_rules();
                 self.lua_loaded();
                 // Hyprland runs `exec` (not `exec-once`) again on every reload.
                 for cmd in self.config.exec.clone() {

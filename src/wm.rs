@@ -1383,6 +1383,23 @@ impl Hypr {
     /// `SolidColorBuffer` in the window's user data, so unchanged borders keep
     /// their element id and commit counter and are not redrawn.
     pub fn border_elements(&self) -> Vec<SolidColorRenderElement> {
+        self.border_elements_at(Point::from((0, 0)))
+    }
+
+    /// Borders and group bars of one output, in its local coordinates.
+    // shortcut: assumes output scale 1 (borders are not scaled yet).
+    pub fn border_elements_for(
+        &self,
+        output: &smithay::output::Output,
+    ) -> Vec<SolidColorRenderElement> {
+        let origin = self
+            .space
+            .output_geometry(output)
+            .map_or((0, 0).into(), |g| g.loc);
+        self.border_elements_at(origin)
+    }
+
+    fn border_elements_at(&self, origin: Point<i32, Logical>) -> Vec<SolidColorRenderElement> {
         let g = &self.config.general;
         let focused = self.focused_window();
         let mut out = Vec::new();
@@ -1428,7 +1445,7 @@ impl Hypr {
                     buf.update((side.w, side.h), color);
                     out.push(SolidColorRenderElement::from_buffer(
                         buf,
-                        (side.x, side.y),
+                        (side.x - origin.x, side.y - origin.y),
                         1.0,
                         1.0,
                         Kind::Unspecified,
@@ -1436,7 +1453,7 @@ impl Hypr {
                 }
             }
         }
-        out.extend(self.groupbar_elements());
+        out.extend(self.groupbar_elements(origin));
         out
     }
 

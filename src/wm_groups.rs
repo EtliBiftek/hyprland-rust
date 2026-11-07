@@ -372,7 +372,7 @@ impl Hypr {
             .map(|t| t.window)
     }
 
-    pub fn groupbar_elements(&self) -> Vec<SolidColorRenderElement> {
+    pub fn groupbar_elements(&self, origin: Point<i32, Logical>) -> Vec<SolidColorRenderElement> {
         let gb = &self.config.group.groupbar;
         self.groupbar_tabs()
             .into_iter()
@@ -391,7 +391,7 @@ impl Hypr {
                 buf.update((t.rect.w, t.rect.h), color);
                 SolidColorRenderElement::from_buffer(
                     &buf,
-                    (t.rect.x, t.rect.y),
+                    (t.rect.x - origin.x, t.rect.y - origin.y),
                     1.0,
                     1.0,
                     Kind::Unspecified,

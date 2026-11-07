@@ -5,6 +5,7 @@
 #![allow(irrefutable_let_patterns)]
 
 mod config;
+mod cursor;
 mod gestures;
 mod grabs;
 mod groups;

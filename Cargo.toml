@@ -19,6 +19,8 @@ regex = "1"
 wayland-backend = "0.3"
 wayland-server = "0.31"
 wayland-scanner = "0.31"
+# xcursor themes for the TTY cursor (same crate anvil uses).
+xcursor = "0.3"
 
 [dependencies.smithay]
 version = "0.7.0"
