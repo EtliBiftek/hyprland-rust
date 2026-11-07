@@ -8,7 +8,7 @@ use smithay::{
     input::keyboard::KeyboardHandle,
     reexports::wayland_server::{
         protocol::wl_surface::WlSurface, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch,
-        New, Resource,
+        New,
     },
     utils::{Logical, Point, SERIAL_COUNTER},
     wayland::compositor::get_parent,

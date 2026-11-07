@@ -10,11 +10,11 @@ macro_rules! hypr_proto {
                 #![allow(non_upper_case_globals, non_snake_case, missing_docs, clippy::all)]
                 use wayland_server;
                 use wayland_server::protocol::*;
-                $(use $dep::server::*;)*
+                $(use $dep::{server::*};)*
 
                 pub mod __interfaces {
                     use wayland_server::protocol::__interfaces::*;
-                    $(use $dep::server::__interfaces::*;)*
+                    $(use $dep::{server::__interfaces::*};)*
                     wayland_scanner::generate_interfaces!($xml);
                 }
                 use self::__interfaces::*;

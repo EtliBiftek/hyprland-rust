@@ -34,6 +34,7 @@ impl ExtraState {
         super::hyprland_surface::init(dh);
         super::lock_notify::init(dh);
         super::gamma_control::init(dh);
+        super::image_copy_capture::init(dh);
         super::tearing_control::init(dh);
         super::xdg_dialog::init(dh);
         let (fifo_state, timing_state) = fifo::init(dh);

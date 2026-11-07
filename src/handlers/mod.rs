@@ -11,6 +11,7 @@ mod gamma_control;
 pub mod global_shortcuts;
 mod hyprland_protocols;
 mod hyprland_surface;
+mod image_copy_capture;
 mod input_method;
 pub mod layer_shell;
 mod lock_notify;
