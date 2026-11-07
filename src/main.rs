@@ -91,12 +91,53 @@ fn load_config(path: Option<PathBuf>) -> (Config, Vec<ConfigError>, Option<PathB
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    if let Ok(env_filter) = tracing_subscriber::EnvFilter::try_from_default_env() {
-        tracing_subscriber::fmt().with_env_filter(env_filter).init();
-    } else {
-        tracing_subscriber::fmt().init();
+/// The last log lines, for `hyprctl rollinglog`.
+static ROLLING: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+const ROLLING_MAX: usize = 64 * 1024;
+
+/// Log writer: stderr plus the `rollinglog` buffer (ANSI codes stripped).
+struct Tee;
+
+impl std::io::Write for Tee {
+    fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+        use std::io::Write as _;
+        let _ = std::io::stderr().write_all(b);
+        let mut r = ROLLING.lock().unwrap_or_else(|e| e.into_inner());
+        let text = String::from_utf8_lossy(b);
+        let mut esc = false;
+        for c in text.chars() {
+            match (esc, c) {
+                (false, '\x1b') => esc = true,
+                (true, 'm') => esc = false,
+                (true, _) => {}
+                (false, c) => r.push(c),
+            }
+        }
+        if r.len() > ROLLING_MAX {
+            let cut = r.len() - ROLLING_MAX / 2;
+            if let Some(p) = r.as_bytes()[cut..].iter().position(|&c| c == b'\n') {
+                r.drain(..cut + p + 1);
+            }
+        }
+        Ok(b.len())
     }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+pub fn rolling_log() -> String {
+    ROLLING.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(|| Tee)
+        .init();
 
     let mut config_path = None;
     let mut check_only = false;

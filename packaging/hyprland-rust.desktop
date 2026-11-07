@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Hyprland (Rust)
+Comment=hyprland-rust, a Rust rewrite of the Hyprland compositor
+Exec=hyprland-rust
+Type=Application
+DesktopNames=Hyprland
