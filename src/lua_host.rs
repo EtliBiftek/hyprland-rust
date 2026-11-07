@@ -121,6 +121,12 @@ impl Hypr {
         for (event, data) in events {
             if let Some((name, args)) = ipc_to_lua_event(&event, &data) {
                 self.lua_fire(name, &args);
+            } else if event == "fullscreen" {
+                // `fullscreen>>0|1` names no window: it is the focused one.
+                if let Some(w) = self.focused_window() {
+                    let addr = crate::ipc::window_addr(&w);
+                    self.lua_fire("window.fullscreen", &[EvArg::Window(addr)]);
+                }
             }
         }
     }

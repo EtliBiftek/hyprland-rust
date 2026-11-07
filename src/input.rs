@@ -190,25 +190,73 @@ struct KeyOutcome {
     pass_release: Option<WlSurface>,
     /// `global` binds whose key was released (they get `released`).
     global_release: Vec<String>,
+    /// `o` binds: run after the key is held for `repeat_delay`.
+    long_press: Option<Dispatcher>,
+    /// `bindm` on a keyboard key: start (`Some(resize)`) a pointer grab.
+    key_grab: Option<bool>,
+    /// The key that holds a keyboard `bindm` grab was released.
+    end_key_grab: bool,
 }
 
 impl Hypr {
     /// Applies `input { }` to the keyboard (layout, repeat, numlock) and to
     /// the libinput devices seen so far. Call again after a config reload.
-    pub fn apply_input_config(&mut self) {
-        let i = self.config.input.clone();
+    /// The keymap settings (`KB_KEYS` order) for a keyboard: `input { }`
+    /// overridden by its `device { }` block.
+    fn keymap_for(&self, device: Option<&str>) -> [String; 5] {
+        let i = &self.config.input;
+        let mut k = [
+            i.kb_layout.clone(),
+            i.kb_variant.clone(),
+            i.kb_model.clone(),
+            i.kb_options.clone(),
+            i.kb_rules.clone(),
+        ];
+        if let Some(d) = device.and_then(|n| {
+            let n = n.to_lowercase().replace(' ', "-");
+            i.devices.iter().find(|d| d.name == n)
+        }) {
+            for (a, b) in k.iter_mut().zip(&d.opts.kb) {
+                if let Some(b) = b {
+                    a.clone_from(b);
+                }
+            }
+        }
+        k
+    }
+
+    fn set_keymap(&mut self, k: [String; 5]) {
+        if self.wm.keymap.as_ref() == Some(&k) {
+            return;
+        }
         let kb = self.seat.get_keyboard().unwrap();
         let xkb_config = XkbConfig {
-            rules: &i.kb_rules,
-            model: &i.kb_model,
-            layout: &i.kb_layout,
-            variant: &i.kb_variant,
-            options: (!i.kb_options.is_empty()).then(|| i.kb_options.clone()),
+            layout: &k[0],
+            variant: &k[1],
+            model: &k[2],
+            options: (!k[3].is_empty()).then(|| k[3].clone()),
+            rules: &k[4],
         };
         // An invalid layout keeps the previous keymap.
         if let Err(e) = kb.set_xkb_config(self, xkb_config) {
             tracing::warn!("invalid keyboard layout settings: {e:?}");
+            return;
         }
+        self.wm.keymap = Some(k);
+    }
+
+    /// A key from `device`: switch to its `device { kb_* }` keymap if it has one.
+    fn keymap_follow_device(&mut self, device: &str) {
+        let k = self.keymap_for(Some(device));
+        self.set_keymap(k);
+    }
+
+    pub fn apply_input_config(&mut self) {
+        let i = self.config.input.clone();
+        let kb = self.seat.get_keyboard().unwrap();
+        self.wm.keymap = None;
+        let k = self.keymap_for(None);
+        self.set_keymap(k);
         kb.change_repeat_info(i.repeat_rate, i.repeat_delay);
         if i.numlock_by_default {
             let mut m = kb.modifier_state();
@@ -275,6 +323,10 @@ impl Hypr {
         self.notify_idle_activity();
         match event {
             InputEvent::Keyboard { event, .. } => {
+                if event.state() == KeyState::Pressed {
+                    let name = smithay::backend::input::Device::name(&event.device());
+                    self.keymap_follow_device(&name);
+                }
                 self.on_key(event.key_code(), event.state(), Event::time_msec(&event));
             }
             InputEvent::PointerMotion { event, .. } => {
@@ -530,6 +582,32 @@ impl Hypr {
         if let Some(d) = out.repeat {
             self.start_repeat(code.raw(), d);
         }
+        if let Some(d) = out.long_press {
+            let raw = code.raw();
+            let delay = Duration::from_millis(self.config.input.repeat_delay.max(1) as u64);
+            if let Ok(token) =
+                self.wm
+                    .loop_handle
+                    .insert_source(Timer::from_duration(delay), move |_, _, data| {
+                        // Still held: the release would have cancelled us.
+                        data.state.wm.long_press = None;
+                        data.state.dispatch(&d);
+                        TimeoutAction::Drop
+                    })
+            {
+                self.wm.long_press = Some((raw, token));
+            }
+        }
+        if let Some(resize) = out.key_grab {
+            if self.start_mouse_grab(resize, 0) {
+                self.wm.key_grab = Some(code.raw());
+            }
+        }
+        if out.end_key_grab {
+            if let Some(p) = self.seat.get_pointer() {
+                p.unset_grab(self, SERIAL_COUNTER.next_serial(), time);
+            }
+        }
     }
 
     /// Decides what a key event triggers. Runs inside the keyboard filter, so
@@ -589,10 +667,19 @@ impl Hypr {
         }
         // Match on the unshifted key so `SUPER SHIFT, 1` works
         // regardless of keyboard layout's shifted symbol.
-        // Lock screen and inhibited shortcuts: keys go straight to the client.
-        if self.session_locked || self.seat.keyboard_shortcuts_inhibited() {
-            return out;
+        if !pressed && self.wm.key_grab == Some(raw) {
+            self.wm.key_grab = None;
+            out.end_key_grab = true;
+            out.consume = true;
         }
+        if !pressed && self.wm.long_press.as_ref().is_some_and(|l| l.0 == raw) {
+            if let Some((_, token)) = self.wm.long_press.take() {
+                self.wm.loop_handle.remove(token);
+            }
+        }
+        // Locked: only `l` binds; inhibited shortcuts: only `p` binds.
+        let locked = self.session_locked;
+        let inhibited = self.seat.keyboard_shortcuts_inhibited();
         let syms: Vec<String> = handle
             .raw_syms()
             .into_iter()
@@ -600,7 +687,22 @@ impl Hypr {
             .map(|s| xkb::keysym_get_name(s).to_ascii_lowercase())
             .collect();
         for b in &self.config.binds {
-            if b.flags.mouse || b.submap != self.wm.submap {
+            if b.submap != self.wm.submap
+                || (locked && !b.flags.locked)
+                || (inhibited && !b.flags.bypass)
+            {
+                continue;
+            }
+            // `bindm` on a keyboard key: hold it to drag/resize.
+            if b.flags.mouse {
+                if pressed
+                    && !b.key.starts_with("mouse:")
+                    && b.mods == mods
+                    && syms.contains(&b.key)
+                {
+                    out.key_grab = Some(b.dispatcher == Dispatcher::MouseResize);
+                    out.consume = true;
+                }
                 continue;
             }
             let key_ok = match b.key.strip_prefix("code:") {
@@ -616,6 +718,11 @@ impl Hypr {
                 if let (Dispatcher::Global(name), false) = (&b.dispatcher, pressed) {
                     out.global_release.push(name.clone());
                 }
+                continue;
+            }
+            if b.flags.long_press && pressed {
+                out.long_press = Some(b.dispatcher.clone());
+                out.consume = true;
                 continue;
             }
             out.run.push(b.dispatcher.clone());

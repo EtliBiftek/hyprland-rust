@@ -230,6 +230,27 @@ impl Hypr {
         }
     }
 
+    /// A client-initiated move/resize (title-bar drag in an X11 app): the
+    /// same grab as `bindm`, while the pointer is over the window.
+    fn x11_grab(&mut self, x: &X11Surface, button: u32, resize: bool) {
+        let Some((_, w)) = self.x11_window(x) else {
+            return;
+        };
+        let Some(pos) = self.seat.get_pointer().map(|p| p.current_location()) else {
+            return;
+        };
+        if self.window_under(pos).as_ref() != Some(&w) {
+            return;
+        }
+        // X11 buttons 1/2/3 are evdev BTN_LEFT/BTN_MIDDLE/BTN_RIGHT.
+        let evdev = match button {
+            2 => 0x112,
+            3 => 0x111,
+            _ => 0x110,
+        };
+        self.start_mouse_grab(resize, evdev);
+    }
+
     fn x11_fullscreen(&mut self, x: &X11Surface, on: bool) {
         let Some((i, w)) = self.x11_window(x) else {
             return;
@@ -409,12 +430,14 @@ impl XwmHandler for Hypr {
 
     // minimize_request / unminimize_request: ignored (default).
 
-    fn resize_request(&mut self, _xwm: XwmId, _x: X11Surface, _button: u32, _edge: ResizeEdge) {
-        // shortcut: client-initiated move/resize of X11 windows is ignored,
-        // use `bindm` (the compositor grabs work on X11 windows).
+    fn resize_request(&mut self, _xwm: XwmId, x: X11Surface, button: u32, _edge: ResizeEdge) {
+        // shortcut: resizes from the corner nearest the pointer, not `_edge`.
+        self.x11_grab(&x, button, true);
     }
 
-    fn move_request(&mut self, _xwm: XwmId, _x: X11Surface, _button: u32) {}
+    fn move_request(&mut self, _xwm: XwmId, x: X11Surface, button: u32) {
+        self.x11_grab(&x, button, false);
+    }
 
     fn allow_selection_access(&mut self, _xwm: XwmId, _selection: SelectionTarget) -> bool {
         true

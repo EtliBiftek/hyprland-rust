@@ -73,6 +73,8 @@ struct TtyOutput {
     frame_pending: bool,
     /// A retry timer is armed (last render had no damage or failed).
     timer_armed: bool,
+    /// Gamma ramps last written to the CRTC (`None`: identity).
+    gamma: Option<[Vec<u16>; 3]>,
 }
 
 pub struct Tty {
@@ -230,6 +232,7 @@ impl Tty {
                 surface,
                 frame_pending: false,
                 timer_armed: false,
+                gamma: None,
             });
         }
     }
@@ -419,6 +422,23 @@ fn render(data: &mut CalloopData, crtc: crtc::Handle) {
 
     state.screencopy_process(&mut tty.renderer, &output);
 
+    // wlr-gamma-control / hyprland-ctm-control: DRM gamma ramps.
+    let name = output.name();
+    let want = crate::handlers::gamma_control::effective_ramps(
+        state.extra.gamma.ramps.get(&name).map(|v| v.as_slice()),
+        state.extra.ctm.applied.get(&name),
+        crate::handlers::gamma_control::GAMMA_SIZE as usize,
+    );
+    if want != tty.outputs[idx].gamma {
+        let identity: [Vec<u16>; 3] =
+            std::array::from_fn(|_| (0..256u32).map(|i| (i * 65535 / 255) as u16).collect());
+        let r = want.as_ref().unwrap_or(&identity);
+        if let Err(e) = tty.manager.device().set_gamma(crtc, &r[0], &r[1], &r[2]) {
+            tracing::warn!("gamma on {name}: {e}");
+        }
+        tty.outputs[idx].gamma = want;
+    }
+
     // Front to back: cursor, borders, windows. Locked: cursor and lock surfaces.
     let mut elements: Vec<TtyElement> = Vec::new();
     let pointer = state.seat.get_pointer().unwrap().current_location();
@@ -442,11 +462,21 @@ fn render(data: &mut CalloopData, crtc: crtc::Handle) {
         elements.extend(fx.into_iter().map(TtyElement::Fx));
     }
 
+    // `dpms off`: a black frame.
+    // shortcut: the CRTC stays active (no DPMS property); real power saving
+    // needs the connector DPMS state or an inactive CRTC.
+    if !state.wm.dpms_on {
+        elements.clear();
+    }
     let out = &mut tty.outputs[idx];
     let rendered = match out.surface.render_frame(
         &mut tty.renderer,
         &elements,
-        [0.1, 0.1, 0.1, 1.0],
+        if state.wm.dpms_on {
+            [0.1, 0.1, 0.1, 1.0]
+        } else {
+            [0.0, 0.0, 0.0, 1.0]
+        },
         FrameFlags::DEFAULT,
     ) {
         Ok(result) => !result.is_empty,

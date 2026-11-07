@@ -28,6 +28,22 @@ pub struct Mods {
     pub logo: bool,
 }
 
+/// `SUPER SHIFT` (the form `Mods::parse` reads).
+fn mods_str(m: &Mods) -> String {
+    let names = [
+        (m.logo, "SUPER"),
+        (m.shift, "SHIFT"),
+        (m.ctrl, "CTRL"),
+        (m.alt, "ALT"),
+    ];
+    let v: Vec<&str> = names
+        .iter()
+        .filter(|(on, _)| *on)
+        .map(|(_, n)| *n)
+        .collect();
+    v.join(" ")
+}
+
 impl Mods {
     /// Parses strings like `SUPER SHIFT`, `SUPER_SHIFT`, `CTRL+ALT`.
     pub fn parse(s: &str) -> Result<Self, String> {
@@ -211,6 +227,13 @@ pub enum Dispatcher {
     SwapActiveWorkspaces(String, String),
     /// `focusworkspaceoncurrentmonitor, WS`: bring WS here.
     FocusWorkspaceOnCurrentMonitor(WsSel),
+    /// `fullscreenstate, INTERNAL CLIENT [set|toggle]` (-1 keeps, 0 none,
+    /// 1 maximized, 2 fullscreen).
+    FullscreenState(i8, i8, bool),
+    /// `sendshortcut, MODS, KEY[, WINDOW]`: press and release to a window.
+    SendShortcut(Mods, String, Option<WinSel>),
+    /// `sendkeystate, MODS, KEY, down|up|repeat, WINDOW`.
+    SendKeyState(Mods, String, String, Option<WinSel>),
     /// `movewindow, mon:MON`.
     MoveWindowToMonitor(String),
 }
@@ -359,6 +382,28 @@ impl Dispatcher {
                 ("focusworkspaceoncurrentmonitor", s.to_string())
             }
             Dispatcher::MoveWindowToMonitor(m) => ("movewindow", format!("mon:{m}")),
+            Dispatcher::FullscreenState(i, c, t) => (
+                "fullscreenstate",
+                format!("{i} {c}{}", if *t { " toggle" } else { "" }),
+            ),
+            Dispatcher::SendShortcut(m, k, w) => (
+                "sendshortcut",
+                format!(
+                    "{}, {k}{}",
+                    mods_str(m),
+                    w.as_ref()
+                        .map_or(String::new(), |w| format!(", {}", sel(w)))
+                ),
+            ),
+            Dispatcher::SendKeyState(m, k, s, w) => (
+                "sendkeystate",
+                format!(
+                    "{}, {k}, {s}{}",
+                    mods_str(m),
+                    w.as_ref()
+                        .map_or(String::new(), |w| format!(", {}", sel(w)))
+                ),
+            ),
         }
     }
 
@@ -421,6 +466,50 @@ impl Dispatcher {
             "closewindow" => Dispatcher::CloseWindow(arg.parse()?),
             "focuswindow" => Dispatcher::FocusWindow(arg.parse()?),
             "pass" => Dispatcher::Pass(arg.parse()?),
+            "fullscreenstate" => {
+                let w: Vec<&str> = arg.split_whitespace().collect();
+                let n = |i: usize| -> Result<i8, String> {
+                    w.get(i)
+                        .map_or(Ok(-1), |s| s.parse::<i8>().map_err(|e| e.to_string()))
+                        .and_then(|v| {
+                            (-1..=3)
+                                .contains(&v)
+                                .then_some(v)
+                                .ok_or_else(|| format!("fullscreenstate: invalid mode {v}"))
+                        })
+                };
+                Dispatcher::FullscreenState(n(0)?, n(1)?, w.get(2) == Some(&"toggle"))
+            }
+            "sendshortcut" | "sendkeystate" => {
+                let parts: Vec<&str> = arg.splitn(4, ',').map(str::trim).collect();
+                let mods = Mods::parse(parts.first().copied().unwrap_or(""))?;
+                let key = parts
+                    .get(1)
+                    .filter(|k| !k.is_empty())
+                    .ok_or_else(|| format!("{name}: missing key"))?
+                    .to_ascii_lowercase();
+                if name == "sendshortcut" {
+                    let win = parts
+                        .get(2)
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.parse())
+                        .transpose()?;
+                    Dispatcher::SendShortcut(mods, key, win)
+                } else {
+                    let state = parts.get(2).copied().unwrap_or("");
+                    if !matches!(state, "down" | "up" | "repeat") {
+                        return Err(format!(
+                            "sendkeystate: state must be down, up or repeat, got `{state}`"
+                        ));
+                    }
+                    let win = parts
+                        .get(3)
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.parse())
+                        .transpose()?;
+                    Dispatcher::SendKeyState(mods, key, state.into(), win)
+                }
+            }
             "togglespecialworkspace" => Dispatcher::ToggleSpecialWorkspace(arg.to_string()),
             "submap" => Dispatcher::Submap(if arg == "reset" {
                 String::new()
@@ -565,7 +654,7 @@ fn opt_sel(s: &str) -> Result<Option<WinSel>, String> {
 /// Flags from the letters after `bind` (`bindel` = locked + repeat).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct BindFlags {
-    /// `l`: works while locked (we have no lock screen yet, so always true).
+    /// `l`: also works while the session is locked.
     pub locked: bool,
     /// `r`: fire on key release.
     pub release: bool,
@@ -575,12 +664,14 @@ pub struct BindFlags {
     pub non_consuming: bool,
     /// `m`: mouse bind (`bindm`).
     pub mouse: bool,
-    /// `t`: not blocked by shortcut inhibitors (accepted, we have none).
+    /// `t`: transparent (every matching bind runs here, so always true).
     pub transparent: bool,
     /// `i`: ignore modifiers.
     pub ignore_mods: bool,
-    /// `o`: long press (approximated by a normal press).
+    /// `o`: long press: fires after the key is held for `repeat_delay`.
     pub long_press: bool,
+    /// `p`: works even when a client inhibits shortcuts.
+    pub bypass: bool,
     /// `d`: has a description argument.
     pub has_description: bool,
 }
@@ -602,7 +693,8 @@ impl BindFlags {
                 'o' => f.long_press = true,
                 'd' => f.has_description = true,
                 // Accepted, no effect: separate, click, drag, ...
-                's' | 'c' | 'g' | 'k' | 'p' => {}
+                'p' => f.bypass = true,
+                's' | 'c' | 'g' | 'k' => {}
                 _ => return None,
             }
         }
@@ -1083,6 +1175,9 @@ pub struct DeviceOpts {
     pub tap_to_click: Option<bool>,
     pub disable_while_typing: Option<bool>,
     pub scroll_factor: Option<f32>,
+    /// Keyboard: `kb_layout`, `kb_variant`, `kb_model`, `kb_options`, `kb_rules`
+    /// (`device { }` only; the keymap switches when that keyboard types).
+    pub kb: [Option<String>; 5],
 }
 
 impl DeviceOpts {
@@ -1095,6 +1190,11 @@ impl DeviceOpts {
         self.tap_to_click = other.tap_to_click.or(self.tap_to_click);
         self.disable_while_typing = other.disable_while_typing.or(self.disable_while_typing);
         self.scroll_factor = other.scroll_factor.or(self.scroll_factor);
+        for (a, b) in self.kb.iter_mut().zip(&other.kb) {
+            if b.is_some() {
+                a.clone_from(b);
+            }
+        }
     }
 
     /// Sets one option by its Hyprland name. `Ok(false)` if the name is unknown.
@@ -1119,6 +1219,10 @@ impl DeviceOpts {
             "left_handed" => self.left_handed = Some(parse_bool(value)?),
             "tap-to-click" => self.tap_to_click = Some(parse_bool(value)?),
             "disable_while_typing" => self.disable_while_typing = Some(parse_bool(value)?),
+            k if KB_KEYS.contains(&k) => {
+                let i = KB_KEYS.iter().position(|x| *x == k).unwrap_or(0);
+                self.kb[i] = Some(value.to_string());
+            }
             "scroll_factor" => {
                 self.scroll_factor = Some(
                     value
@@ -1131,6 +1235,15 @@ impl DeviceOpts {
         Ok(true)
     }
 }
+
+/// Order of `DeviceOpts::kb`.
+pub const KB_KEYS: [&str; 5] = [
+    "kb_layout",
+    "kb_variant",
+    "kb_model",
+    "kb_options",
+    "kb_rules",
+];
 
 /// A `device { name = ...; ... }` block.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -2340,6 +2453,22 @@ mod tests {
         assert!(errors.is_empty(), "{errors:?}");
         assert!(cfg.binds[0].mods.logo);
         assert!(!cfg.binds[0].mods.alt);
+    }
+
+    #[test]
+    fn device_keyboard_layout() {
+        let (cfg, errors) = Config::parse_str(
+            "device {
+ name = AT Translated Set 2 keyboard
+ kb_layout = tr
+ kb_variant = f
+}",
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+        let d = &cfg.input.devices[0];
+        assert_eq!(d.name, "at-translated-set-2-keyboard");
+        assert_eq!(d.opts.kb[0].as_deref(), Some("tr"));
+        assert_eq!(d.opts.kb[1].as_deref(), Some("f"));
     }
 
     #[test]

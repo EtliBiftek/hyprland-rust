@@ -1,0 +1,27 @@
+# Arch Linux package: makepkg -si (from this directory).
+pkgname=hyprland-rust-git
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="A Rust rewrite of the Hyprland Wayland compositor"
+arch=('x86_64' 'aarch64')
+url="https://github.com/EtliBiftek/hyprland-rust"
+license=('BSD-3-Clause')
+depends=('wayland' 'libxkbcommon' 'libinput' 'seatd' 'mesa' 'libdrm' 'systemd-libs' 'xorg-xwayland')
+makedepends=('cargo' 'git')
+provides=('hyprland-rust')
+source=("$pkgname::git+$url.git")
+sha256sums=('SKIP')
+
+build() {
+    cd "$pkgname"
+    cargo build --release --locked
+}
+
+package() {
+    cd "$pkgname"
+    install -Dm755 target/release/hyprland-rust "$pkgdir/usr/bin/hyprland-rust"
+    install -Dm755 target/release/hyprctl "$pkgdir/usr/bin/hyprctl-rust"
+    install -Dm644 packaging/hyprland-rust.desktop "$pkgdir/usr/share/wayland-sessions/hyprland-rust.desktop"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+    install -Dm644 examples/hyprland.conf "$pkgdir/usr/share/hyprland-rust/hyprland.conf"
+}

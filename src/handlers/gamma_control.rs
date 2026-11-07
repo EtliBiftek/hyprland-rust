@@ -1,8 +1,9 @@
 //! wlr-gamma-control-unstable-v1 (gammastep, wlsunset, hyprsunset fallback).
 //! The client uploads three 16-bit ramps; they are validated and kept per output
 //! in `GammaState::ramps` (restored, i.e. removed, when the control is destroyed).
-//! shortcuts: the ramps are not applied to the screen on any backend (winit has no
-//! gamma, the TTY backend would write the CRTC `GAMMA_LUT` property from this map).
+//! The tty backend writes them (combined with the CTM) as DRM gamma ramps.
+//! shortcuts: winit and headless do not apply them (winit has no
+//! gamma), and the CRTC gamma size is fixed at 256.
 
 use std::{collections::HashMap, fs::File, os::unix::fs::FileExt};
 
@@ -23,7 +24,7 @@ use smithay::{
 use crate::Hypr;
 
 /// Entries per channel. gammastep and wlsunset accept any size the compositor reports.
-const GAMMA_SIZE: u32 = 256;
+pub const GAMMA_SIZE: u32 = 256;
 
 pub fn init(dh: &DisplayHandle) {
     dh.create_global::<Hypr, ZwlrGammaControlManagerV1, _>(1, ());
@@ -130,5 +131,48 @@ impl Dispatch<ZwlrGammaControlV1, GammaData> for Hypr {
             state.extra.gamma.owners.retain(|(_, c)| c != resource);
             state.extra.gamma.ramps.remove(name);
         }
+    }
+}
+
+/// The ramps an output should show: the client's gamma ramps (or identity)
+/// scaled by the diagonal of the CTM (hyprsunset's colour temperature).
+/// `None`: nothing set, restore the identity ramps.
+// shortcut: off-diagonal CTM entries are ignored (no DRM `CTM` property or
+// shader yet); hyprsunset and night-light tools only use the diagonal.
+pub fn effective_ramps(
+    gamma: Option<&[u16]>,
+    ctm: Option<&[f64; 9]>,
+    size: usize,
+) -> Option<[Vec<u16>; 3]> {
+    if gamma.is_none() && ctm.is_none() {
+        return None;
+    }
+    let identity = |i: usize| ((i * 65535) / (size - 1).max(1)) as u16;
+    let base = |c: usize, i: usize| match gamma {
+        Some(g) if g.len() == 3 * size => g[c * size + i],
+        _ => identity(i),
+    };
+    let scale = |c: usize| ctm.map_or(1.0, |m| m[c * 4].clamp(0.0, 1.0));
+    Some(std::array::from_fn(|c| {
+        (0..size)
+            .map(|i| (base(c, i) as f64 * scale(c)).round() as u16)
+            .collect()
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ramps_combine_gamma_and_ctm() {
+        assert!(effective_ramps(None, None, 256).is_none());
+        let warm = [1.0, 0.0, 0.0, 0.0, 0.8, 0.0, 0.0, 0.0, 0.5];
+        let r = effective_ramps(None, Some(&warm), 256).unwrap();
+        assert_eq!((r[0][255], r[1][255], r[2][255]), (65535, 52428, 32768));
+        assert_eq!(r[0][0], 0);
+        let g: Vec<u16> = (0..768).map(|_| 1000).collect();
+        let r = effective_ramps(Some(&g), Some(&warm), 256).unwrap();
+        assert_eq!((r[0][10], r[2][10]), (1000, 500));
     }
 }

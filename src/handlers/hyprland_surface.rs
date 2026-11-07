@@ -1,6 +1,8 @@
 //! hyprland-surface-v1: per-surface opacity (quickshell) and visible region.
-//! shortcuts: the opacity is validated and stored in the object but is not
-//! applied when rendering; the visible region is ignored.
+//! The opacity is stored in the surface data (`SurfaceOpacity`) and multiplied
+//! into the window opacity by the renderer.
+//! shortcuts: layer surfaces ignore it (windows only); the visible region is
+//! ignored.
 
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -102,6 +104,18 @@ impl Dispatch<HyprlandSurfaceV1, SurfaceData> for Hypr {
                 );
             } else {
                 *data.opacity.lock().unwrap() = opacity;
+                if let Ok(s) = data.surface.upgrade() {
+                    smithay::wayland::compositor::with_states(&s, |st| {
+                        st.data_map
+                            .insert_if_missing_threadsafe(|| SurfaceOpacity(Mutex::new(1.0)));
+                        *st.data_map
+                            .get::<SurfaceOpacity>()
+                            .unwrap()
+                            .0
+                            .lock()
+                            .unwrap() = opacity;
+                    });
+                }
             }
         }
     }
@@ -120,4 +134,18 @@ impl Dispatch<HyprlandSurfaceV1, SurfaceData> for Hypr {
             });
         }
     }
+}
+
+/// `set_opacity` of a surface, read by the renderer.
+pub struct SurfaceOpacity(pub Mutex<f64>);
+
+/// Opacity a client set on a window's surface (1.0 if none).
+pub fn surface_opacity(w: &smithay::desktop::Window) -> f32 {
+    crate::xwayland::wl_surface_of(w).map_or(1.0, |s| {
+        smithay::wayland::compositor::with_states(&s, |st| {
+            st.data_map
+                .get::<SurfaceOpacity>()
+                .map_or(1.0, |o| *o.0.lock().unwrap() as f32)
+        })
+    })
 }

@@ -368,6 +368,10 @@ pub fn ipc_to_lua_event(event: &str, data: &str) -> Option<(&'static str, Vec<Ev
         "windowtitlev2" => ("window.title", vec![win()]),
         "urgent" => ("window.urgent", vec![win()]),
         "pin" => ("window.pin", vec![win()]),
+        "minimized" => (
+            "window.minimize",
+            vec![win(), EvArg::Bool(f.next()? == "1")],
+        ),
         "movewindowv2" => ("window.move_to_workspace", vec![win(), ws(f.next()?)?]),
         "workspacev2" => ("workspace.active", vec![ws(&first)?]),
         "createworkspacev2" => ("workspace.created", vec![ws(&first)?]),
@@ -1109,11 +1113,27 @@ fn translate(path: &str, a: &A) -> Result<String, String> {
         }
         // shortcut: no separate client fullscreen state; internal 2/1 map to
         // fullscreen/maximize and a client-only "spoof" (internal 0) is a no-op.
-        "window.fullscreen_state" => match a.s("internal").as_deref() {
-            Some("2") => "fullscreen, 0".into(),
-            Some("1") => "fullscreen, 1".into(),
-            _ => "forcerendererreload".into(),
-        },
+        "window.fullscreen_state" => format!(
+            "fullscreenstate, {} {}{}",
+            a.s("internal").unwrap_or("-1".into()),
+            a.s("client").unwrap_or("-1".into()),
+            if action(a) == "toggle" && a.s("action").is_some() {
+                " toggle"
+            } else {
+                ""
+            }
+        ),
+        "send_shortcut" | "send_key_state" => {
+            let mods = a.s("mods").unwrap_or_default();
+            let key = a.need("key", path)?;
+            let win = a.s("window").map(|w| format!(", {w}")).unwrap_or_default();
+            if path == "send_shortcut" {
+                format!("sendshortcut, {mods}, {key}{win}")
+            } else {
+                let state = a.s("state").unwrap_or("down".into());
+                format!("sendkeystate, {mods}, {key}, {state}{win}")
+            }
+        }
         "window.pseudo" => "togglepseudo".into(),
         "window.move" => {
             if let Some(d) = a.s("direction") {
@@ -2126,7 +2146,7 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
         assert!(text.contains("windowrule[Mode]:enable = false"), "{text}");
         assert!(
-            text.contains("bind = SUPER ALT, F, forcerendererreload"),
+            text.contains("bind = SUPER ALT, F, fullscreenstate, 0 3"),
             "{text}"
         );
         // A bad hl.dsp.* call is a config error, not a script abort.

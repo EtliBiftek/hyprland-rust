@@ -1,5 +1,6 @@
 //! Window management: workspaces, tiling, focus and dispatchers.
 
+use smithay::backend::input::KeyState;
 use smithay::{
     desktop::{layer_map_for_output, Window},
     input::pointer::{Focus, GrabStartData as PointerGrabStartData, MotionEvent},
@@ -56,8 +57,8 @@ pub struct WmState {
     pub groups_locked: bool,
     /// `togglepseudo`: tiled windows that keep their own size.
     pub pseudo: Vec<Window>,
-    /// `setprop`: (window, prop, value). shortcut: stored only, nothing
-    /// reads them yet.
+    /// `setprop`: (window, prop, value), applied over the rule effects by
+    /// `window_dynp` (`rules::apply_setprops`).
     pub props: Vec<(Window, String, String)>,
     /// `dpms`: false while the output is switched off.
     pub dpms_on: bool,
@@ -73,6 +74,16 @@ pub struct WmState {
     )>,
     /// Touchpad gesture in progress and whether a `gesture =` owns it.
     pub gesture: Option<(crate::gestures::Tracker, bool)>,
+    /// Key holding a keyboard `bindm` grab.
+    pub key_grab: Option<u32>,
+    /// Toplevels that committed a null buffer (out of every workspace).
+    pub unmapped: Vec<Window>,
+    /// Keymap settings in effect (`KB_KEYS` order).
+    pub keymap: Option<[String; 5]>,
+    /// Windows whose client-side fullscreen state is forced on.
+    pub client_fs: Vec<Window>,
+    /// `o` bind waiting for its key to be held long enough.
+    pub long_press: Option<(u32, RegistrationToken)>,
 }
 
 impl WmState {
@@ -99,6 +110,11 @@ impl WmState {
             next_mon_id: 0,
             output_globals: Vec::new(),
             gesture: None,
+            key_grab: None,
+            unmapped: Vec::new(),
+            keymap: None,
+            client_fs: Vec::new(),
+            long_press: None,
         }
     }
 }
@@ -461,6 +477,9 @@ impl Hypr {
 
     /// Called when a client destroys a toplevel window.
     pub fn remove_window(&mut self, surface: &WlSurface) {
+        self.wm
+            .unmapped
+            .retain(|w| w.toplevel().is_none_or(|t| t.wl_surface() != surface));
         if let Some((_, window)) = self.window_for_surface(surface) {
             self.remove_window_obj(&window);
         }
@@ -613,6 +632,8 @@ impl Hypr {
         for (window, rect, is_fullscreen) in placements {
             if let Some(toplevel) = window.toplevel() {
                 let is_floating = floating.contains(&window);
+                // `fullscreenstate _ 2`: the client is told it is fullscreen.
+                let client_fs = self.wm.client_fs.contains(&window);
                 // Not inside `with_pending_state`: it holds the surface lock that
                 // `element_geometry` takes (deadlock otherwise).
                 let keep_size = (is_floating || pseudo.contains(&window))
@@ -622,7 +643,7 @@ impl Hypr {
                     if !keep_size {
                         state.size = Some(rect.size);
                     }
-                    if is_fullscreen {
+                    if is_fullscreen || client_fs {
                         state.states.set(xdg_toplevel::State::Fullscreen);
                     } else {
                         state.states.unset(xdg_toplevel::State::Fullscreen);
@@ -867,6 +888,129 @@ impl Hypr {
             let fs = self.workspaces[i].fullscreen.is_some();
             self.ipc.emit("fullscreen", &(fs as u8).to_string());
         }
+    }
+
+    /// `fullscreenstate INTERNAL CLIENT [toggle]`: internal 0 none,
+    /// 1 maximized, 2/3 fullscreen; client 2/3 tells the client it is
+    /// fullscreen without changing its size; -1 keeps the current state.
+    fn fullscreen_state(&mut self, internal: i8, client: i8, toggle: bool) {
+        let Some(window) = self.focused_window() else {
+            return;
+        };
+        let Some(i) = self.ws_of(&window) else {
+            return;
+        };
+        let ws = &mut self.workspaces[i];
+        let cur = if ws.fullscreen.as_ref() == Some(&window) {
+            2
+        } else if ws.maximized.as_ref() == Some(&window) {
+            1
+        } else {
+            0
+        };
+        let mut want = if internal < 0 { cur } else { internal.min(2) };
+        if toggle && want == cur && internal >= 0 {
+            want = 0;
+        }
+        ws.fullscreen = if want == 2 {
+            Some(window.clone())
+        } else {
+            ws.fullscreen.take().filter(|w| w != &window)
+        };
+        ws.maximized = if want == 1 {
+            Some(window.clone())
+        } else {
+            ws.maximized.take().filter(|w| w != &window)
+        };
+        if client >= 0 {
+            let on = client >= 2 && !(toggle && self.wm.client_fs.contains(&window));
+            self.wm.client_fs.retain(|w| w != &window);
+            if on {
+                self.wm.client_fs.push(window.clone());
+            }
+        }
+        self.relayout();
+        if want != cur {
+            self.ipc
+                .emit("fullscreen", &((want == 2) as u8).to_string());
+        }
+    }
+
+    /// `sendshortcut` / `sendkeystate`: key events (with modifier keys) to a
+    /// window, without changing the keyboard focus for good.
+    fn send_key(&mut self, mods: Mods, key: &str, sel: Option<&WinSel>, states: &[&str]) {
+        let Some(window) = self.target_window(sel) else {
+            return;
+        };
+        let Some(surface) = crate::xwayland::wl_surface_of(&window) else {
+            return;
+        };
+        let Some(code) = self.keycode_for(key) else {
+            tracing::warn!("sendshortcut: no key `{key}` in the keymap");
+            return;
+        };
+        // evdev + 8: Super_L, Shift_L, Control_L, Alt_L.
+        let mod_codes: Vec<u32> = [
+            (mods.logo, 133),
+            (mods.shift, 50),
+            (mods.ctrl, 37),
+            (mods.alt, 64),
+        ]
+        .iter()
+        .filter(|(on, _)| *on)
+        .map(|(_, c)| *c)
+        .collect();
+        let kb = self.seat.get_keyboard().unwrap();
+        let prev = kb.current_focus();
+        let time = self.start_time.elapsed().as_millis() as u32;
+        kb.set_focus(self, Some(surface), SERIAL_COUNTER.next_serial());
+        let send = |h: &mut Hypr, c: u32, s: KeyState| {
+            kb.input_forward(h, c.into(), s, SERIAL_COUNTER.next_serial(), time, true);
+        };
+        for st in states {
+            match *st {
+                "down" | "repeat" => {
+                    for c in &mod_codes {
+                        send(self, *c, KeyState::Pressed);
+                    }
+                    send(self, code, KeyState::Pressed);
+                }
+                _ => {
+                    send(self, code, KeyState::Released);
+                    for c in mod_codes.iter().rev() {
+                        send(self, *c, KeyState::Released);
+                    }
+                }
+            }
+        }
+        kb.set_focus(self, prev, SERIAL_COUNTER.next_serial());
+    }
+
+    /// Keycode (xkb, evdev + 8) that produces the keysym `name` at level 0.
+    fn keycode_for(&mut self, name: &str) -> Option<u32> {
+        use smithay::input::keyboard::xkb;
+        if let Some(n) = name.strip_prefix("code:") {
+            return n.parse().ok();
+        }
+        let sym = xkb::keysym_from_name(name, xkb::KEYSYM_CASE_INSENSITIVE);
+        if sym.raw() == 0 {
+            return None;
+        }
+        // The configured layout, compiled again (the seat's keymap is not
+        // reachable from here).
+        let i = &self.config.input;
+        let ctx = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+        let keymap = xkb::Keymap::new_from_names(
+            &ctx,
+            &i.kb_rules,
+            &i.kb_model,
+            &i.kb_layout,
+            &i.kb_variant,
+            (!i.kb_options.is_empty()).then(|| i.kb_options.clone()),
+            xkb::KEYMAP_COMPILE_NO_FLAGS,
+        )?;
+        (keymap.min_keycode().raw()..=keymap.max_keycode().raw())
+            .find(|&kc| keymap.key_get_syms_by_level(kc.into(), 0, 0).contains(&sym))
     }
 
     /// Rects of the tiled windows of the workspace holding `w`, plus its index.
@@ -1182,7 +1326,7 @@ impl Hypr {
         }
     }
 
-    /// `setprop`. shortcut: stored only, no rendering or rule reads it yet.
+    /// `setprop`: stored per window, read by `window_dynp`.
     fn set_prop(&mut self, sel: Option<&WinSel>, prop: &str, value: &str) {
         let Some(w) = self.target_window(sel) else {
             return;
@@ -1397,6 +1541,15 @@ impl Hypr {
                 }
             }
             Dispatcher::MoveWindowToMonitor(arg) => self.move_window_to_monitor(arg),
+            Dispatcher::FullscreenState(internal, client, toggle) => {
+                self.fullscreen_state(*internal, *client, *toggle)
+            }
+            Dispatcher::SendShortcut(mods, key, sel) => {
+                self.send_key(*mods, key, sel.as_ref(), &["down", "up"])
+            }
+            Dispatcher::SendKeyState(mods, key, state, sel) => {
+                self.send_key(*mods, key, sel.as_ref(), &[state.as_str()])
+            }
         }
         // Floating, fullscreen, pin or tags may have changed: dynamic rules.
         self.refresh_all_rules();

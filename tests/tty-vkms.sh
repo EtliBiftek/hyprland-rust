@@ -159,4 +159,14 @@ else
 fi
 
 kill -0 "$COMP" 2>/dev/null || fail "compositor died"
+# Night light: wlsunset sets gamma ramps through wlr-gamma-control, which the
+# tty backend writes to the CRTCs.
+WAYLAND_DISPLAY=$(ls "$T" | grep "^wayland-[0-9]*$" | head -n1) timeout 3 wlsunset -t 3500 -T 3501 -S 00:00 -s 00:01 >"$T/wlsunset.log" 2>&1 || true
+sleep 0.5
+if grep -q "gamma on" "$T/log"; then
+    grep "gamma on" "$T/log" | tail -n 3
+    fail "DRM gamma could not be set"
+fi
+kill -0 "$COMP" 2>/dev/null || fail "compositor died after gamma"
+echo "ok: gamma ramps written to the CRTCs (wlsunset)"
 echo "tty-vkms: OK"

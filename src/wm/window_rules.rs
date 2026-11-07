@@ -82,7 +82,16 @@ impl Hypr {
 
     /// Dynamic rule effects of this window (opacity, rounding, no_blur, ...).
     pub fn window_dynp(&self, w: &Window) -> DynProps {
-        state(w).borrow().dynp.clone()
+        let mut d = state(w).borrow().dynp.clone();
+        let props: Vec<(String, String)> = self
+            .wm
+            .props
+            .iter()
+            .filter(|(x, _, _)| x == w)
+            .map(|(_, k, v)| (k.clone(), v.clone()))
+            .collect();
+        crate::rules::apply_setprops(&mut d, &props);
+        d
     }
 
     /// Border size and colors forced by rules for this window.

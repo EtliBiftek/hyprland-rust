@@ -590,7 +590,7 @@ fn window_group(
             }
         }
         None => base,
-    };
+    } * crate::handlers::hyprland_surface::surface_opacity(&i.w);
     let dim = if deco.dim_inactive && !i.focused && !d.flag("no_dim") {
         deco.dim_strength
     } else {

@@ -980,6 +980,45 @@ pub fn dynamic_props(rules: &[Rule], p: &WindowProps) -> DynProps {
     out
 }
 
+/// `setprop` values (`hyprctl setprop`, last wins) on top of the rule
+/// effects. Hyprland's prop names map to rule effects; unknown ones are kept
+/// as parsed-only effects.
+pub fn apply_setprops(d: &mut DynProps, props: &[(String, String)]) {
+    for (name, value) in props {
+        let n = name.to_ascii_lowercase();
+        let effect = match n.as_str() {
+            "alpha" | "opacity" => "opacity",
+            "bordersize" | "border_size" => "border_size",
+            "activebordercolor" | "bordercolor" | "border_color" => "border_color",
+            "forcenoblur" | "noblur" | "no_blur" => "no_blur",
+            "forcenoshadow" | "noshadow" | "no_shadow" => "no_shadow",
+            "nodim" | "no_dim" => "no_dim",
+            "forceopaque" | "opaque" => "opaque",
+            other => other,
+        };
+        let Ok(e) = Effect::parse(effect, value) else {
+            continue;
+        };
+        match e {
+            Effect::Opacity(o) => d.opacity = Some(o),
+            Effect::BorderSize(v) => d.border_size = Some(v),
+            Effect::Rounding(v) => d.rounding = Some(v),
+            Effect::BorderColor(c) => {
+                let old = d.border_color.unwrap_or_default();
+                d.border_color = Some(BorderColor {
+                    active: c.active.or(old.active),
+                    inactive: c.inactive.or(old.inactive),
+                });
+            }
+            Effect::Other(k, a) => {
+                d.other.retain(|(x, _)| x != &k);
+                d.other.push((k, a));
+            }
+            _ => {}
+        }
+    }
+}
+
 /// The static effects of one window, folded (last wins).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct StaticPlan {
@@ -1024,6 +1063,26 @@ pub fn static_plan(rules: &[Rule], p: &WindowProps) -> StaticPlan {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn setprops_override_rule_effects() {
+        let mut d = DynProps::default();
+        let p = |k: &str, v: &str| (k.to_string(), v.to_string());
+        apply_setprops(
+            &mut d,
+            &[
+                p("alpha", "0.5"),
+                p("bordersize", "7"),
+                p("rounding", "3"),
+                p("noblur", "1"),
+                p("bogus_prop", "x"),
+            ],
+        );
+        assert_eq!(d.border_size, Some(7));
+        assert_eq!(d.rounding, Some(3));
+        assert!(d.opacity.is_some());
+        assert!(d.flag("no_blur"));
+    }
+
     use super::*;
     use crate::config::Config;
 

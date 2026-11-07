@@ -4,7 +4,8 @@
 //! `sync_toplevels` runs every frame (from `send_frames`) and diffs the mapped
 //! windows against what was announced, so title, app_id, focus, fullscreen and
 //! maximize changes need no hooks in the window manager.
-//! shortcuts: `set_minimized`/`set_rectangle` are ignored (no minimize in this
+//! shortcuts: `set_minimized` only emits the `minimized` event (as Hyprland);
+//! `set_rectangle` is ignored (no minimize in this
 //! WM), `parent` is not sent, one output only.
 
 use smithay::{
@@ -129,9 +130,11 @@ impl GlobalDispatch<ZwlrForeignToplevelManagerV1, ()> for Hypr {
         data_init: &mut DataInit<'_, Self>,
     ) {
         let mgr = data_init.init(resource, ());
-        let output = state.space.outputs().next().cloned();
         let mut entries = std::mem::take(&mut state.toplevels.entries);
         for e in &mut entries {
+            let output = state
+                .ws_of(&e.window)
+                .and_then(|i| state.output_named(&state.ws_monitor(i)));
             if let Some(h) = announce(handle, &mgr, &e.window, &e.last, output.as_ref()) {
                 e.wlr.push(h);
             }
@@ -188,6 +191,14 @@ impl Dispatch<ZwlrForeignToplevelHandleV1, String> for Hypr {
             R::UnsetMaximized => state.set_wm_slot(&window, false, false),
             R::SetFullscreen { .. } => state.set_wm_slot(&window, true, true),
             R::UnsetFullscreen => state.set_wm_slot(&window, true, false),
+            // Like Hyprland: minimizing is only reported (`minimized` event), the
+            // window stays; docks and plugins act on the event.
+            R::SetMinimized => state
+                .ipc
+                .emit("minimized", &format!("{},1", addr.trim_start_matches("0x"))),
+            R::UnsetMinimized => state
+                .ipc
+                .emit("minimized", &format!("{},0", addr.trim_start_matches("0x"))),
             _ => {}
         }
     }
@@ -254,10 +265,14 @@ impl Hypr {
         }
 
         let active = self.focused_window();
-        let output = self.space.outputs().next().cloned();
         let dh = self.display_handle.clone();
         for w in open {
             let (app_id, title) = class_title(&w);
+            // shortcut: the output is sent once; a window moving to another
+            // monitor sends no output_leave/output_enter yet.
+            let output = self
+                .ws_of(&w)
+                .and_then(|i| self.output_named(&self.ws_monitor(i)));
             let (fullscreen, maximized) = self.ws_of(&w).map_or((false, false), |i| {
                 let ws = &self.workspaces[i];
                 (
