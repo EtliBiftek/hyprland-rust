@@ -59,21 +59,25 @@ impl Mods {
                 // `SUPERSHIFT`, `CONTROLSHIFTALT`: Hyprland finds each
                 // modifier name as a substring, so they may be glued.
                 other => {
-                    let names: [(&str, fn(&mut Mods)); 9] = [
-                        ("SHIFT", |m| m.shift = true),
-                        ("CONTROL", |m| m.ctrl = true),
-                        ("CTRL", |m| m.ctrl = true),
-                        ("ALT", |m| m.alt = true),
-                        ("MOD1", |m| m.alt = true),
-                        ("SUPER", |m| m.logo = true),
-                        ("WIN", |m| m.logo = true),
-                        ("LOGO", |m| m.logo = true),
-                        ("MOD4", |m| m.logo = true),
-                    ];
                     let mut rest = other.to_string();
-                    for (n, set) in names {
+                    for (n, which) in [
+                        ("SHIFT", 0),
+                        ("CONTROL", 1),
+                        ("CTRL", 1),
+                        ("ALT", 2),
+                        ("MOD1", 2),
+                        ("SUPER", 3),
+                        ("WIN", 3),
+                        ("LOGO", 3),
+                        ("MOD4", 3),
+                    ] {
                         if rest.contains(n) {
-                            set(&mut mods);
+                            *[
+                                &mut mods.shift,
+                                &mut mods.ctrl,
+                                &mut mods.alt,
+                                &mut mods.logo,
+                            ][which] = true;
                             rest = rest.replace(n, "");
                         }
                     }
