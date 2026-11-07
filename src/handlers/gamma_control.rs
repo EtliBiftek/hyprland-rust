@@ -112,8 +112,10 @@ impl Dispatch<ZwlrGammaControlV1, GammaData> for Hypr {
             return;
         }
         let ramp = buf
-            .chunks_exact(2)
-            .map(|c| u16::from_ne_bytes([c[0], c[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| u16::from_ne_bytes(*c))
             .collect();
         state.extra.gamma.ramps.insert(name.clone(), ramp);
     }
