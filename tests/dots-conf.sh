@@ -34,5 +34,15 @@ for f in WindowRules-config-v3.conf WindowRules-pre-53.conf; do
     check "$HOME/.config/hypr/configs/$f"
 done
 
+# end-4 `m3ww` (EWW + hyprlang, OsmiumOS), archive branch at a pinned commit.
+M3WW=2433298bddf6b1597b8e10dba67d26891664db11
+git init -q "$T/m3"
+git -C "$T/m3" fetch -q --depth 1 https://github.com/end-4/dots-hyprland.git "$M3WW"
+git -C "$T/m3" checkout -q FETCH_HEAD
+export HOME="$T/home-m3ww"
+mkdir -p "$HOME/.config"
+cp -r "$T/m3/m3ww/.config/hypr" "$HOME/.config/hypr"
+check "$HOME/.config/hypr/hyprland.conf"
+
 [ "$fail" = 0 ] && echo "dots-conf: OK"
 exit "$fail"
