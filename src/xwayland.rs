@@ -366,12 +366,12 @@ impl XwmHandler for Hypr {
                 self.on_title_changed_win(&w);
             }
             WmWindowProperty::Class => self.rules_on_commit(&w),
-            WmWindowProperty::Hints => {
-                if x.hints().is_some_and(|h| h.urgent) && self.focused_window().as_ref() != Some(&w)
-                {
-                    let addr = crate::ipc::window_addr(&w);
-                    self.ipc.emit("urgent", addr.trim_start_matches("0x"));
-                }
+            WmWindowProperty::Hints
+                if x.hints().is_some_and(|h| h.urgent)
+                    && self.focused_window().as_ref() != Some(&w) =>
+            {
+                let addr = crate::ipc::window_addr(&w);
+                self.ipc.emit("urgent", addr.trim_start_matches("0x"));
             }
             _ => {}
         }
