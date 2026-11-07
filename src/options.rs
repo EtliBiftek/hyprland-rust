@@ -54,7 +54,9 @@ pub fn get_option(cfg: &Config, key: &str) -> Option<OptValue> {
         "decoration:blur:vibrancy_darkness" => Float(cfg.decoration.blur.vibrancy_darkness.into()),
         "decoration:blur:special" => Bool(cfg.decoration.blur.special),
         "decoration:blur:popups" => Bool(cfg.decoration.blur.popups),
-        "decoration:blur:popups_ignorealpha" => Float(cfg.decoration.blur.popups_ignorealpha.into()),
+        "decoration:blur:popups_ignorealpha" => {
+            Float(cfg.decoration.blur.popups_ignorealpha.into())
+        }
         "decoration:shadow:enabled" => Bool(cfg.decoration.shadow.enabled),
         "decoration:shadow:range" => Int(cfg.decoration.shadow.range.into()),
         "decoration:shadow:render_power" => Int(cfg.decoration.shadow.render_power.into()),
@@ -62,7 +64,10 @@ pub fn get_option(cfg: &Config, key: &str) -> Option<OptValue> {
         "decoration:shadow:ignore_window" => Bool(cfg.decoration.shadow.ignore_window),
         "decoration:shadow:color" => Custom(gradient(cfg.decoration.shadow.color)),
         "decoration:shadow:color_inactive" => Custom(gradient(
-            cfg.decoration.shadow.color_inactive.unwrap_or(cfg.decoration.shadow.color),
+            cfg.decoration
+                .shadow
+                .color_inactive
+                .unwrap_or(cfg.decoration.shadow.color),
         )),
         "decoration:shadow:scale" => Float(cfg.decoration.shadow.scale.into()),
         "dwindle:preserve_split" => Bool(cfg.dwindle.preserve_split),

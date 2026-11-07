@@ -892,7 +892,10 @@ pub struct DynProps {
 impl DynProps {
     /// Argument of a parsed-only effect, if a matching rule set it.
     pub fn other(&self, name: &str) -> Option<&str> {
-        self.other.iter().find(|(k, _)| k == name).map(|(_, a)| a.as_str())
+        self.other
+            .iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, a)| a.as_str())
     }
 
     /// Boolean effect (`no_blur`, ...): set and not `off`/`0`/`false`.

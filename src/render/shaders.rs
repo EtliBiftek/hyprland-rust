@@ -247,16 +247,18 @@ impl Programs {
         let blur_u = [f2("halfpixel"), f1("offset")];
         let blur_down = r.compile_custom_texture_shader(blur_src(true), &blur_u)?;
         let blur_up = r.compile_custom_texture_shader(blur_src(false), &blur_u)?;
-        let mut bu = vec![f1("ncol"), f1("angle"), f1("radius"), f1("bsize"), f1("power")];
+        let mut bu = vec![
+            f1("ncol"),
+            f1("angle"),
+            f1("radius"),
+            f1("bsize"),
+            f1("power"),
+        ];
         let names: Vec<&'static str> = ["c0", "c1", "c2", "c3", "c4", "c5", "c6", "c7"]
             .into_iter()
             .take(MAX_GRADIENT)
             .collect();
-        bu.extend(
-            names
-                .iter()
-                .map(|n| UniformName::new(*n, UniformType::_4f)),
-        );
+        bu.extend(names.iter().map(|n| UniformName::new(*n, UniformType::_4f)));
         let border = r.compile_custom_pixel_shader(border_src(), &bu)?;
         let shadow = r.compile_custom_pixel_shader(
             shadow_src(),

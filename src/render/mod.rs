@@ -26,9 +26,7 @@ use smithay::{
             surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
             Element, Id, Kind,
         },
-        gles::{
-            element::PixelShaderElement, GlesPixelProgram, GlesRenderer, GlesTexture, Uniform,
-        },
+        gles::{element::PixelShaderElement, GlesPixelProgram, GlesRenderer, GlesTexture, Uniform},
         utils::CommitCounter,
         Bind,
     },
@@ -190,7 +188,10 @@ fn rect_i(r: FRect) -> Rectangle<i32, Logical> {
     )
 }
 
-fn u<'a>(name: &'static str, v: impl Into<smithay::backend::renderer::gles::UniformValue>) -> Uniform<'a> {
+fn u<'a>(
+    name: &'static str,
+    v: impl Into<smithay::backend::renderer::gles::UniformValue>,
+) -> Uniform<'a> {
     Uniform::new(name, v)
 }
 
@@ -302,7 +303,13 @@ fn ensure_blur(
 ) {
     let key: Vec<_> = below
         .iter()
-        .map(|e| (e.id().clone(), e.current_commit(), e.geometry(Scale::from(1.0))))
+        .map(|e| {
+            (
+                e.id().clone(),
+                e.current_commit(),
+                e.geometry(Scale::from(1.0)),
+            )
+        })
         .collect();
     let cfg = (ctx.deco.blur.size, ctx.deco.blur.passes);
     if fw.blur_tex.is_some() && fw.blur_key == key && fw.blur_cfg == cfg {
@@ -350,7 +357,10 @@ fn compose(ctx: &Ctx, fw: &mut FxWin, rect: FRect, alpha: f32, blur: bool) -> Ve
             u("dim", pr.dim),
             u("blur_on", if blur_tex.is_some() { 1.0f32 } else { 0.0 }),
             u("thr", pr.blur.unwrap_or(-1.0)),
-            u("ignore_opacity", if b.ignore_opacity { 1.0f32 } else { 0.0 }),
+            u(
+                "ignore_opacity",
+                if b.ignore_opacity { 1.0f32 } else { 0.0 },
+            ),
             u("rect_xy", (area.loc.x as f32, area.loc.y as f32)),
             u("scr", (ctx.scr.w, ctx.scr.h)),
             u("brightness", b.brightness),
@@ -445,7 +455,12 @@ fn window_group(
     let mut fw = cell.borrow_mut();
     let fw = &mut *fw;
     let now = ctx.now;
-    let target = FRect::new(i.loc.0 as f32, i.loc.1 as f32, i.size.0 as f32, i.size.1 as f32);
+    let target = FRect::new(
+        i.loc.0 as f32,
+        i.loc.1 as f32,
+        i.size.0 as f32,
+        i.size.1 as f32,
+    );
 
     // Geometry animation.
     let cur = |fw: &FxWin| match &fw.mv {
@@ -481,7 +496,11 @@ fn window_group(
         let r_in = ctx.res("windowsIn");
         if r_in.enabled {
             let f = ctx.res("fadeIn");
-            fw.open = Some((Anim::new(0.0, 1.0, now, &r_in), Anim::new(0.0, 1.0, now, &f), r_in.style));
+            fw.open = Some((
+                Anim::new(0.0, 1.0, now, &r_in),
+                Anim::new(0.0, 1.0, now, &f),
+                r_in.style,
+            ));
         }
     }
     if let Some((a, f, style)) = fw.open.clone() {
@@ -622,7 +641,10 @@ fn window_group(
     let mut items: Vec<FxElement> = popup_elems(
         r,
         &surface,
-        (rect.x.round() as i32 - geo.loc.x, rect.y.round() as i32 - geo.loc.y),
+        (
+            rect.x.round() as i32 - geo.loc.x,
+            rect.y.round() as i32 - geo.loc.y,
+        ),
         geo.loc,
     );
     if need_tex || want_blur {
@@ -637,8 +659,15 @@ fn window_group(
         items.extend(compose(ctx, fw, rect, alpha, want_blur));
     } else {
         // Plain path: surfaces straight at the window position, borders around.
-        let org = (rect.x.round() as i32 - geo.loc.x, rect.y.round() as i32 - geo.loc.y);
-        items.extend(surface_elems(r, &surface, org).into_iter().map(FxElement::from));
+        let org = (
+            rect.x.round() as i32 - geo.loc.x,
+            rect.y.round() as i32 - geo.loc.y,
+        );
+        items.extend(
+            surface_elems(r, &surface, org)
+                .into_iter()
+                .map(FxElement::from),
+        );
         fw.tex = None;
         fw.el = None;
         let mut c = compose(ctx, fw, rect, alpha, false);
@@ -647,8 +676,18 @@ fn window_group(
     items
 }
 
-fn flatten_below<'a>(groups: &'a [Vec<FxElement>], lower_n: usize, xray: bool) -> Vec<&'a FxElement> {
-    flatten(&groups[..if xray { lower_n.min(groups.len()) } else { groups.len() }])
+fn flatten_below<'a>(
+    groups: &'a [Vec<FxElement>],
+    lower_n: usize,
+    xray: bool,
+) -> Vec<&'a FxElement> {
+    flatten(
+        &groups[..if xray {
+            lower_n.min(groups.len())
+        } else {
+            groups.len()
+        }],
+    )
 }
 
 /// A ghost: the cached texture of a window that closed or left.
@@ -744,10 +783,7 @@ pub fn output_elements(h: &mut Hypr, r: &mut GlesRenderer, output: &Output) -> V
     let deco = h.config.decoration.clone();
     let mut anim = h.config.anim.clone();
     let grabbed = h.seat.get_pointer().is_some_and(|p| p.is_grabbed());
-    let key = (
-        h.workspaces[h.active_workspace].id,
-        h.wm.special_shown,
-    );
+    let key = (h.workspaces[h.active_workspace].id, h.wm.special_shown);
     let layers: Vec<_> = {
         let map = layer_map_for_output(output);
         map.layers()
@@ -776,7 +812,10 @@ pub fn output_elements(h: &mut Hypr, r: &mut GlesRenderer, output: &Output) -> V
         if prev != key && anim.enabled {
             let special = prev.0 == key.0;
             let (dir, name) = if special {
-                (if key.1.is_some() { -1.0 } else { 1.0 }, "specialWorkspaceIn")
+                (
+                    if key.1.is_some() { -1.0 } else { 1.0 },
+                    "specialWorkspaceIn",
+                )
             } else {
                 (if key.0 > prev.0 { 1.0 } else { -1.0 }, "workspacesIn")
             };
@@ -792,7 +831,11 @@ pub fn output_elements(h: &mut Hypr, r: &mut GlesRenderer, output: &Output) -> V
                     }
                 }
                 let ws_changed = true;
-                let rout = anim.resolve(if special { "specialWorkspaceOut" } else { "workspacesOut" });
+                let rout = anim.resolve(if special {
+                    "specialWorkspaceOut"
+                } else {
+                    "workspacesOut"
+                });
                 if ws_changed && rout.enabled {
                     for w in fx.known.clone() {
                         if infos.iter().any(|i| i.w == w) {
@@ -835,7 +878,10 @@ pub fn output_elements(h: &mut Hypr, r: &mut GlesRenderer, output: &Output) -> V
         }
         for i in infos.iter().rev() {
             if let Some(s) = i.w.wl_surface() {
-                let o = (i.loc.0 - i.w.geometry().loc.x, i.loc.1 - i.w.geometry().loc.y);
+                let o = (
+                    i.loc.0 - i.w.geometry().loc.x,
+                    i.loc.1 - i.w.geometry().loc.y,
+                );
                 v.extend(surface_elems(r, &s, o).into_iter().map(FxElement::from));
             }
         }
@@ -856,10 +902,10 @@ pub fn output_elements(h: &mut Hypr, r: &mut GlesRenderer, output: &Output) -> V
     // Back to front: lower layers, windows, ghosts, upper layers.
     let mut groups: Vec<Vec<FxElement>> = Vec::new();
     let layer_group = |ctx: &mut Ctx,
-                           r: &mut GlesRenderer,
-                           groups: &mut Vec<Vec<FxElement>>,
-                           lower_n: usize,
-                           idx: usize| {
+                       r: &mut GlesRenderer,
+                       groups: &mut Vec<Vec<FxElement>>,
+                       lower_n: usize,
+                       idx: usize| {
         let (l, g, _) = &layers[idx];
         let surface = l.wl_surface();
         let org = (g.loc.x, g.loc.y);
@@ -890,13 +936,22 @@ pub fn output_elements(h: &mut Hypr, r: &mut GlesRenderer, output: &Output) -> V
                 blur: Some(thr),
                 ..Default::default()
             };
-            fw.to = FRect::new(g.loc.x as f32, g.loc.y as f32, g.size.w as f32, g.size.h as f32);
+            fw.to = FRect::new(
+                g.loc.x as f32,
+                g.loc.y as f32,
+                g.size.w as f32,
+                g.size.h as f32,
+            );
             let rect = fw.to;
             items.extend(compose(ctx, fw, rect, 1.0, true));
         } else {
             fw.tex = None;
             fw.el = None;
-            items.extend(surface_elems(r, surface, org).into_iter().map(FxElement::from));
+            items.extend(
+                surface_elems(r, surface, org)
+                    .into_iter()
+                    .map(FxElement::from),
+            );
         }
         groups.push(items);
     };

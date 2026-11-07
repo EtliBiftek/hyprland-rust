@@ -46,7 +46,10 @@ pub struct Curves(HashMap<String, Arc<Bezier>>);
 impl Default for Curves {
     fn default() -> Self {
         let mut m = HashMap::new();
-        m.insert("default".into(), Arc::new(Bezier::new(0.0, 0.75, 0.15, 1.0)));
+        m.insert(
+            "default".into(),
+            Arc::new(Bezier::new(0.0, 0.75, 0.15, 1.0)),
+        );
         m.insert("linear".into(), Arc::new(Bezier::new(0.0, 0.0, 1.0, 1.0)));
         Curves(m)
     }
@@ -59,10 +62,15 @@ impl Curves {
         if p.len() != 5 || p[0].is_empty() {
             return Err("bezier: expected `name, x0, y0, x1, y1`".into());
         }
-        let f = |s: &str| s.parse::<f32>().map_err(|_| format!("bezier: bad number `{s}`"));
+        let f = |s: &str| {
+            s.parse::<f32>()
+                .map_err(|_| format!("bezier: bad number `{s}`"))
+        };
         let (x0, y0, x1, y1) = (f(p[1])?, f(p[2])?, f(p[3])?, f(p[4])?);
-        self.0
-            .insert(p[0].to_string(), Arc::new(Bezier::new(x0.clamp(0.0, 1.0), y0, x1.clamp(0.0, 1.0), y1)));
+        self.0.insert(
+            p[0].to_string(),
+            Arc::new(Bezier::new(x0.clamp(0.0, 1.0), y0, x1.clamp(0.0, 1.0), y1)),
+        );
         Ok(())
     }
 
@@ -221,7 +229,9 @@ impl Animations {
             _ => return Err("animation: expected ONOFF (0/1)".into()),
         };
         let speed = match p.get(2) {
-            Some(s) => s.parse::<f32>().map_err(|_| format!("animation: bad speed `{s}`"))?,
+            Some(s) => s
+                .parse::<f32>()
+                .map_err(|_| format!("animation: bad speed `{s}`"))?,
             None if !on => 8.0,
             None => return Err("animation: missing speed".into()),
         };
@@ -374,7 +384,9 @@ impl Gradient {
         let mut angle = 0.0;
         for tok in value.split_whitespace() {
             if let Some(d) = tok.strip_suffix("deg") {
-                angle = d.parse::<f32>().map_err(|_| format!("invalid angle `{tok}`"))?;
+                angle = d
+                    .parse::<f32>()
+                    .map_err(|_| format!("invalid angle `{tok}`"))?;
             } else {
                 colors.push(parse(tok)?);
             }
@@ -560,7 +572,12 @@ impl FRect {
     /// Scaled about its center.
     pub fn scaled(self, sx: f32, sy: f32) -> FRect {
         let (w, h) = (self.w * sx, self.h * sy);
-        FRect::new(self.x + (self.w - w) / 2.0, self.y + (self.h - h) / 2.0, w, h)
+        FRect::new(
+            self.x + (self.w - w) / 2.0,
+            self.y + (self.h - h) / 2.0,
+            w,
+            h,
+        )
     }
 
     pub fn moved(self, dx: f32, dy: f32) -> FRect {
@@ -599,7 +616,10 @@ pub fn window_style(style: Style, q: f32, r: FRect, scr: FRect) -> (FRect, Optio
         }
         Style::Gnomed => (r.scaled(1.0, 0.05 + 0.95 * q), None),
         Style::Fade => (r, Some(q)),
-        Style::Slide(side) => (slide(side.unwrap_or_else(|| nearest_side(r, scr)), 1.0), None),
+        Style::Slide(side) => (
+            slide(side.unwrap_or_else(|| nearest_side(r, scr)), 1.0),
+            None,
+        ),
         Style::SlideVert => (slide(Side::Bottom, 1.0), None),
         Style::SlideFade(f) => (slide(nearest_side(r, scr), f), Some(q)),
         Style::SlideFadeVert(f) => (slide(Side::Bottom, f), Some(q)),
@@ -648,6 +668,9 @@ mod style_tests {
         let (dx, dy, a) = ws_style(Style::SlideFade(0.5), 0.5, -1.0, false, scr);
         assert_eq!((dx, dy, a), (-250.0, 0.0, Some(0.5)));
         assert_eq!(ws_style(Style::Default, 0.0, 1.0, true, scr).1, 800.0);
-        assert_eq!(nearest_side(FRect::new(900.0, 300.0, 90.0, 50.0), scr), Side::Right);
+        assert_eq!(
+            nearest_side(FRect::new(900.0, 300.0, 90.0, 50.0), scr),
+            Side::Right
+        );
     }
 }

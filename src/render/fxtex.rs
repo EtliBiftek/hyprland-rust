@@ -6,9 +6,7 @@
 use smithay::{
     backend::renderer::{
         element::{Element, Id, Kind, RenderElement, UnderlyingStorage},
-        gles::{
-            ffi, GlesError, GlesFrame, GlesRenderer, GlesTexProgram, GlesTexture, Uniform,
-        },
+        gles::{ffi, GlesError, GlesFrame, GlesRenderer, GlesTexProgram, GlesTexture, Uniform},
         utils::CommitCounter,
         Texture,
     },
@@ -100,8 +98,16 @@ pub fn prepare_unit(gl: &ffi::Gles2, unit: u32, id: u32) {
     unsafe {
         gl.ActiveTexture(unit);
         gl.BindTexture(ffi::TEXTURE_2D, id);
-        gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_S, ffi::CLAMP_TO_EDGE as i32);
-        gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_WRAP_T, ffi::CLAMP_TO_EDGE as i32);
+        gl.TexParameteri(
+            ffi::TEXTURE_2D,
+            ffi::TEXTURE_WRAP_S,
+            ffi::CLAMP_TO_EDGE as i32,
+        );
+        gl.TexParameteri(
+            ffi::TEXTURE_2D,
+            ffi::TEXTURE_WRAP_T,
+            ffi::CLAMP_TO_EDGE as i32,
+        );
         gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_MIN_FILTER, ffi::LINEAR as i32);
         gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_MAG_FILTER, ffi::LINEAR as i32);
         gl.ActiveTexture(ffi::TEXTURE0);
