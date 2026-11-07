@@ -10,7 +10,7 @@
 //! (`src/ipc/s1/Commands.cpp`, `src/helpers/SystemInfo.cpp`). JSON is compact
 //! here, Hyprland pretty-prints it; field names, order and types match.
 //!
-//! Placeholder fields (always a constant): clients `pinned`, `xwayland`,
+//! Placeholder fields (always a constant): clients `pinned`,
 //! `pinFullscreened`, `fullscreenHandler`, `allowedOverFullscreen`,
 //! `tags`, `swallowing`, `inhibitingIdle`, `xdgTag`, `xdgDescription`,
 //! `contentType`, `tearingHint`, `initialClass`/`initialTitle` (current
@@ -596,7 +596,11 @@ pub fn is_mapped(w: &Window) -> bool {
 
 pub fn class_title(w: &Window) -> (String, String) {
     let Some(t) = w.toplevel() else {
-        return Default::default();
+        // X11: WM_CLASS class (like Hyprland) and the window title.
+        return w
+            .x11_surface()
+            .map(|x| (x.class(), x.title()))
+            .unwrap_or_default();
     };
     with_states(t.wl_surface(), |s| {
         let d = s
@@ -693,9 +697,11 @@ impl Hypr {
     /// Called after every commit of a toplevel: emits `openwindow` the first
     /// time the window has a buffer, when app_id and title are known.
     pub fn check_window_mapped(&mut self, w: &Window) {
-        let Some(t) = w.toplevel() else { return };
+        let Some(surface) = crate::xwayland::wl_surface_of(w) else {
+            return;
+        };
         let has_buffer =
-            with_renderer_surface_state(t.wl_surface(), |s| s.buffer().is_some()).unwrap_or(false);
+            with_renderer_surface_state(&surface, |s| s.buffer().is_some()).unwrap_or(false);
         if !has_buffer || mapped_flag(w).0.swap(true, Ordering::Relaxed) {
             return;
         }
@@ -719,9 +725,13 @@ impl Hypr {
 
     /// xdg_toplevel title change: `windowtitle` and `windowtitlev2`.
     pub fn on_title_changed(&mut self, surface: &WlSurface) {
-        let Some((_, w)) = self.window_for_surface(surface) else {
-            return;
-        };
+        if let Some((_, w)) = self.window_for_surface(surface) {
+            self.on_title_changed_win(&w);
+        }
+    }
+
+    pub fn on_title_changed_win(&mut self, w: &Window) {
+        let w = w.clone();
         if !is_mapped(&w) {
             return; // `openwindow` will carry the title
         }
@@ -955,11 +965,7 @@ fn snapshot(h: &Hypr) -> Snapshot {
                 Some(l) if shown => ([l.x, l.y], [rep.geometry().size.w, rep.geometry().size.h]),
                 _ => ([0, 0], [0, 0]),
             };
-            let pid = w
-                .toplevel()
-                .and_then(|t| t.wl_surface().client())
-                .and_then(|c| c.get_credentials(&h.display_handle).ok())
-                .map_or(-1, |c| c.pid);
+            let pid = h.window_pid(w);
             let fs = if ws.fullscreen.as_ref() == Some(w) {
                 2
             } else {
@@ -988,7 +994,7 @@ fn snapshot(h: &Hypr) -> Snapshot {
                 class,
                 title,
                 pid,
-                xwayland: false,
+                xwayland: w.is_x11(),
                 pinned: h.wm.pinned.contains(w),
                 pin_fullscreened: false,
                 fullscreen: fs,

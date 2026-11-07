@@ -38,6 +38,15 @@ Turkish; reply in Turkish. Code, docs, commits and this file stay in English
   (`tests/dots-conf.sh`, `tests/dots-lua.sh`).
 - Parity table: `docs/PARITY.md` (per config option, keyword, dispatcher,
   hyprctl command, IPC event, Wayland protocol).
+- XWayland (`xwayland.rs`, Smithay `X11Wm`): started at launch unless
+  `xwayland:enabled = false`, `DISPLAY` exported before `exec-once`. Managed X11
+  windows live in workspaces (`Window::new_x11_window`), float by
+  `should_float` (dialog/utility/splash/transient/fixed-size), class is
+  WM_CLASS class, `clients` has `xwayland: true`; override-redirect windows
+  are mapped in `Space` only (`XState::or_windows`); clipboard and primary
+  selection are bridged; X11 positions are synced from the `Space` once per
+  loop iteration (`x11_sync`). Client move/resize requests are ignored
+  (`bindm` works), no lazy start, no scaling.
 - Layouts: dwindle (`layout.rs`) and master (`master.rs`), chosen per
   workspace (`general:layout`, workspace rule `layout:`), wrapped in
   `tiling.rs`; `layoutmsg` for both. Groups (tabbed) with a solid-color
@@ -83,7 +92,7 @@ Turkish; reply in Turkish. Code, docs, commits and this file stay in English
   locked, setcursor (validated only), `[[BATCH]]`; hyprpaper/hyprsunset are
   forwarded to their own sockets. `src/bin/hyprctl.rs` is a std-only client
   (flags anywhere on the command line, like Hyprland's).
-- Tests: unit tests for all pure modules plus fourteen shell tests in
+- Tests: unit tests for all pure modules plus fifteen shell tests in
   `tests/` run by CI: keybinds (Xvfb + xdotool), headless smoke, IPC,
   IPC as used by dotfile scripts, layer-shell (waybar), window rules, master
   layout + groups, protocols (wl-clipboard), dispatchers, Lua config,
@@ -134,7 +143,8 @@ IPC known gaps
 - [ ] `seterror` / `notify` are not drawn on screen; `rollinglog` is empty.
 
 Not started
-- [ ] XWayland.
+- [ ] XWayland extras: lazy start, HiDPI scaling (`force_zero_scaling`), X11
+      client-initiated move/resize, `WM_NORMAL_HINTS` limits while resizing.
 - [ ] Remaining dispatchers (`movecurrentworkspacetomonitor`, `dpms`,
       `alterzorder`, `sendshortcut`, `setprop`, ...).
 - [ ] Bind flags `l`, `o`, `t` behave like plain binds (no lock screen,
@@ -179,6 +189,7 @@ Open decisions for the owner
 | `src/selectors.rs` | workspace/window selector parsing and resolution (pure) |
 | `src/rules.rs` | windowrule/layerrule parsing and matching (pure) |
 | `src/wm/window_rules.rs` | applying window rules to windows (static + dynamic) |
+| `src/xwayland.rs` | Xwayland start, `XwmHandler` (map, configure, selections), window-type heuristic (pure, unit-tested) |
 | `src/lua_config.rs` | hyprland.lua: `hl.*` API, load-time translation to hyprlang, live `Runtime` (callbacks, events, timers, queries) behind the `Host` trait (pure, unit-tested) |
 | `src/lua_host.rs` | `Host` for `Hypr`: runs Lua binds, `hl.on` events, timers, `hyprctl eval` |
 | `src/reload.rs` | config reload, autoreload, `keyword` |
@@ -214,10 +225,12 @@ Open decisions for the owner
 | `tests/ipc-dots.sh` | hyprctl flags, getprop, eval, submap, events used by dotfile scripts |
 | `tests/dots-conf.sh` | Hyprland v0.54.3 example + JaKooLit load with 0 errors |
 | `tests/dots-lua.sh` | end-4, ML4W, HyDE (pinned) load and boot with 0 errors |
+| `tests/xwayland.sh` | Xwayland: xterm/xeyes tiled, dialog floats, killactive, fullscreen, override-redirect, clipboard bridge |
+| `tests/x11-win.py` | helper: one X11 window of a given kind (python3-xlib) |
 | `tests/screencopy.sh` | grim against winit in Xvfb |
 | `tests/foreign-toplevel.sh` | wlrctl toplevel list/focus/close, wlr-randr |
 | `docs/ROADMAP.md` | Turkish roadmap, phases 0-9 |
-| `.github/workflows/ci.yml` | fmt, build, test, clippy, check-config, the 14 shell tests |
+| `.github/workflows/ci.yml` | fmt, build, test, clippy, check-config, the 15 shell tests |
 
 `state.rs`, `winit.rs`, `input.rs`, `grabs/`, `handlers/` started from
 Smithay's `smallvil` example (MIT, see `docs/SMITHAY-LICENSE`); `tty.rs` is

@@ -7,6 +7,8 @@ pub mod protocols;
 pub mod screencopy;
 mod xdg_shell;
 
+use std::os::unix::io::OwnedFd;
+
 use crate::Hypr;
 
 //
@@ -21,7 +23,7 @@ use smithay::wayland::selection::data_device::{
     set_data_device_focus, ClientDndGrabHandler, DataDeviceHandler, DataDeviceState,
     ServerDndGrabHandler,
 };
-use smithay::wayland::selection::SelectionHandler;
+use smithay::wayland::selection::{SelectionHandler, SelectionSource, SelectionTarget};
 use smithay::wayland::xdg_activation::{
     XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
 };
@@ -60,6 +62,26 @@ delegate_seat!(Hypr);
 
 impl SelectionHandler for Hypr {
     type SelectionUserData = ();
+
+    fn new_selection(
+        &mut self,
+        ty: SelectionTarget,
+        source: Option<SelectionSource>,
+        _seat: Seat<Self>,
+    ) {
+        self.x11_new_selection(ty, source);
+    }
+
+    fn send_selection(
+        &mut self,
+        ty: SelectionTarget,
+        mime_type: String,
+        fd: OwnedFd,
+        _seat: Seat<Self>,
+        _user_data: &(),
+    ) {
+        self.x11_send_selection(ty, mime_type, fd);
+    }
 }
 
 impl DataDeviceHandler for Hypr {

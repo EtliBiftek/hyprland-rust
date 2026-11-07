@@ -34,4 +34,5 @@ features = [
     "renderer_gl",
     "wayland_frontend",
     "desktop",
+    "xwayland",
 ]

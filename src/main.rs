@@ -27,6 +27,7 @@ mod winit;
 mod wm;
 mod wm_groups;
 mod workspace;
+mod xwayland;
 
 use std::path::PathBuf;
 
@@ -162,6 +163,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &config_errors,
     );
 
+    data.state.start_xwayland(&event_loop.handle());
+
     for cmd in data
         .state
         .config
@@ -175,7 +178,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     data.state.lua_loaded();
     data.state.lua_fire("hyprland.start", &[]);
 
-    event_loop.run(None, &mut data, |data| data.state.lua_drain())?;
+    event_loop.run(None, &mut data, |data| {
+        data.state.lua_drain();
+        data.state.x11_sync();
+    })?;
 
     Ok(())
 }

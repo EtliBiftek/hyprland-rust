@@ -90,6 +90,8 @@ pub struct Hypr {
     /// wlr-foreign-toplevel-management and ext-foreign-toplevel-list.
     pub toplevels: crate::handlers::foreign_toplevel::ToplevelState,
     pub global_shortcuts: crate::handlers::global_shortcuts::GlobalShortcutsState,
+    /// Xwayland, the X11 window manager and override-redirect windows.
+    pub x11: crate::xwayland::XState,
     /// Last cursor image requested by a client (`cursor-shape` or a surface).
     pub cursor_status: CursorImageStatus,
     /// Session lock held: only `lock_surfaces` are drawn and get input.
@@ -218,6 +220,7 @@ impl Hypr {
             screencopy: Default::default(),
             toplevels: crate::handlers::foreign_toplevel::ToplevelState::new(&dh),
             global_shortcuts: Default::default(),
+            x11: crate::xwayland::XState::new(&dh),
             cursor_status: CursorImageStatus::default_named(),
             session_locked: false,
             lock_surfaces: Vec::new(),

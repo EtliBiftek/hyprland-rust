@@ -15,7 +15,8 @@ jobs:
           sudo apt-get install -y libwayland-dev libxkbcommon-dev libudev-dev \
             libinput-dev libseat-dev libgbm-dev libegl-dev libdrm-dev libgles-dev \
             pkg-config xvfb xdotool weston waybar dbus gdb libxkbcommon-x11-0 libgl1-mesa-dri \
-            wl-clipboard grim wlrctl wlr-randr
+            wl-clipboard grim wlrctl wlr-randr xwayland x11-apps xterm xclip \
+            xfonts-base python3-xlib
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
@@ -62,3 +63,6 @@ jobs:
       - name: Foreign toplevel and output management test (headless + wlrctl)
         timeout-minutes: 3
         run: sh tests/foreign-toplevel.sh
+      - name: XWayland test (headless + Xwayland + X11 clients)
+        timeout-minutes: 4
+        run: sh tests/xwayland.sh

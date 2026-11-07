@@ -251,7 +251,7 @@ impl Hypr {
         let Some(window) = self
             .space
             .elements()
-            .find(|w| w.toplevel().unwrap().wl_surface() == &root)
+            .find(|w| w.toplevel().is_some_and(|t| t.wl_surface() == &root))
         else {
             return;
         };

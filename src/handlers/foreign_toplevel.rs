@@ -179,6 +179,8 @@ impl Dispatch<ZwlrForeignToplevelHandleV1, String> for Hypr {
             R::Close => {
                 if let Some(t) = window.toplevel() {
                     t.send_close();
+                } else if let Some(x) = window.x11_surface() {
+                    let _ = x.close();
                 }
             }
             R::SetMaximized => state.set_wm_slot(&window, false, true),

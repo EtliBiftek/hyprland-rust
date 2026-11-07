@@ -55,12 +55,7 @@ impl Hypr {
         self.workspaces[i].replace_in_layout(old, new);
         self.space.unmap_elem(old);
         if let (true, Some(g)) = (floating, geo) {
-            if let Some(t) = new.toplevel() {
-                t.with_pending_state(|s| s.size = Some(g.size));
-                if t.is_initial_configure_sent() {
-                    t.send_pending_configure();
-                }
-            }
+            crate::xwayland::request_size(new, g.loc, g.size);
             self.space.map_element(new.clone(), g.loc, false);
         }
     }
