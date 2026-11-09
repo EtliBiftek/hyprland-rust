@@ -144,8 +144,6 @@ echo "ok: cursor zoom"
 
 # 1c. output scale: the whole scene fills the output ------------------------
 "$CTL" keyword monitor "winit, preferred, 0x0, 2" >/dev/null
-sleep 0.5
-"$CTL" -j clients | head -c 400; "$CTL" monitors | head -3
 sleep 1
 shot "$T/scaled.ppm"
 "$CTL" keyword monitor "winit, preferred, 0x0, 1" >/dev/null

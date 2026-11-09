@@ -127,6 +127,9 @@ impl Hypr {
                 if key == "exec" {
                     spawn(value);
                 }
+                if key == "monitor" {
+                    self.apply_monitor_rules();
+                }
                 self.relayout();
                 self.refresh_all_rules();
                 if key.starts_with("input") || key.starts_with("device") {
