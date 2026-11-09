@@ -1123,8 +1123,6 @@ fn translate(path: &str, a: &A) -> Result<String, String> {
             };
             on_window(a, format!("fullscreen, {mode}"))
         }
-        // shortcut: no separate client fullscreen state; internal 2/1 map to
-        // fullscreen/maximize and a client-only "spoof" (internal 0) is a no-op.
         "window.fullscreen_state" => on_window(
             a,
             format!(

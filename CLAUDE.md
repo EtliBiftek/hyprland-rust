@@ -153,7 +153,7 @@ one commit and one test per item, update `docs/PARITY.md`.
 - #11 partial: input wakes dpms; the CRTC stays active on tty.
 - #15 partial: `addreserved` done (in CI); fractional scale, output-management apply remain.
 - Next: #41 rest, #43, then the
-  partial ones (#3, #11, #15, #23, #28).
+  partial ones (#3, #11, #15, #23). #28 done in CI.
 - Quota rule (owner, 2026-11-09): use the quota to the end, no percent stop.
   The scheduled task `osmium-gaps-resume` (05:05, 11:05, 23:05)
   continues the list; keep this section current after every item.

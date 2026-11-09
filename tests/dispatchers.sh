@@ -181,6 +181,12 @@ dsp workspace 2
 timeout 5 "$HYPRCTL" -j monitors | python3 -c 'import json,sys; assert json.load(sys.stdin)[0]["specialWorkspace"].get("id", 0) == 0' || fail "special workspace stayed open"
 dsp workspace 1
 
+# 9c. fakefullscreen: only the client's state changes.
+dsp fakefullscreen
+clients | python3 -c 'import json,sys; w = json.load(sys.stdin)[0]; assert (w["fullscreen"], w["fullscreenClient"]) == (0, 2), w' || fail "fakefullscreen on"
+dsp fakefullscreen
+clients | python3 -c 'import json,sys; w = json.load(sys.stdin)[0]; assert w["fullscreenClient"] == 0, w' || fail "fakefullscreen off"
+
 # 10. Window argument: act on the unfocused window, the focus stays.
 timeout 5 "$HYPRCTL" dispatch exec weston-simple-shm >/dev/null || fail "dispatch exec"
 wait_clients 2

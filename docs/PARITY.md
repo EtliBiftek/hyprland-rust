@@ -506,7 +506,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `gesture =`, `gesturep =` | parsed | Validated and stored in `Config::gestures`. shortcut: touchpad gestures are not executed, needs libinput swipe/pinch events in tty/input. |
 | dispatcher `pseudo` | tested | Hyprland's name for `togglepseudo`; both accepted. |
 | `category { }` blocks and `cat:key` shorthand | tested | Unit test `categories_and_shorthand`. |
-| `monitor =` | parsed | Ignored (`is_known_unimplemented` prefix `monitor`). No monitor rules. v0.57.1 equivalent: `hl.monitor`. |
+| `monitor =` | tested | Modes, positions, scale, transform, disable, `desc:`, `addreserved` (`tests/multimon.sh`). Scale is integer on the render side. |
 | `env =` | tested | Exported before `exec(-once)` and on reload, after XDG_CURRENT_DESKTOP/XDG_SESSION_TYPE/XDG_SESSION_DESKTOP; `tests/session-env.sh`. v0.57.1 equivalent: `hl.env`. |
 | `device { }` blocks | tested | `Input` device overrides in `config.rs`, unit test `input_config`. v0.57.1 equivalent: `hl.device`. |
 | `animations { }`, `bezier =`, `animation =` | parsed | Ignored (prefixes `animations`, `bezier`). v0.57.1 equivalent: `hl.animation`, `hl.curve`. |
@@ -587,7 +587,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `setfloating` | partial | v0.57.1: `hl.dsp.window.float`. |
 | `settiled` | partial | v0.57.1: `hl.dsp.window.float`. |
 | `fullscreen` | partial | Modes 0, 1 (maximize), 2 only. v0.57.1: `hl.dsp.window.fullscreen`. |
-| `fakefullscreen` | tested | Pre-0.41 name, same as `fullscreenstate -1 2 toggle`. |
+| `fakefullscreen` | tested | Pre-0.41 name, same as `fullscreenstate -1 2 toggle`; `clients` reports `fullscreenClient` (`tests/dispatchers.sh`). |
 | `movefocus` | partial | Direction-based focus. v0.57.1: `hl.dsp.focus`. |
 | `cyclenext` | partial | v0.57.1: `hl.dsp.window.cycle_next`. |
 | `togglesplit` | partial | dwindle split toggle. No v0.57.1 Lua entry. |

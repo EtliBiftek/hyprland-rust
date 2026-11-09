@@ -1021,7 +1021,7 @@ fn snapshot(h: &Hypr) -> Snapshot {
                 pinned: h.wm.pinned.contains(w),
                 pin_fullscreened: false,
                 fullscreen: fs,
-                fullscreen_client: fs,
+                fullscreen_client: if h.wm.client_fs.contains(w) { 2 } else { fs },
                 fullscreen_handler: "none".into(),
                 allowed_over_fullscreen: false,
                 grouped,
