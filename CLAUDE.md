@@ -144,11 +144,11 @@ Branch `osmium` (unmerged). Source: `docs/hyprland-rust-gaps.md` in
 EtliBiftek/osmium-os (written against d9010fb, so many rows are stale). Rules:
 one commit and one test per item, update `docs/PARITY.md`.
 
-- Done on the branch (CI green at 1c18787): Phase 0, #7, #8, #9, #14, #17, #18, #19, #20, #21 (partial), #24, #26, #27, #30. #1, #2, #4-6, #10, #12, #13,
+- Done on the branch (CI green at d5ed260): Phase 0, #7, #8, #9, #14, #17, #18, #19, #20, #21 (partial), #24, #26, #27, #29, #30. #1, #2, #4-6, #10, #12, #13,
   #16, #31 and #32-38 were done in main (some partially, see the lists below).
 - #21 partial: `immediate`, `no_focus`, `stay_focused`, `min_size`, `max_size` are still stored only.
 - #22 needs no change: Hyprland also only reports `minimized`.
-- Next (#29 in CI): #39-43, then the
+- Next: #39-43, then the
   partial ones (#3, #11, #15, #23, #28).
 - Quota rule (owner, 2026-11-09): use the quota to the end, no percent stop.
   The scheduled task `osmium-gaps-resume` (05:05, 11:05, 17:05, 23:05)
