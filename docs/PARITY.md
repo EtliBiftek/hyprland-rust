@@ -81,7 +81,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `cursor:sync_gsettings_theme` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
 | `cursor:use_cpu_buffer` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
 | `cursor:warp_back_after_non_mouse_input` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
-| `cursor:warp_on_change_workspace` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
+| `cursor:warp_on_change_workspace` | partial | Int. Warps to the focused window after a workspace switch; no test. |
 | `cursor:warp_on_monitor_change` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
 | `cursor:warp_on_toggle_special` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
 | `cursor:zoom_detached_camera` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
@@ -394,7 +394,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `misc:disable_xdg_env_checks` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:enable_anr_dialog` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:enable_swallow` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
-| `misc:exit_window_retains_fullscreen` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
+| `misc:exit_window_retains_fullscreen` | partial | Int. The next focused window of the workspace becomes fullscreen; no test. |
 | `misc:float_force_onscreen` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:focus_on_activate` | tested | Bool, also the `focus_on_activate` rule (`tests/probe.sh`). |
 | `misc:font_family` | parsed | String. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |

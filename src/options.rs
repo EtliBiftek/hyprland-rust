@@ -274,6 +274,12 @@ set: false"
     }
 
     #[test]
+    fn option_table_is_sorted() {
+        // `raw_option` binary-searches it.
+        assert!(OPTION_DEFAULTS.windows(2).all(|w| w[0].0 < w[1].0));
+    }
+
+    #[test]
     fn getoption_without_a_config_field() {
         let (cfg, errors) = Config::parse_str(
             "input:force_no_accel = true\ndebug:overlay = 1\ncursor:zoom_factor = 1.5",

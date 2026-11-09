@@ -499,7 +499,9 @@ fn render(data: &mut CalloopData, crtc: crtc::Handle) {
     // No vblank will come without a queued frame: poll again in ~one frame.
     if !out.frame_pending && !out.timer_armed {
         out.timer_armed = true;
-        let timer = Timer::from_duration(Duration::from_millis(16));
+        // Screen off: nothing to draw, only watch for the wake-up.
+        let ms = if out.dpms_off { 250 } else { 16 };
+        let timer = Timer::from_duration(Duration::from_millis(ms));
         let _ = tty.handle.insert_source(timer, move |_, _, data| {
             if let Some(o) = data
                 .tty

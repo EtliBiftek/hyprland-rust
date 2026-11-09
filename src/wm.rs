@@ -445,6 +445,18 @@ impl Hypr {
         self.relayout();
         let focus = self.workspaces[idx].last_focused.clone();
         self.focus_window(focus);
+        // `cursor:warp_on_change_workspace`: the pointer follows the focus.
+        if crate::options::flag(&self.config, "cursor:warp_on_change_workspace")
+            && !self.config.cursor_no_warps
+        {
+            let geo = self
+                .focused_window()
+                .and_then(|w| self.space.element_geometry(&w));
+            if let Some(g) = geo {
+                let c = (g.loc.x + g.size.w / 2, g.loc.y + g.size.h / 2);
+                self.warp_pointer((c.0 as f64, c.1 as f64).into());
+            }
+        }
         self.gc_workspaces();
     }
 
@@ -532,9 +544,18 @@ impl Hypr {
                 crate::ipc::window_addr(&window).trim_start_matches("0x"),
             );
         }
+        let was_fullscreen = self.workspaces[idx].fullscreen.as_ref() == Some(&window);
         self.workspaces[idx].remove(&window);
         self.wm.pinned.retain(|w| w != &window);
+        self.wm.client_fs.retain(|w| w != &window);
         self.space.unmap_elem(&window);
+        // `misc:exit_window_retains_fullscreen`: the next window takes it over.
+        if was_fullscreen
+            && crate::options::flag(&self.config, "misc:exit_window_retains_fullscreen")
+        {
+            let ws = &mut self.workspaces[idx];
+            ws.fullscreen = ws.last_focused.clone().filter(|w| ws.contains(w));
+        }
         if self.visible_ws().contains(&idx) {
             // An emptied special workspace closes itself.
             if self.workspaces[idx].is_special()
