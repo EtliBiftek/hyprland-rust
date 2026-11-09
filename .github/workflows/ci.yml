@@ -48,6 +48,9 @@ jobs:
       - name: Dispatchers test (headless + hyprctl)
         timeout-minutes: 3
         run: sh tests/dispatchers.sh
+      - name: xdg_popup grab test (Xvfb + weston-terminal)
+        timeout-minutes: 3
+        run: sh tests/popup-grab.sh
       - name: Lua config test (headless + hyprland.lua)
         timeout-minutes: 3
         run: sh tests/lua-config.sh

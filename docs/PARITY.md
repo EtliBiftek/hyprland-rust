@@ -725,6 +725,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `ext_workspace_manager_v1` | partial | `handlers/ext_workspace.rs`: one group, normal workspaces, activate only. Global listed by `tests/globals.sh`. |
 | `hyprland_ctm_control_manager_v1` | partial | `handlers/ctm_control.rs`: validated and stored per output, not applied to the screen. `tests/globals.sh`. |
 | `hyprland_focus_grab_manager_v1` | tested | `handlers/focus_grab.rs`: `cleared` on an outside click, keyboard focus on commit. `tests/probe.sh`. Pointer focus not restricted. |
+| `xdg_popup.grab` | tested | Keyboard and pointer popup grabs; an outside click dismisses (`tests/popup-grab.sh`). |
 | `hyprland_global_shortcuts_manager_v1` | partial | `handlers/global_shortcuts.rs` + `global` dispatcher; XML is now the real hyprland-protocols v0.8.0 one (duplicate id posts `already_taken`). No test client. |
 | `hyprland_input_capture_manager_v1` | none | Needs libei (EIS fd); not implemented. |
 | `hyprland_lock_notifier_v1` | partial | `handlers/lock_notify.rs`: locked/unlocked from ext-session-lock. Global in `tests/globals.sh`. |
