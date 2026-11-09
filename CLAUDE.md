@@ -146,7 +146,7 @@ one commit and one test per item, update `docs/PARITY.md`.
 
 - Done on the branch: Phase 0, #9, #19, #24, #26, #30. #1, #2, #4-6, #10, #12, #13,
   #16, #31 and #32-38 were done in main (some partially, see the lists below).
-- Next (#7, #8, #14, #17 in CI): #18, #20, #21, #22, #27, #29, #39-43, then the
+- Next (#7, #8, #14, #17, #18 in CI): #20, #21, #22, #27, #29, #39-43, then the
   partial ones (#3, #11, #15, #23, #28).
 - Quota rule (owner, 2026-11-09): use the quota to the end, no percent stop.
   The scheduled task `osmium-gaps-resume` (05:05, 11:05, 17:05, 23:05)
@@ -375,7 +375,7 @@ Use a test config with `exec-once = weston-terminal` lines to open windows.
   `workspace N silent` rule once left such a window unmapped forever).
 - Never `unwrap()` a `Space` lookup in a client request handler: a client can
   name a surface that is on a hidden workspace (move/resize once crashed).
-- `hyprctl dispatch 'hl...'` is sandboxed Lua (`lua_config::eval_dispatch`:
+- `hyprctl dispatch 'hl.dsp...'` (other `hl.` code goes to `eval`) is sandboxed Lua (`lua_config::eval_dispatch`:
   no os/io/package/file loading, instruction + memory limits); config scripts
   run with the full stdlib but also under limits (each callback gets a fresh
   instruction budget).

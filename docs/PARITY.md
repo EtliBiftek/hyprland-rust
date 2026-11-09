@@ -659,7 +659,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `setcursor` | parsed | Validates the size, replies `ok`; the cursor theme is not applied. |
 | `getoption` | tested | `tests/ipc-xvfb.sh`. Only the options in `options.rs` are answered. |
 | `decorations` | parsed | Stub: replies `none`. |
-| `eval` | partial | `hl.dsp.*` runs as a dispatcher, other code runs like a config script and its settings are applied as keywords. `tests/ipc-dots.sh`. |
+| `eval` | partial | Also reached by `dispatch hl.<non-dsp>`. `hl.dsp.*` runs as a dispatcher, other code runs like a config script and its settings are applied as keywords. `tests/ipc-dots.sh`. |
 | `repl` | none | No Lua runtime. |
 | `keyword` (repo only) | tested | Not in v0.57.1: `hyprctl keyword` was removed. The repo keeps it for hyprlang. |
 | `layouts` (repo only) | partial | Not in the v0.57.1 registration list. Returns dwindle and master. |

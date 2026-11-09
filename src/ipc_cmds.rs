@@ -340,7 +340,7 @@ configProvider: {}
 
 /// `eval <lua>`: `hl.dsp.*` expressions run as dispatchers, anything else
 /// runs like a config script and its settings are applied as keywords.
-fn eval(h: &mut Hypr, code: &str) -> String {
+pub(crate) fn eval(h: &mut Hypr, code: &str) -> String {
     use crate::{config::Dispatcher, lua_config};
     if code.is_empty() {
         return "not enough args".into();

@@ -921,6 +921,10 @@ fn handle_one(h: &mut Hypr, req: &Request) -> String {
     }
     let reply = if let Some(args) = req.cmd.strip_prefix("dispatch") {
         let args = args.trim();
+        // Quickshell sends `dispatch hl.config({...})`: same as `hyprctl eval`.
+        if args.starts_with("hl.") && !args.starts_with("hl.dsp.") {
+            return crate::ipc_cmds::eval(h, args);
+        }
         // Hyprland >= 0.57 takes Lua here: `hyprctl dispatch 'hl.dsp.exit()'`.
         let lua;
         let (name, arg) = if args.starts_with("hl.") {

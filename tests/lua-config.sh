@@ -111,4 +111,8 @@ ctl configerrors | grep -q "hl.timer: expected (function" || fail "bad hl.timer 
 ctl systeminfo | grep -q "configProvider: lua" || fail "systeminfo configProvider"
 echo "ok: configerrors reports bad hl.* calls"
 
+timeout 5 "$HYPRCTL" dispatch 'hl.config({ cursor = { no_warps = true } })' | grep -qx ok || fail "dispatch hl.config"
+[ "$(ctl -j getoption cursor:no_warps | json 'd["bool"]')" = True ] || fail "dispatch hl.config did not apply"
+echo "ok: dispatch hl.config"
+
 kill -0 "$COMP" 2>/dev/null || fail "compositor died"
