@@ -901,6 +901,20 @@ impl MonitorRule {
 }
 
 impl Config {
+    /// `addreserved` of an output (top, bottom, left, right): a name or
+    /// `desc:` match, else the entry with an empty name.
+    pub fn reserved_for(&self, name: &str, desc: &str) -> [i32; 4] {
+        let hit = |key: &str| match key.strip_prefix("desc:") {
+            Some(d) => desc.starts_with(d.trim()),
+            None => key == name,
+        };
+        self.reserved
+            .iter()
+            .find(|(k, _)| !k.is_empty() && hit(k))
+            .or_else(|| self.reserved.iter().find(|(k, _)| k.is_empty()))
+            .map_or([0; 4], |(_, a)| *a)
+    }
+
     /// The `monitor =` rule for an output: a name or `desc:` match, else the
     /// fallback rule (empty name), else the defaults.
     pub fn monitor_rule(&self, name: &str, desc: &str) -> MonitorRule {
@@ -925,8 +939,7 @@ pub fn parse_monitor_rule(value: &str) -> Result<MonitorRule, String> {
             rule.disabled = true;
             return Ok(rule);
         }
-        // Reserved areas only: keep the defaults.
-        Some("addreserved") | None => return Ok(rule),
+        None => return Ok(rule),
         _ => {}
     }
     rule.mode = match parts[1] {
@@ -1536,6 +1549,8 @@ pub struct Config {
     pub workspace_rules: Vec<WorkspaceRule>,
     /// `monitor =` rules.
     pub monitors: Vec<MonitorRule>,
+    /// `monitor = NAME, addreserved, TOP, BOTTOM, LEFT, RIGHT`.
+    pub reserved: Vec<(String, [i32; 4])>,
     /// `env = KEY,VALUE`, in config order (exported before `exec(-once)`).
     pub env: Vec<(String, String)>,
     pub input: Input,
@@ -2095,6 +2110,17 @@ impl Parser {
                 let (k, v) = value.split_once(',').ok_or("env: expected `KEY,VALUE`")?;
                 cfg.env.push((k.trim().to_string(), v.trim().to_string()));
             }
+            "monitor" if value.split(',').nth(1).map(str::trim) == Some("addreserved") => {
+                let parts: Vec<&str> = value.split(',').map(str::trim).collect();
+                let mut area = [0; 4];
+                for (slot, text) in area.iter_mut().zip(parts.iter().skip(2)) {
+                    *slot = text
+                        .parse()
+                        .map_err(|_| format!("addreserved: invalid number `{text}`"))?;
+                }
+                cfg.reserved.retain(|(name, _)| name != parts[0]);
+                cfg.reserved.push((parts[0].to_string(), area));
+            }
             "monitor" => {
                 let rule = parse_monitor_rule(value)?;
                 // A later rule for the same monitor replaces the earlier one.
@@ -2578,6 +2604,19 @@ mod tests {
         assert_eq!(o.accel_profile, Some(AccelProfile::Flat));
         assert_eq!(o.clickfinger_behavior, Some(true));
         assert_eq!(o.tap_and_drag, Some(false));
+    }
+
+    #[test]
+    fn monitor_addreserved() {
+        let (cfg, errors) =
+            Config::parse_str("monitor = ,preferred,auto,1\nmonitor = ,addreserved,40,0,0,10");
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(cfg.reserved_for("DP-1", ""), [40, 0, 0, 10]);
+        // The mode rule of the same monitor is kept.
+        assert_eq!(cfg.monitors.len(), 1);
+        let (cfg, errors) = Config::parse_str("monitor = DP-1,addreserved,x,0,0,0");
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert_eq!(cfg.reserved_for("DP-1", ""), [0; 4]);
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 use smithay::backend::input::KeyState;
 use smithay::{
-    desktop::{layer_map_for_output, Window},
+    desktop::Window,
     input::pointer::{Focus, GrabStartData as PointerGrabStartData, MotionEvent},
     reexports::{
         calloop::{LoopHandle, RegistrationToken},
@@ -161,10 +161,7 @@ impl Hypr {
 
     /// The focused output minus the exclusive zones of layer surfaces.
     pub fn usable_geometry(&self) -> Option<Rectangle<i32, Logical>> {
-        let output = self.focused_output()?;
-        let geo = self.space.output_geometry(&output)?;
-        let zone = layer_map_for_output(&output).non_exclusive_zone();
-        Some(Rectangle::new(geo.loc + zone.loc, zone.size))
+        self.usable_of(&self.focused_output()?)
     }
 
     /// The area tiled windows of the focused monitor may use: the usable area

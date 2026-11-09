@@ -1083,11 +1083,12 @@ fn snapshot(h: &Hypr) -> Snapshot {
                 // [left, top, right, bottom] taken by layer-shell exclusive zones.
                 let reserved = {
                     let z = layer_map_for_output(o).non_exclusive_zone();
+                    let [t, b, l, r] = h.config.reserved_for(&o.name(), &o.description());
                     [
-                        z.loc.x,
-                        z.loc.y,
-                        w - z.loc.x - z.size.w,
-                        hh - z.loc.y - z.size.h,
+                        z.loc.x + l,
+                        z.loc.y + t,
+                        w - z.loc.x - z.size.w + r,
+                        hh - z.loc.y - z.size.h + b,
                     ]
                 };
                 Some(MonitorInfo {

@@ -13,6 +13,7 @@ chmod 700 "$T"
 cat > "$T/test.conf" <<'CONF'
 monitor = HEADLESS-2, 1280x720, auto, 1
 monitor = TEST, 640x480, auto, 1
+monitor = HEADLESS-2, addreserved, 40, 0, 10, 0
 workspace = 5, monitor:HEADLESS-2, default:true
 general {
     gaps_in = 0
@@ -92,6 +93,7 @@ sleep 0.3
 [ "$(mon HEADLESS-1 '["x"]')" = 0 ] || fail "HEADLESS-1 not at x=0"
 [ "$(mon HEADLESS-2 '["x"]')" = 1000 ] || fail "HEADLESS-2 not auto-placed right of HEADLESS-1"
 [ "$(mon HEADLESS-2 '["width"]')" = 1280 ] || fail "monitor rule mode 1280x720 not applied"
+[ "$(mon HEADLESS-2 '["reserved"]')" = "[10, 40, 0, 0]" ] || fail "addreserved: $(mon HEADLESS-2 '["reserved"]')"
 [ "$(mon HEADLESS-2 '["activeWorkspace"]["id"]')" = 5 ] || fail "default:true workspace 5 not on HEADLESS-2"
 [ "$(mon HEADLESS-1 '["activeWorkspace"]["id"]')" = 1 ] || fail "HEADLESS-1 does not show workspace 1"
 [ "$(mon HEADLESS-1 '["focused"]')" = True ] || fail "HEADLESS-1 not focused at start"

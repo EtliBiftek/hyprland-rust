@@ -111,10 +111,18 @@ impl Hypr {
 
     /// The output minus the exclusive zones of layer surfaces (bars, docks).
     pub fn usable_geometry_of(&self, name: &str) -> Option<Rectangle<i32, Logical>> {
-        let o = self.output_named(name)?;
-        let geo = self.space.output_geometry(&o)?;
-        let zone = smithay::desktop::layer_map_for_output(&o).non_exclusive_zone();
-        Some(Rectangle::new(geo.loc + zone.loc, zone.size))
+        self.usable_of(&self.output_named(name)?)
+    }
+
+    /// `o` minus layer-shell exclusive zones and `monitor = ..., addreserved`.
+    pub fn usable_of(&self, o: &Output) -> Option<Rectangle<i32, Logical>> {
+        let geo = self.space.output_geometry(o)?;
+        let zone = smithay::desktop::layer_map_for_output(o).non_exclusive_zone();
+        let [t, b, l, r] = self.config.reserved_for(&o.name(), &o.description());
+        Some(Rectangle::new(
+            (geo.loc.x + zone.loc.x + l, geo.loc.y + zone.loc.y + t).into(),
+            (zone.size.w - l - r, zone.size.h - t - b).into(),
+        ))
     }
 
     /// Tiling area of monitor `name` (see `tiling_area`).
