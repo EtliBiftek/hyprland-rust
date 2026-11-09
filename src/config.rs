@@ -459,8 +459,12 @@ impl Dispatcher {
             n => n,
         };
         let target = match inner {
-            "movetoworkspace" | "movetoworkspacesilent" | "fullscreen" | "fullscreenstate"
-            | "moveactive" | "resizeactive" => arg.split_once(','),
+            "movetoworkspace"
+            | "movetoworkspacesilent"
+            | "fullscreen"
+            | "fullscreenstate"
+            | "moveactive"
+            | "resizeactive" => arg.split_once(','),
             "togglefloating" | "setfloating" | "settiled" | "pin"
                 if !arg.is_empty() && arg != "active" =>
             {
@@ -2027,8 +2031,11 @@ impl Parser {
             }
             "binds:ignore_group_lock" => cfg.ignore_group_lock = parse_bool(value)?,
             "binds:scroll_event_delay" => {
-                cfg.scroll_event_delay =
-                    Some(value.parse().map_err(|_| format!("invalid int `{value}`"))?)
+                cfg.scroll_event_delay = Some(
+                    value
+                        .parse()
+                        .map_err(|_| format!("invalid int `{value}`"))?,
+                )
             }
             "env" => {
                 let (k, v) = value.split_once(',').ok_or("env: expected `KEY,VALUE`")?;
