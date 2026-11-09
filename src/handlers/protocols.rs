@@ -176,7 +176,9 @@ impl Hypr {
             let Some(d) = n.data::<IdleNotificationData>() else {
                 return TimeoutAction::Drop;
             };
-            if !d.ignore_inhibitors && cd.state.idle.is_inhibited() {
+            if !d.ignore_inhibitors
+                && (cd.state.idle.is_inhibited() || cd.state.rule_inhibits_idle())
+            {
                 // Poll until the inhibitors are gone.
                 return TimeoutAction::ToDuration(d.timeout.max(Duration::from_secs(1)));
             }

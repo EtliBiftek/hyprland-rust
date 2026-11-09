@@ -133,6 +133,13 @@ impl PointerGrab<Hypr> for ResizeSurfaceGrab {
             max_size.h
         };
 
+        if crate::wm::window_rules::rule_flag(&self.window, "keep_aspect_ratio") {
+            (new_window_width, new_window_height) = crate::rules::keep_aspect(
+                (self.initial_rect.size.w, self.initial_rect.size.h),
+                (new_window_width, new_window_height),
+            );
+        }
+
         self.last_window_size = Size::from((
             new_window_width.max(min_width).min(max_width),
             new_window_height.max(min_height).min(max_height),

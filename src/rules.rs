@@ -1061,6 +1061,53 @@ pub fn static_plan(rules: &[Rule], p: &WindowProps) -> StaticPlan {
     plan
 }
 
+/// Hyprland floats a toplevel with a parent or a fixed size on its own.
+pub fn auto_float(has_parent: bool, min: (i32, i32), max: (i32, i32)) -> bool {
+    has_parent || (min.0 > 0 && min.1 > 0 && min == max)
+}
+
+/// `keep_aspect_ratio`: the axis that moved most decides the new size.
+pub fn keep_aspect(initial: (i32, i32), new: (i32, i32)) -> (i32, i32) {
+    let (w0, h0) = (i64::from(initial.0), i64::from(initial.1));
+    let (w, h) = (i64::from(new.0), i64::from(new.1));
+    if w0 <= 0 || h0 <= 0 {
+        return new;
+    }
+    if (w - w0).abs() * h0 >= (h - h0).abs() * w0 {
+        (new.0, (w * h0 / w0) as i32)
+    } else {
+        ((h * w0 / h0) as i32, new.1)
+    }
+}
+
+/// `idle_inhibit` rule argument: `always`, `focus` or `fullscreen`.
+pub fn idle_rule_active(mode: &str, focused: bool, fullscreen: bool) -> bool {
+    match mode {
+        "always" => true,
+        "focus" => focused,
+        "fullscreen" => fullscreen,
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod window_hint_tests {
+    use super::*;
+
+    #[test]
+    fn hints() {
+        assert!(auto_float(true, (0, 0), (0, 0)));
+        assert!(auto_float(false, (300, 200), (300, 200)));
+        assert!(!auto_float(false, (0, 0), (0, 0)));
+        assert!(!auto_float(false, (100, 100), (300, 200)));
+        assert_eq!(keep_aspect((400, 200), (800, 210)), (800, 400));
+        assert_eq!(keep_aspect((400, 200), (410, 400)), (800, 400));
+        assert!(idle_rule_active("focus", true, false));
+        assert!(!idle_rule_active("fullscreen", true, false));
+        assert!(!idle_rule_active("none", true, true));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

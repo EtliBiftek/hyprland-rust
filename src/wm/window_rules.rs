@@ -3,7 +3,11 @@
 
 use std::cell::RefCell;
 
-use smithay::{backend::renderer::utils::with_renderer_surface_state, desktop::Window};
+use smithay::{
+    backend::renderer::utils::with_renderer_surface_state,
+    desktop::Window,
+    wayland::{compositor, shell::xdg::SurfaceCachedState},
+};
 
 use crate::{
     ipc::{class_title, window_addr},
@@ -33,7 +37,26 @@ fn state(w: &Window) -> &RefCell<RuleState> {
     w.user_data().get_or_insert(RefCell::<RuleState>::default)
 }
 
+/// Boolean window rule effect currently set on `w`.
+pub(crate) fn rule_flag(w: &Window, name: &str) -> bool {
+    state(w).borrow().dynp.flag(name)
+}
+
 impl Hypr {
+    /// A visible window's `idle_inhibit` rule holds off idle.
+    pub fn rule_inhibits_idle(&self) -> bool {
+        self.space.elements().any(|w| {
+            let s = state(w).borrow();
+            let fullscreen = self
+                .ws_of(w)
+                .is_some_and(|i| self.workspaces[i].fullscreen.as_ref() == Some(w));
+            let focused = self.wm.focused.as_ref() == Some(w);
+            s.dynp
+                .other("idle_inhibit")
+                .is_some_and(|m| rules::idle_rule_active(m, focused, fullscreen))
+        })
+    }
+
     fn rule_props(&self, w: &Window) -> WindowProps {
         let (class, title) = class_title(w);
         let s = state(w).borrow();
@@ -164,6 +187,16 @@ impl Hypr {
             s.initial_class = class.clone();
             s.initial_title = title.clone();
             s.last = (class, title);
+        }
+        if let Some(t) = w.toplevel() {
+            let (min, max) = compositor::with_states(t.wl_surface(), |states| {
+                let mut guard = states.cached_state.get::<SurfaceCachedState>();
+                let d = guard.current();
+                ((d.min_size.w, d.min_size.h), (d.max_size.w, d.max_size.h))
+            });
+            if rules::auto_float(t.parent().is_some(), min, max) {
+                self.set_floating(w, Some(true));
+            }
         }
         if self.config.rules.window.is_empty() {
             return;

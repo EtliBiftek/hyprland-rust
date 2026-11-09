@@ -25,7 +25,7 @@ use crate::{
     CalloopData,
 };
 
-mod window_rules;
+pub(crate) mod window_rules;
 
 /// Window-management state that is not part of a workspace.
 pub struct WmState {
