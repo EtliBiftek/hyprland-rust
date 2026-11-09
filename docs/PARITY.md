@@ -178,7 +178,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `decoration:motion_blur:samples` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `decoration:`). |
 | `decoration:rounding` | parsed | Int. Parsed and returned by getoption, but no rounded corners are drawn. |
 | `decoration:rounding_power` | parsed | Float. Accepted, ignored (`is_known_unimplemented` prefix `decoration:`). |
-| `decoration:screen_shader` | parsed | String. Accepted, ignored (`is_known_unimplemented` prefix `decoration:`). |
+| `decoration:screen_shader` | tested | String. GLSL ES 1.00 or 3.00 fragment shader (`tex`, `v_texcoord`, `time`), `tests/screen-shader.sh`. |
 | `decoration:shadow:color` | parsed | Gradient. Accepted, ignored (`is_known_unimplemented` prefix `decoration:`). |
 | `decoration:shadow:color_inactive` | parsed | Gradient. Accepted, ignored (`is_known_unimplemented` prefix `decoration:`). |
 | `decoration:shadow:enabled` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `decoration:`). |
@@ -647,7 +647,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `submap` | tested | `default` or the active submap; JSON string. `tests/ipc-dots.sh`. |
 | `status` | tested | `configProvider` (`lua`/`hyprlang`) and `configErrors`; `systeminfo` shows the same provider. `tests/lua-config.sh`, `tests/ipc-dots.sh`. |
 | `deprecated-config` | none | Not implemented. |
-| `reloadshaders` | parsed | Stub: replies `ok` (no shaders). |
+| `reloadshaders` | tested | Recompiles `decoration:screen_shader`. |
 | `monitors` | partial | One output. JSON and text; description, make, model, physical size, `specialWorkspace` and `reserved` are real. `tests/ipc-dots.sh`. |
 | `reload` | tested | `tests/ipc-xvfb.sh` (`reload` and autoreload). |
 | `plugin` | parsed | `list` replies `no plugins loaded`, others an error. No plugin system. |

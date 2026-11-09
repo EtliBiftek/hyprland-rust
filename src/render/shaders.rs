@@ -32,6 +32,31 @@ precision mediump float;
 #endif
 "#;
 
+/// A Hyprland screen shader (`tex`, `v_texcoord`, GLSL ES 1.00 or 3.00) as a
+/// Smithay texture shader, which links against a GLSL ES 1.00 vertex stage.
+pub fn adapt_screen_shader(src: &str) -> String {
+    let mut out = format!(
+        "#version 100\n//_DEFINES_\n{PRECISION}\nvarying vec2 v_coords;\n\
+#define v_texcoord vec2(v_coords.x, 1.0 - v_coords.y)\n"
+    );
+    for line in src.lines() {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        match words.as_slice() {
+            ["#version", ..] => {}
+            ["varying" | "in", "vec2", name] if name.starts_with("v_texcoord") => {}
+            ["out", "vec4", name] => {
+                let name = name.trim_end_matches(';');
+                out.push_str(&format!("#define {name} gl_FragColor\n"));
+            }
+            _ => {
+                out.push_str(&line.replace("texture(", "texture2D("));
+                out.push('\n');
+            }
+        }
+    }
+    out
+}
+
 fn tex_header() -> String {
     format!(
         "#version 100\n//_DEFINES_\n#if defined(EXTERNAL)\n#extension GL_OES_EGL_image_external : require\n#endif\n{PRECISION}\n\
@@ -280,5 +305,28 @@ impl Programs {
             border,
             shadow,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::adapt_screen_shader;
+
+    #[test]
+    fn screen_shader_from_glsl_300() {
+        let s = adapt_screen_shader(
+            "#version 300 es\nin vec2 v_texcoord;\nuniform sampler2D tex;\nout vec4 c;\nvoid main() { c = texture(tex, v_texcoord); }\n",
+        );
+        assert!(s.starts_with("#version 100\n//_DEFINES_\n"), "{s}");
+        assert!(!s.contains("300 es") && !s.contains("in vec2"), "{s}");
+        assert!(s.contains("#define c gl_FragColor"), "{s}");
+        assert!(s.contains("texture2D(tex, v_texcoord)"), "{s}");
+    }
+
+    #[test]
+    fn screen_shader_from_glsl_100() {
+        let s = adapt_screen_shader("varying vec2 v_texcoord;\nvoid main() {}\n");
+        assert_eq!(s.matches("varying vec2").count(), 1, "{s}");
+        assert!(s.contains("void main() {}"), "{s}");
     }
 }

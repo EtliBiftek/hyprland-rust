@@ -94,8 +94,14 @@ configErrors: {}",
         "locked" => h.session_locked.to_string(),
         // shortcut: no option descriptions are kept, upgrade when config.rs has a table.
         "descriptions" => "[]\n".into(),
-        "reloadshaders" if json => r#"{"ok": true}"#.into(),
-        "reloadshaders" => "ok".into(),
+        "reloadshaders" if json => {
+            h.fx.shader = None;
+            r#"{"ok": true}"#.into()
+        }
+        "reloadshaders" => {
+            h.fx.shader = None;
+            "ok".into()
+        }
         "getprop" => getprop(h, args, json),
         // shortcut: only validated, the cursor is not themed yet (see tty.rs gaps).
         "setcursor" => match args.split_whitespace().last().map(str::parse::<i32>) {

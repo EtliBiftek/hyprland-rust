@@ -16,7 +16,7 @@ pub mod blur;
 pub mod fxtex;
 pub mod shaders;
 
-use std::cell::RefCell;
+use std::{cell::RefCell, collections::HashMap};
 
 use smithay::{
     backend::renderer::{
@@ -26,7 +26,10 @@ use smithay::{
             surface::{render_elements_from_surface_tree, WaylandSurfaceRenderElement},
             Element, Id, Kind,
         },
-        gles::{element::PixelShaderElement, GlesPixelProgram, GlesRenderer, GlesTexture, Uniform},
+        gles::{
+            element::PixelShaderElement, GlesPixelProgram, GlesRenderer, GlesTexProgram,
+            GlesTexture, Uniform, UniformName, UniformType,
+        },
         utils::CommitCounter,
         Bind,
     },
@@ -73,6 +76,23 @@ pub struct FxState {
     ghosts: Vec<Ghost>,
     /// An animation was still running in the last `output_elements` call.
     pub animating: bool,
+    /// `decoration:screen_shader`, compiled; `None` recompiles on next frame.
+    pub shader: Option<ScreenShader>,
+    /// Per output name: the last scene shown through the screen shader.
+    screens: HashMap<String, ScreenSlot>,
+}
+
+pub struct ScreenShader {
+    path: String,
+    /// `None`: the file could not be read or compiled (logged once).
+    prog: Option<GlesTexProgram>,
+    uses_time: bool,
+}
+
+struct ScreenSlot {
+    key: Vec<(Id, CommitCounter, Rectangle<i32, Physical>)>,
+    tex: GlesTexture,
+    el: FxTex,
 }
 
 struct WsAnim {
@@ -1012,5 +1032,108 @@ pub fn output_elements(h: &mut Hypr, r: &mut GlesRenderer, output: &Output) -> V
 
     let mut v = groupbar;
     v.extend(groups.into_iter().rev().flatten());
-    v
+    screen_shader(h, r, output, out, now, v)
+}
+
+/// `decoration:screen_shader`: draws the finished scene into a texture and
+/// returns one full-output element that shows it through the user's shader.
+/// shortcuts: a new texture per changed frame (reuse the last one if it costs);
+/// the cursor is drawn above the shader and screenshots include it.
+fn screen_shader(
+    h: &mut Hypr,
+    r: &mut GlesRenderer,
+    output: &Output,
+    out: (i32, i32),
+    now: f64,
+    v: Vec<FxElement>,
+) -> Vec<FxElement> {
+    let path = match crate::options::get_option(&h.config, "decoration:screen_shader") {
+        Some(crate::options::OptValue::Str(p)) if !p.is_empty() && p != "[[EMPTY]]" => p,
+        _ => {
+            h.fx.shader = None;
+            return v;
+        }
+    };
+    let fx = &mut h.fx;
+    if fx.shader.as_ref().is_none_or(|s| s.path != path) {
+        fx.shader = Some(load_screen_shader(r, path));
+        fx.screens.clear();
+    }
+    let Some((prog, time)) = fx
+        .shader
+        .as_ref()
+        .and_then(|s| Some((s.prog.clone()?, s.uses_time)))
+    else {
+        return v;
+    };
+    let refs: Vec<&FxElement> = v.iter().collect();
+    let key: Vec<_> = refs
+        .iter()
+        .map(|e| {
+            (
+                e.id().clone(),
+                e.current_commit(),
+                e.geometry(Scale::from(1.0)),
+            )
+        })
+        .collect();
+    let name = output.name();
+    let force = fx.screens.get(&name).is_none_or(|s| s.key != key);
+    if force {
+        let tex = match blur::render_scene(r, out.0, out.1, &refs, CLEAR) {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::warn!("screen shader: {e}");
+                return v;
+            }
+        };
+        let slot = fx
+            .screens
+            .entry(name.clone())
+            .or_insert_with(|| ScreenSlot {
+                key: Vec::new(),
+                tex: tex.clone(),
+                el: FxTex::new(prog, tex.clone()),
+            });
+        slot.key = key;
+        slot.tex = tex;
+    }
+    let Some(slot) = fx.screens.get_mut(&name) else {
+        return v;
+    };
+    let uniforms = if time {
+        fx.animating = true;
+        vec![u("time", now as f32)]
+    } else {
+        Vec::new()
+    };
+    let area = Rectangle::new((0, 0).into(), out.into());
+    slot.el.update(&slot.tex, None, area, uniforms, 1.0, force);
+    vec![FxElement::Tex(slot.el.clone())]
+}
+
+fn load_screen_shader(r: &mut GlesRenderer, path: String) -> ScreenShader {
+    let file = crate::config::expand_home(&path);
+    let src = match std::fs::read_to_string(&file) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!("screen shader {}: {e}", file.display());
+            return ScreenShader {
+                path,
+                prog: None,
+                uses_time: false,
+            };
+        }
+    };
+    let uses_time = src.contains("time");
+    let names = [UniformName::new("time", UniformType::_1f)];
+    let prog = r
+        .compile_custom_texture_shader(shaders::adapt_screen_shader(&src), &names)
+        .map_err(|e| tracing::error!("screen shader {}: {e:?}", file.display()))
+        .ok();
+    ScreenShader {
+        path,
+        prog,
+        uses_time,
+    }
 }
