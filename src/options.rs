@@ -5,6 +5,7 @@
 use crate::{
     config::Config,
     master::{NewOnActive, NewStatus},
+    option_defaults::OPTION_DEFAULTS,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -126,7 +127,22 @@ pub fn get_option(cfg: &Config, key: &str) -> Option<OptValue> {
             Custom(gradient(cfg.group.groupbar.col_locked_inactive))
         }
         "binds:ignore_group_lock" => Bool(cfg.ignore_group_lock),
-        _ => return None,
+        _ => return raw_option(cfg, key),
+    })
+}
+
+/// An option without a `Config` field: what the config set, else Hyprland's
+/// default.
+fn raw_option(cfg: &Config, key: &str) -> Option<OptValue> {
+    use OptValue::*;
+    let (_, kind, default) = OPTION_DEFAULTS.iter().find(|o| o.0 == key)?;
+    let v = cfg.raw_options.get(key).map_or(*default, String::as_str);
+    Some(match kind {
+        'b' => Bool(matches!(v, "1" | "true" | "yes" | "on")),
+        'i' => Int(v.parse().unwrap_or(0)),
+        'f' => Float(v.parse().unwrap_or(0.0)),
+        's' => Str(v.to_string()),
+        _ => Custom(v.to_string()),
     })
 }
 
@@ -244,6 +260,23 @@ set: false"
         ] {
             assert!(get_option(&cfg, k).is_some(), "{k}");
         }
+    }
+
+    #[test]
+    fn getoption_without_a_config_field() {
+        let (cfg, errors) = Config::parse_str(
+            "input:force_no_accel = true\ndebug:overlay = 1\ncursor:zoom_factor = 1.5",
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+        let get = |k: &str| get_option(&cfg, k).unwrap();
+        assert_eq!(get("input:force_no_accel"), OptValue::Bool(true));
+        assert_eq!(get("debug:overlay"), OptValue::Bool(true));
+        assert_eq!(get("cursor:zoom_factor"), OptValue::Float(1.5));
+        assert_eq!(
+            get("decoration:screen_shader"),
+            OptValue::Str(String::new())
+        );
+        assert_eq!(get("cursor:zoom_rigid"), OptValue::Bool(false));
     }
 
     #[test]

@@ -1480,6 +1480,8 @@ pub struct Config {
     pub files: Vec<PathBuf>,
     /// Option keys (lowercase `cat:key`) the user set explicitly (`getoption` `set`).
     pub set_options: HashSet<String>,
+    /// Text of every `cat:key` the config set, for options without a field.
+    pub raw_options: HashMap<String, String>,
     pub general: General,
     pub decoration: Decoration,
     pub anim: crate::animation::Animations,
@@ -1805,6 +1807,11 @@ impl Parser {
     fn apply(&mut self, key: &str, value: &str, file: &Path) -> Result<(), String> {
         self.apply_inner(key, value, file)?;
         self.config.set_options.insert(key.to_string());
+        if key.contains(':') {
+            self.config
+                .raw_options
+                .insert(key.to_ascii_lowercase(), value.trim().to_string());
+        }
         Ok(())
     }
 

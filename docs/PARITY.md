@@ -37,6 +37,8 @@ Status meaning: `none` = not supported (for a config option, a config load error
 
 Repo inconsistencies outside the tables: `input:tap-to-click` (no touchpad prefix) is accepted, but Hyprland has no such option; only `input:touchpad:tap-to-click` exists. `dwindle:smart_resizing` and `decoration:rounding` are readable through `hyprctl getoption` but have no effect.
 
+`hyprctl getoption` and `hl.get_config` answer every option in the v0.57.1 table (`src/option_defaults.rs`): options without a `Config` field report the configured text or the default, typed like Hyprland. "parsed" rows are still not applied.
+
 ## Config options (v0.57.1 registry, 407 options)
 
 Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the repo's config parser, which uses the same option names.

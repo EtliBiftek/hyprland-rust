@@ -22,6 +22,7 @@ mod lua_config;
 mod lua_host;
 mod master;
 mod monitors;
+mod option_defaults;
 mod options;
 mod reload;
 mod render;
