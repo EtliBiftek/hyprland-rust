@@ -1,6 +1,6 @@
 #!/bin/sh
 # xdg_popup.grab test: weston-terminal's right-click menu grabs the seat, and a
-# click outside it must dismiss it (popup_done).
+# click outside it must close it (`popup_done`, or the client closes it after the release it got through the grab).
 # Needs: Xvfb, xdotool, weston, Mesa (llvmpipe).
 set -eu
 BIN=${BIN:-./target/debug/hyprland-rust}
