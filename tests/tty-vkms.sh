@@ -128,12 +128,13 @@ PY
 echo "ok: tty backend renders the client (screencopy)"
 
 # dpms off really deactivates the CRTCs (debugfs), on brings them back.
-crtc_active() { sudo sh -c 'cat /sys/kernel/debug/dri/*/state' 2>/dev/null | grep -c 'active=1'; }
+crtc_active() { sudo sh -c 'for d in /sys/kernel/debug/dri/*; do grep -q vkms "$d/name" 2>/dev/null && cat "$d/state"; done' | grep -c 'active=1'; }
 before=$(crtc_active)
 if [ "$before" -ge 1 ]; then
     ctl dispatch dpms off >/dev/null
     sleep 1
-    [ "$(crtc_active)" = 0 ] || fail "dpms off left a CRTC active"
+    n=$(crtc_active) || true
+    [ "$n" = 0 ] || fail "dpms off left $n CRTC(s) active, before $before"
     ctl dispatch dpms on >/dev/null
     sleep 1
     [ "$(crtc_active)" = "$before" ] || fail "dpms on: $(crtc_active) active, wanted $before"
