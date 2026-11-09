@@ -33,16 +33,18 @@ pub fn reuse_tex(
     }
 }
 
-/// Renders `elements` (front to back, output-local) into `tex`.
+/// Renders `elements` (front to back, output-local, logical) into `tex`, which
+/// is `scale` times the logical size.
 pub fn render_scene_into(
     r: &mut GlesRenderer,
     tex: &mut GlesTexture,
     elements: &[&FxElement],
     clear: [f32; 4],
+    scale: f64,
 ) -> Result<(), String> {
     let size = tex.size();
     let mut target = r.bind(tex).map_err(|e| format!("bind: {e:?}"))?;
-    let mut dt = OutputDamageTracker::new((size.w, size.h), 1.0, Transform::Normal);
+    let mut dt = OutputDamageTracker::new((size.w, size.h), scale, Transform::Normal);
     dt.render_output(r, &mut target, 0, elements, clear)
         .map_err(|e| format!("render scene: {e:?}"))?;
     Ok(())

@@ -341,7 +341,7 @@ fn ensure_blur(
     }
     let p = ctx.progs;
     let res = blur::reuse_tex(r, fw.blur_tex.take(), out.0, out.1).and_then(|mut t| {
-        blur::render_scene_into(r, &mut t, below, ctx.clear)?;
+        blur::render_scene_into(r, &mut t, below, ctx.clear, 1.0)?;
         let chain = &mut p.blur_chain.borrow_mut();
         blur::blur(r, &t, &p.blur_down, &p.blur_up, cfg.1, cfg.0, chain)?;
         Ok(t)
@@ -1067,7 +1067,9 @@ pub fn output_elements(h: &mut Hypr, r: &mut GlesRenderer, output: &Output) -> V
 
 /// The effects are all built in logical pixels. On a scaled output the scene
 /// is drawn at that size and stretched over the output.
-/// shortcut: blurry on HiDPI; render the scene at physical size to sharpen it.
+/// The scene texture has the physical size, so surfaces stay sharp.
+/// shortcut: with cursor zoom or a screen shader on, their pass is still at
+/// logical size (blurry on HiDPI); give those passes the scale too.
 fn output_scale_pass(
     h: &mut Hypr,
     r: &mut GlesRenderer,
@@ -1092,6 +1094,7 @@ fn output_scale_pass(
         &v,
         area,
         crop,
+        output.current_scale().fractional_scale(),
     ) {
         Some(el) => vec![el],
         None => v,
@@ -1135,7 +1138,7 @@ fn screen_shader(
         Vec::new()
     };
     let area = Rectangle::new((0, 0).into(), out.into());
-    match post_pass(fx, r, output.name(), prog, out, &v, area, uniforms) {
+    match post_pass(fx, r, output.name(), prog, out, &v, area, uniforms, 1.0) {
         Some(el) => vec![el],
         None => v,
     }
@@ -1188,6 +1191,7 @@ fn cursor_zoom(
         &v,
         area,
         vec![u("crop", crop)],
+        1.0,
     ) {
         Some(el) => vec![el],
         None => v,
@@ -1206,6 +1210,7 @@ fn post_pass(
     v: &[FxElement],
     area: Rectangle<i32, Logical>,
     uniforms: Vec<Uniform<'static>>,
+    scale: f64,
 ) -> Option<FxElement> {
     let refs: Vec<&FxElement> = v.iter().collect();
     let key: Vec<_> = refs
@@ -1221,9 +1226,10 @@ fn post_pass(
     let force = fx.screens.get(&name).is_none_or(|s| s.key != key);
     if force {
         let old = fx.screens.get(&name).map(|s| s.tex.clone());
-        let tex = blur::reuse_tex(r, old, out.0, out.1)
+        let px = |v: i32| (v as f64 * scale).round() as i32;
+        let tex = blur::reuse_tex(r, old, px(out.0), px(out.1))
             .and_then(|mut t| {
-                blur::render_scene_into(r, &mut t, &refs, fx.clear)?;
+                blur::render_scene_into(r, &mut t, &refs, fx.clear, scale)?;
                 Ok(t)
             })
             .map_err(|e| tracing::warn!("post pass: {e}"))

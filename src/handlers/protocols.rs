@@ -100,9 +100,15 @@ delegate_viewporter!(Hypr);
 
 impl FractionalScaleHandler for Hypr {
     fn new_fractional_scale(&mut self, surface: WlSurface) {
-        // Only 1x output for now.
+        // shortcut: the largest output scale, sent once; follow the surface's
+        // output and resend on scale changes when mixed-DPI setups matter.
+        let scale = self
+            .space
+            .outputs()
+            .map(|o| o.current_scale().fractional_scale())
+            .fold(1.0, f64::max);
         with_states(&surface, |states| {
-            with_fractional_scale(states, |fs| fs.set_preferred_scale(1.0));
+            with_fractional_scale(states, |fs| fs.set_preferred_scale(scale));
         });
     }
 }

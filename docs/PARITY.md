@@ -752,7 +752,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `wp_cursor_shape_manager_v1` | none | Not registered by the repo. |
 | `wp_drm_lease_device_v1` | none | Not registered by the repo. |
 | `wp_fifo_manager_v1` | partial | `handlers/fifo.rs`: unmanaged, barriers have no effect. |
-| `wp_fractional_scale_manager_v1` | none | Not registered by the repo. |
+| `wp_fractional_scale_manager_v1` | partial | Preferred scale is the largest output scale, sent once per surface. |
 | `wp_linux_drm_syncobj_manager_v1` | none | Not registered by the repo. |
 | `wp_pointer_warp_v1` | none | Not registered by the repo. |
 | `wp_presentation` | none | Not registered by the repo. |
