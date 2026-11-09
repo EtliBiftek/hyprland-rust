@@ -148,8 +148,16 @@ impl XdgActivationHandler for Hypr {
         surface: WlSurface,
     ) {
         if let Some((_, window)) = self.window_for_surface(&surface) {
-            if self.focused_window().as_ref() != Some(&window) {
-                let addr = crate::ipc::window_addr(&window);
+            if self.focused_window().as_ref() == Some(&window) {
+                return;
+            }
+            let addr = crate::ipc::window_addr(&window);
+            let option = crate::options::get_option(&self.config, "misc:focus_on_activate");
+            if option == Some(crate::options::OptValue::Bool(true))
+                || crate::wm::window_rules::rule_flag(&window, "focus_on_activate")
+            {
+                self.focus_window_sel(&crate::selectors::WinSel::Address(addr));
+            } else {
                 self.ipc.emit("urgent", addr.trim_start_matches("0x"));
             }
         }

@@ -396,7 +396,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `misc:enable_swallow` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:exit_window_retains_fullscreen` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:float_force_onscreen` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
-| `misc:focus_on_activate` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
+| `misc:focus_on_activate` | tested | Bool, also the `focus_on_activate` rule (`tests/probe.sh`). |
 | `misc:font_family` | parsed | String. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:force_default_wallpaper` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:initial_workspace_token_timeout` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |

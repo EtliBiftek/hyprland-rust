@@ -7,6 +7,7 @@
 set -eu
 BIN=${BIN:-./target/debug/hyprland-rust}
 PROBE=${PROBE:-./target/debug/protocol-probe}
+CTL=${CTL:-./target/debug/hyprctl}
 T=$(mktemp -d)
 chmod 700 "$T"
 echo "# empty" > "$T/test.conf"
@@ -47,6 +48,19 @@ timeout 60 "$PROBE" export || fail "probe export"
 pkill -f weston 2>/dev/null || true
 timeout 60 "$PROBE" copycap || fail "probe copycap"
 timeout 30 "$PROBE" layerpopup || fail "probe layerpopup"
+
+# misc:focus_on_activate: the activated window takes the focus.
+"$CTL" keyword misc:focus_on_activate true >/dev/null
+"$PROBE" activate >"$T/act.out" 2>&1 &
+for _ in $(seq 100); do
+    grep -q activated "$T/act.out" && break
+    sleep 0.2
+done
+grep -q activated "$T/act.out" || { cat "$T/act.out"; fail "no activation"; }
+sleep 1
+"$CTL" -j activewindow | grep -q '"class": *"probe-a"' || fail "focus_on_activate: $("$CTL" -j activewindow | head -c 300)"
+pkill -x protocol-probe 2>/dev/null || true
+sleep 0.5
 
 # Focus grab: two windows (left and right half), grab the first, click the right half.
 "$PROBE" focusgrab >"$T/grab.out" 2>&1 &

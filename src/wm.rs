@@ -1217,7 +1217,7 @@ impl Hypr {
     }
 
     /// `focuswindow`: switches to the window's workspace if needed.
-    fn focus_window_sel(&mut self, sel: &WinSel) {
+    pub(crate) fn focus_window_sel(&mut self, sel: &WinSel) {
         let Some((i, w)) = self.find_window(sel) else {
             return;
         };

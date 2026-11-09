@@ -2,6 +2,7 @@
 //!
 //! `protocol-probe export`    hyprland-toplevel-mapping + hyprland-toplevel-export of a red window
 //! `protocol-probe copycap`   ext-image-copy-capture of a toplevel source and an output source
+//! `protocol-probe activate`  xdg-activation of the first of two windows
 //! `protocol-probe layerpopup` a layer popup placed off screen comes back on screen
 //! `protocol-probe focusgrab` hyprland-focus-grab: prints `grabbed`, then `cleared` when a click
 //!                            outside the whitelisted window clears it
@@ -45,6 +46,10 @@ use wayland_protocols::{
             ext_image_copy_capture_manager_v1::{self, ExtImageCopyCaptureManagerV1},
             ext_image_copy_capture_session_v1::{self, ExtImageCopyCaptureSessionV1},
         },
+    },
+    xdg::activation::v1::client::{
+        xdg_activation_token_v1::{self, XdgActivationTokenV1},
+        xdg_activation_v1::XdgActivationV1,
     },
     xdg::shell::client::{
         xdg_popup::{self, XdgPopup},
@@ -126,6 +131,7 @@ struct P {
     sess_done: bool,
     sess_stopped: bool,
     popup_x: Option<i32>,
+    token: Option<String>,
 }
 
 fn bind_err(n: &str) -> ! {
@@ -259,6 +265,22 @@ fn main() {
     let mut p = P::default();
 
     match mode.as_str() {
+        "activate" => {
+            let activation: XdgActivationV1 = globals
+                .bind(&qh, 1..=1, ())
+                .unwrap_or_else(|_| bind_err("xdg_activation_v1"));
+            let a = ctx.window("probe-a", 200, 200, 0xFF00_FF00);
+            let _b = ctx.window("probe-b", 200, 200, 0xFF00_00FF);
+            wait(&mut p, &mut q, 2, |_| false);
+            let token = activation.get_activation_token(&qh, ());
+            token.commit();
+            if !wait(&mut p, &mut q, 5, |p| p.token.is_some()) {
+                fail("no activation token");
+            }
+            activation.activate(p.token.clone().unwrap(), &a);
+            println!("activated");
+            wait(&mut p, &mut q, 3, |_| false);
+        }
         "layerpopup" => {
             let shell: ZwlrLayerShellV1 = globals
                 .bind(&qh, 1..=4, ())
@@ -490,6 +512,7 @@ noop!(
     XdgToplevel,
     XdgPositioner,
     ZwlrLayerShellV1,
+    XdgActivationV1,
     ExtImageCaptureSourceV1,
     ExtForeignToplevelImageCaptureSourceManagerV1,
     ExtOutputImageCaptureSourceManagerV1,
@@ -522,6 +545,21 @@ impl Dispatch<XdgWmBase, ()> for P {
     ) {
         if let xdg_wm_base::Event::Ping { serial } = event {
             wm.pong(serial);
+        }
+    }
+}
+
+impl Dispatch<XdgActivationTokenV1, ()> for P {
+    fn event(
+        p: &mut Self,
+        _: &XdgActivationTokenV1,
+        event: xdg_activation_token_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let xdg_activation_token_v1::Event::Done { token } = event {
+            p.token = Some(token);
         }
     }
 }
