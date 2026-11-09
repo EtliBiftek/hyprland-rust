@@ -144,7 +144,7 @@ Branch `osmium` (unmerged). Source: `docs/hyprland-rust-gaps.md` in
 EtliBiftek/osmium-os (written against d9010fb, so many rows are stale). Rules:
 one commit and one test per item, update `docs/PARITY.md`.
 
-- Done on the branch (CI green at d5ed260): Phase 0, #7, #8, #9, #14, #17, #18, #19, #20, #21 (partial), #24, #26, #27, #29, #30. #1, #2, #4-6, #10, #12, #13,
+- Done on the branch (CI green at cafc6cb): Phase 0, #7, #8, #9, #14, #17, #18, #19, #20, #21 (partial), #24, #26, #27, #28, #29, #30, #39, #40, #42. #1, #2, #4-6, #10, #12, #13,
   #16, #31 and #32-38 were done in main (some partially, see the lists below).
 - #21 partial: `immediate`, `no_focus`, `stay_focused`, `min_size`, `max_size` are still stored only.
 - #22 needs no change: Hyprland also only reports `minimized`.
@@ -152,10 +152,10 @@ one commit and one test per item, update `docs/PARITY.md`.
 - #41 partial: `resize_on_border`, `extend_border_grab_area`, `snap:*` done; `gaps_workspaces` (needs a workspace animation gap) and `no_focus_fallback` remain.
 - #11 partial: input wakes dpms; the CRTC stays active on tty.
 - #15 partial: `addreserved`, output-management apply (position, scale, transform; no mode change) done; fractional scale fixed at 1.0 remains.
-- Next: #41 rest, #43, then the
-  partial ones (#3, #11, #15, #23). #28 done in CI.
+- Next: #41 rest (`gaps_workspaces`, `no_focus_fallback`), #43 rest, then the
+  partial ones (#3, #11, #15, #23).
 - Quota rule (owner, 2026-11-09): use the quota to the end, no percent stop.
-  The scheduled task `osmium-gaps-resume` (05:05, 11:05, 23:05)
+  The scheduled task `osmium-gaps-resume` (05:05, 11:05, 17:05, 23:05)
   continues the list; keep this section current after every item.
 
 ## Future work
