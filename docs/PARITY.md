@@ -409,7 +409,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `misc:mouse_move_focuses_monitor` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:name_vk_after_proc` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:new_float_force_onscreen` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
-| `misc:on_focus_under_fullscreen` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
+| `misc:on_focus_under_fullscreen` | tested | Int. 0 ignore, 1 take over, 2 unfullscreen (`tests/dispatchers.sh`, default). |
 | `misc:render_unfocused_fps` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:screencopy_force_8b` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:session_lock_blur` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |

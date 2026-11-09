@@ -232,5 +232,17 @@ sleep 0.5
 timeout 5 "$HYPRCTL" -j activewindow | python3 -c 'import json,sys; d = json.load(sys.stdin); assert not d.get("address"), d' || fail "no_focus_fallback: still focused"
 timeout 5 "$HYPRCTL" keyword general:no_focus_fallback false >/dev/null
 
+# 12. on_focus_under_fullscreen (default 2): focusing a tiled window under a
+# fullscreen one ends the fullscreen.
+timeout 5 "$HYPRCTL" keyword windowrule "match:class .*terminal.*, no_focus off" >/dev/null
+dsp workspace 9
+timeout 5 "$HYPRCTL" dispatch exec weston-simple-shm >/dev/null || fail "dispatch exec"
+settle
+dsp fullscreen 0
+timeout 5 "$HYPRCTL" -j activewindow | python3 -c 'import json,sys; assert json.load(sys.stdin)["fullscreen"] == 2' || fail "fullscreen not set"
+timeout 5 "$HYPRCTL" dispatch exec weston-simple-shm >/dev/null || fail "dispatch exec"
+settle
+timeout 5 "$HYPRCTL" -j clients | python3 -c 'import json,sys; ws = [c for c in json.load(sys.stdin) if c["workspace"]["id"] == 9]; assert len(ws) == 2 and all(c["fullscreen"] == 0 for c in ws), ws' || fail "fullscreen survived a new focused window"
+
 kill -0 "$COMP" 2>/dev/null || fail "compositor died"
 echo "OK: dispatchers (renameworkspace, togglepseudo, movecursor, movecursortocorner, alterzorder, event, dpms, no-ops)"

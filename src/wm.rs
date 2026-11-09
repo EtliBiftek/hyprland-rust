@@ -807,6 +807,39 @@ impl Hypr {
         if refused || held {
             return;
         }
+        // `misc:on_focus_under_fullscreen`: a tiled window focused under a
+        // fullscreen or maximized one is ignored (0), takes over (1), or ends
+        // the fullscreen (2, default) instead of getting keys while hidden.
+        if let Some((w, i)) = window.as_ref().and_then(|w| Some((w, self.ws_of(w)?))) {
+            let ws = &mut self.workspaces[i];
+            let covered = [&ws.fullscreen, &ws.maximized].iter().any(|s| {
+                s.as_ref()
+                    .is_some_and(|f| ws.groups.rep(f) != ws.groups.rep(w))
+            });
+            if covered && !ws.is_floating(w) {
+                let mode =
+                    crate::options::get_option(&self.config, "misc:on_focus_under_fullscreen");
+                let had_fullscreen = ws.fullscreen.is_some();
+                match mode {
+                    Some(crate::options::OptValue::Int(0)) => return,
+                    Some(crate::options::OptValue::Int(1)) => {
+                        for slot in [&mut ws.fullscreen, &mut ws.maximized] {
+                            if slot.is_some() {
+                                *slot = Some(w.clone());
+                            }
+                        }
+                    }
+                    _ => {
+                        ws.fullscreen = None;
+                        ws.maximized = None;
+                        if had_fullscreen {
+                            self.ipc.emit("fullscreen", "0");
+                        }
+                    }
+                }
+                self.relayout();
+            }
+        }
         let serial = SERIAL_COUNTER.next_serial();
         let keyboard = self.seat.get_keyboard().unwrap();
 
