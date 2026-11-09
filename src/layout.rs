@@ -633,8 +633,78 @@ pub fn border_sides(r: Rect, b: i32) -> [Rect; 4] {
     ]
 }
 
+/// `general:snap:*` distances: `win_gap`/`mon_gap` are the snap ranges, `border`
+/// is kept to the monitor edge and `pad` between two windows.
+#[derive(Debug, Clone, Copy)]
+pub struct SnapOpts {
+    pub win_gap: i32,
+    pub mon_gap: i32,
+    pub border: i32,
+    pub pad: i32,
+}
+
+/// Where a dragged floating window lands: each axis snaps to the nearest
+/// monitor edge or facing edge of a window that overlaps it on the other axis.
+pub fn snap_position(win: Rect, others: &[Rect], mon: Rect, o: SnapOpts) -> (i32, i32) {
+    // (position, length, other position, other length) of one axis.
+    let axis =
+        |pos: i32, len: i32, m: (i32, i32), other: &dyn Fn(&Rect) -> (i32, i32, bool)| -> i32 {
+            let mut best = (i32::MAX, pos);
+            let mut try_to = |target: i32, range: i32| {
+                let d = (target - pos).abs();
+                if d <= range && d < best.0 {
+                    best = (d, target);
+                }
+            };
+            try_to(m.0 + o.border, o.mon_gap);
+            try_to(m.0 + m.1 - o.border - len, o.mon_gap);
+            for r in others {
+                let (p, l, overlaps) = other(r);
+                if overlaps {
+                    try_to(p + l + o.pad, o.win_gap);
+                    try_to(p - o.pad - len, o.win_gap);
+                }
+            }
+            best.1
+        };
+    let y_overlap = |r: &Rect| r.y < win.y + win.h && win.y < r.y + r.h;
+    let x_overlap = |r: &Rect| r.x < win.x + win.w && win.x < r.x + r.w;
+    (
+        axis(win.x, win.w, (mon.x, mon.w), &|r| (r.x, r.w, y_overlap(r))),
+        axis(win.y, win.h, (mon.y, mon.h), &|r| (r.y, r.h, x_overlap(r))),
+    )
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn snap() {
+        use super::{snap_position, Rect, SnapOpts};
+        let r = |x, y, w, h| Rect { x, y, w, h };
+        let mon = r(0, 0, 1000, 800);
+        let o = SnapOpts {
+            win_gap: 10,
+            mon_gap: 20,
+            border: 2,
+            pad: 4,
+        };
+        // Monitor edges, with the border kept on screen.
+        assert_eq!(snap_position(r(15, 15, 100, 50), &[], mon, o), (2, 2));
+        assert_eq!(snap_position(r(890, 745, 100, 50), &[], mon, o), (898, 748));
+        // Out of range stays.
+        assert_eq!(snap_position(r(50, 50, 100, 50), &[], mon, o), (50, 50));
+        // Beside a window, only when they overlap on the other axis.
+        let other = r(200, 300, 100, 100);
+        assert_eq!(
+            snap_position(r(308, 320, 50, 50), &[other], mon, o),
+            (304, 320)
+        );
+        assert_eq!(
+            snap_position(r(308, 500, 50, 50), &[other], mon, o),
+            (308, 500)
+        );
+    }
+
     #[test]
     fn border_edges_bands() {
         let r = Rect::new(100, 100, 200, 100);

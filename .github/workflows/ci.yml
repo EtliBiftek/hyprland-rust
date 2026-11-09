@@ -60,6 +60,9 @@ jobs:
       - name: Screen shader test (Xvfb + grim)
         timeout-minutes: 3
         run: sh tests/screen-shader.sh
+      - name: Window snap test (Xvfb + xdotool)
+        timeout-minutes: 3
+        run: sh tests/snap.sh
       - name: Lua config test (headless + hyprland.lua)
         timeout-minutes: 3
         run: sh tests/lua-config.sh

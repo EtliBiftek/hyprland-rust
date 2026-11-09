@@ -11,6 +11,63 @@ use smithay::{
     utils::{Logical, Point},
 };
 
+impl Hypr {
+    /// `general:snap:*` applied to a window dragged to `loc`.
+    fn snapped(&self, w: &Window, loc: Point<i32, Logical>) -> Point<i32, Logical> {
+        use crate::{
+            layout::{snap_position, Rect, SnapOpts},
+            options::{get_option, OptValue},
+        };
+        let opt = |k| get_option(&self.config, k);
+        let int = |k| match opt(k) {
+            Some(OptValue::Int(v)) => v as i32,
+            _ => 0,
+        };
+        let on = |k| opt(k) == Some(OptValue::Bool(true));
+        let (Some(mon), Some(ws), true) = (
+            self.output_geometry(),
+            self.ws_of(w),
+            on("general:snap:enabled"),
+        ) else {
+            return loc;
+        };
+        let rect = |x, y, s: smithay::utils::Size<i32, Logical>| Rect {
+            x,
+            y,
+            w: s.w,
+            h: s.h,
+        };
+        let others: Vec<Rect> = self.workspaces[ws]
+            .floating
+            .iter()
+            .filter(|o| *o != w)
+            .filter_map(|o| self.space.element_geometry(o))
+            .map(|g| rect(g.loc.x, g.loc.y, g.size))
+            .collect();
+        let border = self.config.general.border_size;
+        let mut pad = if on("general:snap:border_overlap") {
+            border
+        } else {
+            2 * border
+        };
+        if on("general:snap:respect_gaps") {
+            pad += 2 * self.config.general.gaps_in;
+        }
+        let (x, y) = snap_position(
+            rect(loc.x, loc.y, w.geometry().size),
+            &others,
+            rect(mon.loc.x, mon.loc.y, mon.size),
+            SnapOpts {
+                win_gap: int("general:snap:window_gap"),
+                mon_gap: int("general:snap:monitor_gap"),
+                border,
+                pad,
+            },
+        );
+        (x, y).into()
+    }
+}
+
 pub struct MoveSurfaceGrab {
     pub start_data: PointerGrabStartData<Hypr>,
     pub window: Window,
@@ -30,8 +87,8 @@ impl PointerGrab<Hypr> for MoveSurfaceGrab {
 
         let delta = event.location - self.start_data.location;
         let new_location = self.initial_window_location.to_f64() + delta;
-        data.space
-            .map_element(self.window.clone(), new_location.to_i32_round(), true);
+        let location = data.snapped(&self.window, new_location.to_i32_round());
+        data.space.map_element(self.window.clone(), location, true);
     }
 
     fn relative_motion(

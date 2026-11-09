@@ -228,11 +228,11 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `general:no_focus_fallback` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
 | `general:resize_corner` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
 | `general:resize_on_border` | done | Bool. Left press in the border band around a floating window starts a resize; tiled windows not resizable this way. |
-| `general:snap:border_overlap` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
-| `general:snap:enabled` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
-| `general:snap:monitor_gap` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
-| `general:snap:respect_gaps` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
-| `general:snap:window_gap` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
+| `general:snap:border_overlap` | tested | Bool. Unit test. |
+| `general:snap:enabled` | tested | Bool. Move grab of floating windows (`tests/snap.sh`). |
+| `general:snap:monitor_gap` | tested | Int. |
+| `general:snap:respect_gaps` | tested | Bool. Unit test. |
+| `general:snap:window_gap` | tested | Int. |
 | `gestures:close_max_timeout` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `gestures:`). |
 | `gestures:scrolling:move_snap_cursor` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `gestures:`). |
 | `gestures:scrolling:move_snap_to_grid` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `gestures:`). |
