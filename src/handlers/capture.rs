@@ -108,7 +108,7 @@ impl Hypr {
                 continue;
             }
             let shot = match &job.target {
-                Target::Output(o) => self.render_shot(renderer, o),
+                Target::Output(o) => self.render_shot(renderer, o, false),
                 Target::Window(w) => render_window_shot(renderer, w),
             };
             let ok = match shot {

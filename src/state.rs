@@ -97,6 +97,7 @@ pub struct Hypr {
     pub extra: crate::handlers::extra::ExtraState,
     /// Last cursor image requested by a client (`cursor-shape` or a surface).
     pub cursor_status: CursorImageStatus,
+    pub cursors: crate::cursor::Cursors,
     /// Session lock held: only `lock_surfaces` are drawn and get input.
     pub session_locked: bool,
     pub lock_surfaces: Vec<(LockSurface, smithay::output::Output)>,
@@ -234,6 +235,7 @@ impl Hypr {
             x11: crate::xwayland::XState::new(&dh),
             extra: crate::handlers::extra::ExtraState::new(&dh),
             cursor_status: CursorImageStatus::default_named(),
+            cursors: crate::cursor::Cursors::new(),
             session_locked: false,
             lock_surfaces: Vec::new(),
             pending_lock: None,

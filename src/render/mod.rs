@@ -56,6 +56,7 @@ smithay::backend::renderer::element::render_elements! {
     Solid=SolidColorRenderElement,
     Pixel=PixelShaderElement,
     Tex=FxTex,
+    Cursor=smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement<GlesRenderer>,
 }
 
 const CLEAR: [f32; 4] = [0.1, 0.1, 0.1, 1.0];

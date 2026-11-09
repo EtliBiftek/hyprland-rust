@@ -152,6 +152,7 @@ one commit and one test per item, update `docs/PARITY.md`.
 - #41 partial: `resize_on_border`, `extend_border_grab_area`, `snap:*` done; `gaps_workspaces` (needs a workspace animation gap) and `no_focus_fallback` remain.
 - #11 partial: input wakes dpms; the CRTC stays active on tty.
 - #15 partial: `addreserved`, output-management apply (position, scale, transform; no mode change) done; fractional scale fixed at 1.0 remains.
+- #23 partial: `overlay_cursor` done (in CI); dmabuf export remains.
 - Next: #41 rest (`gaps_workspaces`, `no_focus_fallback`), #43 rest, then the
   partial ones (#3, #11, #15, #23).
 - Quota rule (owner, 2026-11-09): use the quota to the end, no percent stop.

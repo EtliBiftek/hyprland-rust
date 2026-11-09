@@ -39,6 +39,34 @@ pub struct Cursors {
     fallback: Image,
 }
 
+impl crate::state::Hypr {
+    /// The cursor on `output` as effect elements (screenshots with a cursor).
+    pub fn cursor_fx_elements(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        output: &smithay::output::Output,
+    ) -> Vec<crate::render::FxElement> {
+        use crate::render::FxElement;
+        let (Some(geo), Some(pointer)) =
+            (self.space.output_geometry(output), self.seat.get_pointer())
+        else {
+            return Vec::new();
+        };
+        let pos = pointer.current_location();
+        if !geo.to_f64().contains(pos) {
+            return Vec::new();
+        }
+        self.cursors
+            .elements(renderer, &self.cursor_status, pos - geo.loc.to_f64(), 1.0)
+            .into_iter()
+            .map(|c| match c {
+                CursorElement::Image(e) => FxElement::Cursor(e),
+                CursorElement::Surface(e) => FxElement::Surface(e),
+            })
+            .collect()
+    }
+}
+
 impl Cursors {
     pub fn new() -> Self {
         let name = std::env::var("XCURSOR_THEME").unwrap_or_else(|_| "default".into());

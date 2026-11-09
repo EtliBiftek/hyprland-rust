@@ -89,4 +89,12 @@ echo "ok: png capture"
 
 kill -0 "$COMP" 2>/dev/null || fail "compositor died"
 grep -q "panicked" "$T/log" && fail "compositor panicked"
+# overlay_cursor: `grim -c` differs from a plain capture around the pointer.
+"$CTL" dispatch movecursor "900 600" >/dev/null
+sleep 0.5
+timeout 20 grim -t ppm -g "880,580 60x60" "$T/plain.ppm" || fail "grim plain failed"
+timeout 20 grim -c -t ppm -g "880,580 60x60" "$T/cursor.ppm" || fail "grim -c failed"
+cmp -s "$T/plain.ppm" "$T/cursor.ppm" && fail "grim -c shows no cursor"
+echo "ok: overlay_cursor"
+
 echo "OK: wlr-screencopy through grim"

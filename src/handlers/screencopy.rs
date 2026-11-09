@@ -4,8 +4,8 @@
 //! `copy` queues the frame; the backend render loop calls `screencopy_process`
 //! which renders the whole output into an offscreen texture, reads it back and
 //! writes the requested region into the client's shm buffer.
-//! shortcuts: shm buffers only (no linux_dmabuf event); `overlay_cursor` is
-//! ignored; output scale/transform are assumed to be 1/normal; a full-output
+//! shortcuts: shm buffers only (no linux_dmabuf event); `overlay_cursor` is drawn at
+//! scale 1; output scale/transform are assumed to be 1/normal; a full-output
 //! readback is cropped on the CPU; `copy_with_damage` reports the whole region
 //! as damaged and completes on the next frame; the headless backend has no
 //! renderer and answers `failed`. Upgrade with dmabuf export + damage tracking.
@@ -53,6 +53,7 @@ pub struct FrameData {
     /// Region in output pixels; `None` when the request was invalid.
     rect: Option<Rectangle<i32, smithay::utils::Physical>>,
     copied: AtomicBool,
+    overlay_cursor: bool,
 }
 
 struct Pending {
@@ -61,6 +62,7 @@ struct Pending {
     output: Output,
     rect: Rectangle<i32, smithay::utils::Physical>,
     with_damage: bool,
+    overlay_cursor: bool,
 }
 
 #[derive(Default)]
@@ -139,6 +141,7 @@ fn new_frame(
     frame: New<ZwlrScreencopyFrameV1>,
     wl_output: &WlOutput,
     region: Option<(i32, i32, i32, i32)>,
+    overlay_cursor: bool,
 ) {
     let output = Output::from_resource(wl_output);
     let size = output
@@ -159,6 +162,7 @@ fn new_frame(
             output,
             rect,
             copied: AtomicBool::new(false),
+            overlay_cursor,
         },
     );
     match rect {
@@ -188,9 +192,11 @@ impl Dispatch<ZwlrScreencopyManagerV1, ()> for Hypr {
         data_init: &mut DataInit<'_, Self>,
     ) {
         match request {
-            zwlr_screencopy_manager_v1::Request::CaptureOutput { frame, output, .. } => {
-                new_frame(data_init, frame, &output, None)
-            }
+            zwlr_screencopy_manager_v1::Request::CaptureOutput {
+                frame,
+                output,
+                overlay_cursor,
+            } => new_frame(data_init, frame, &output, None, overlay_cursor != 0),
             zwlr_screencopy_manager_v1::Request::CaptureOutputRegion {
                 frame,
                 output,
@@ -198,8 +204,14 @@ impl Dispatch<ZwlrScreencopyManagerV1, ()> for Hypr {
                 y,
                 width,
                 height,
-                ..
-            } => new_frame(data_init, frame, &output, Some((x, y, width, height))),
+                overlay_cursor,
+            } => new_frame(
+                data_init,
+                frame,
+                &output,
+                Some((x, y, width, height)),
+                overlay_cursor != 0,
+            ),
             _ => {}
         }
     }
@@ -243,6 +255,7 @@ impl Dispatch<ZwlrScreencopyFrameV1, FrameData> for Hypr {
             output,
             rect,
             with_damage,
+            overlay_cursor: data.overlay_cursor,
         });
     }
 }
@@ -285,10 +298,15 @@ impl Hypr {
         if mine.is_empty() {
             return;
         }
-        let shot = self.render_shot(renderer, output);
         let time = self.start_time.elapsed();
+        let (mut plain, mut with_cursor) = (None, None);
         for p in mine {
-            match &shot {
+            let slot = if p.overlay_cursor {
+                &mut with_cursor
+            } else {
+                &mut plain
+            };
+            match slot.get_or_insert_with(|| self.render_shot(renderer, output, p.overlay_cursor)) {
                 Ok(shot) => p.finish(shot, time),
                 Err(e) => {
                     tracing::warn!("screencopy failed: {e}");
@@ -303,6 +321,7 @@ impl Hypr {
         &mut self,
         renderer: &mut GlesRenderer,
         output: &Output,
+        overlay_cursor: bool,
     ) -> Result<Shot, String> {
         let size = output.current_mode().ok_or("output has no mode")?.size;
         let mut tex: GlesTexture = renderer
@@ -328,7 +347,10 @@ impl Hypr {
             )
             .map_err(|e| format!("render: {e:?}"))?;
         } else {
-            let elements = crate::render::output_elements(self, renderer, output);
+            let mut elements = crate::render::output_elements(self, renderer, output);
+            if overlay_cursor {
+                elements.splice(0..0, self.cursor_fx_elements(renderer, output));
+            }
             tracker
                 .render_output(renderer, &mut target, 0, &elements, clear)
                 .map_err(|e| format!("render: {e:?}"))?;

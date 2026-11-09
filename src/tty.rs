@@ -47,11 +47,7 @@ use smithay::{
     utils::DeviceFd,
 };
 
-use crate::{
-    config::MonMode,
-    cursor::{CursorElement, Cursors},
-    CalloopData, Hypr,
-};
+use crate::{config::MonMode, cursor::CursorElement, CalloopData, Hypr};
 
 smithay::backend::renderer::element::render_elements! {
     pub TtyElement<=GlesRenderer>;
@@ -82,7 +78,7 @@ pub struct Tty {
     manager: DrmOutputManager<Allocator, Exporter, (), DrmDeviceFd>,
     renderer: GlesRenderer,
     outputs: Vec<TtyOutput>,
-    cursors: Cursors,
+
     /// False while another VT is active.
     active: bool,
 }
@@ -294,7 +290,6 @@ pub fn init_tty(
         manager,
         renderer,
         outputs: Vec::new(),
-        cursors: Cursors::new(),
         active: true,
     };
     tty.scan_connectors(&mut data.state, &data.display_handle);
@@ -445,7 +440,8 @@ fn render(data: &mut CalloopData, crtc: crtc::Handle) {
     if geo.to_f64().contains(pointer) {
         let local = pointer - geo.loc.to_f64();
         elements.extend(
-            tty.cursors
+            state
+                .cursors
                 .elements(&mut tty.renderer, &state.cursor_status, local, scale)
                 .into_iter()
                 .map(|c| match c {
