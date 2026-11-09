@@ -10,38 +10,39 @@ line-by-line port and is not affiliated with the Hyprland project.
 
 ## Status
 
-Early. Keybindings and IPC are covered by CI tests; the TTY backend compiles in
-CI but has **not yet been run on real hardware**.
+Usable for testing, not yet proven on real hardware. CI runs the TTY backend on
+the kernel's virtual KMS device (VKMS) with seatd, but it has **not been run on
+a real GPU**.
 
 What works now (targeting Hyprland v0.57.1 behaviour):
 
-- Backends: `winit` (nested window in an X11/Wayland session), `tty`
-  (DRM/KMS + libinput + libseat; single GPU, first connected monitor only),
-  `headless` (virtual output without rendering, for CI).
-- Layouts: dwindle and master (per workspace, `layoutmsg`), groups (tabbed,
-  with a simple groupbar), floating, fullscreen, pinned windows, dynamic,
-  named and special (scratchpad) workspaces with Hyprland's workspace
-  selectors.
-- wlr-layer-shell (waybar, launchers, wallpapers; exclusive zones) and
-  server-side xdg-decoration.
-- Config in either format: `hyprland.lua` (Hyprland >= 0.55 Lua API: `hl.config`,
-  `hl.bind`, `hl.dsp.*`, `hl.window_rule`, ...; see `examples/hyprland.lua`) or
-  `hyprland.conf` (hyprlang). Lua function callbacks are not supported yet.
-- hyprlang config: variables, categories, `bind` with flags (`binde`,
-  `bindr`, `bindm`, ...), submaps, `input { }` (`kb_layout = tr`, repeat,
-  pointer and touchpad options, per-device blocks), `windowrule` /
-  `windowrulev2` / `layerrule`, `exec`, `exec-once`, `source`. Autoreload on
-  file change.
-- Most window-management dispatchers (`movewindow`, `swapwindow`,
-  `resizeactive`, `togglespecialworkspace`, `pin`, group dispatchers, ...).
-- IPC: Hyprland-style request and event sockets and a `hyprctl` binary
-  (`clients`, `workspaces`, `monitors`, `layers`, `binds`, `devices`,
-  `getoption`, `keyword`, `reload`, `dispatch`, `-j`, `--batch`, ...).
+- Backends: `winit` (nested window), `tty` (DRM/KMS + libinput + libseat; one
+  output per connector, udev hotplug, xcursor cursor; `AQ_DRM_DEVICES` picks the
+  GPU), `headless` (virtual outputs without rendering, for CI).
+- Multiple monitors: per-monitor workspaces, `monitor =` rules, monitor
+  dispatchers, `hyprctl output create/remove`.
+- Layouts: dwindle and master (per workspace, `layoutmsg`), groups, floating,
+  fullscreen, pinned windows, dynamic, named and special workspaces.
+- Visual effects: rounded corners, gradient borders, shadows, blur, opacity and
+  dim, Bézier animations.
+- XWayland: managed and override-redirect windows, clipboard bridge.
+- Touchpad gestures (`gesture =`), pointer-gestures for clients.
+- Config in either format: `hyprland.lua` (Hyprland >= 0.55 Lua API, including
+  function binds, `hl.on`, `hl.timer`, `hl.get_*`) or `hyprland.conf` (hyprlang:
+  variables, `source` globs, `bind` flags, submaps, `device { }`, window and
+  layer rules, `env`). Autoreload on file change.
+- Popular dotfiles load with zero config errors in CI: end-4, ML4W, HyDE,
+  JaKooLit and Hyprland's own example.
+- Protocols used by desktop tools: wlr-layer-shell, screencopy (shm),
+  ext-image-copy-capture, foreign-toplevel, linux-dmabuf, gamma control,
+  session lock, idle, input method, and Hyprland's focus-grab, toplevel-export,
+  toplevel-mapping, ctm-control and global-shortcuts. The full table is
+  [`docs/PARITY.md`](docs/PARITY.md).
+- IPC: Hyprland-style request and event sockets and a `hyprctl` binary.
 
-Not done yet: running the TTY backend on real hardware, multi-monitor and
-`monitor=` rules, XWayland scaling, animations and visual effects (rounding, blur,
-shadows), screen sharing. See [`docs/ROADMAP.md`](docs/ROADMAP.md) (in
-Turkish) for the plan.
+Not done yet: running on real hardware, fractional scale, on-screen
+notifications, plugins, HDR/VRR. See [`docs/ROADMAP.md`](docs/ROADMAP.md) (in
+Turkish) and [`docs/MIGRATION.md`](docs/MIGRATION.md) for moving from Hyprland.
 
 ## Building
 
@@ -62,10 +63,12 @@ hyprland-rust [-c FILE] [--backend winit|tty|headless] [--check-config]
 ```
 
 - `-c, --config FILE`: config file (default
-  `$XDG_CONFIG_HOME/hypr/hyprland.conf`; built-in defaults if none exists).
+  `$XDG_CONFIG_HOME/hypr/hyprland.lua`, then `hyprland.conf`; built-in defaults
+  if neither exists).
 - `--backend`: default is `winit` if `WAYLAND_DISPLAY` or `DISPLAY` is set,
   otherwise `tty`.
 - `--check-config`: parse the config, print the error count and exit.
+- `HYPR_HEADLESS_OUTPUTS=N`: number of headless outputs (default 1).
 - `HYPR_HEADLESS_SIZE=WxH`: output size for the headless backend (default
   1920x1080).
 - `RUST_LOG=debug`: verbose logs.
@@ -101,6 +104,9 @@ Integration scripts in `tests/` (run from the repository root after
 - `tests/protocols.sh`: clipboard (wl-copy/wl-paste, primary selection).
 - `tests/dispatchers.sh`: workspace, cursor and z-order dispatchers.
 - `tests/lua-config.sh`: a `hyprland.lua` config and Lua `hyprctl dispatch`.
+- `tests/multimon.sh`, `tests/tty-vkms.sh`, `tests/xwayland.sh`, `tests/render-fx.sh`:
+  monitors, DRM/KMS on VKMS, X11 clients, effects.
+- `tests/dots-conf.sh`, `tests/dots-lua.sh`: popular dotfiles at pinned commits.
 
 GitHub Actions runs all of the above on every push.
 

@@ -64,8 +64,8 @@ Turkish; reply in Turkish. Code, docs, commits and this file stay in English
   WM_CLASS class, `clients` has `xwayland: true`; override-redirect windows
   are mapped in `Space` only (`XState::or_windows`); clipboard and primary
   selection are bridged; X11 positions are synced from the `Space` once per
-  loop iteration (`x11_sync`). Client move/resize requests are ignored
-  (`bindm` works), no lazy start, no scaling.
+  loop iteration (`x11_sync`). Client move/resize requests start the `bindm`
+  grab; no lazy start, no scaling.
 - Layouts: dwindle (`layout.rs`) and master (`master.rs`), chosen per
   workspace (`general:layout`, workspace rule `layout:`), wrapped in
   `tiling.rs`; `layoutmsg` for both. Groups (tabbed) with a solid-color
@@ -76,9 +76,9 @@ Turkish; reply in Turkish. Code, docs, commits and this file stay in English
   group colors), gaps, wlr-layer-shell (exclusive zones, layer focus),
   xdg-decoration (always server side).
 - hyprlang config (`config.rs`): `$vars`, categories, `cat:key`, `bind` with
-  flags `l r e n m t i o d`, `unbind`, submaps, `exec(-once)`, `source`
+  flags `l r e n m t i o d p u`, `unbind`, submaps, `exec(-once)`, `source`
   (globs), `$ENV` fallback, `# hyprlang if/endif/noerror`, `gesture`
-  (stored), colors, `input { }` / `touchpad { }` / `device { }`, `windowrule`
+  (run from libinput), `env =`, colors, `input { }` / `touchpad { }` / `device { }`, `windowrule`
   / `windowrulev2` / `layerrule` / `windowrule[NAME]:enable` (`rules.rs`,
   `wm/window_rules.rs`). Unknown but well-known options are ignored with a
   debug log.
@@ -91,7 +91,7 @@ Turkish; reply in Turkish. Code, docs, commits and this file stay in English
   focuscurrentorlast, focusurgentorlast, focuswindow, splitratio,
   togglesplit, layoutmsg, submap, pass, tagwindow, group dispatchers,
   renameworkspace, bringactivetotop, alterzorder, movecursor(tocorner),
-  togglepseudo/pseudo, setprop (stored only), killwindow, signal, event,
+  togglepseudo/pseudo, fullscreenstate, sendshortcut, sendkeystate, setprop, killwindow, signal, event,
   dpms, global, monitor dispatchers (see Multi-monitor).
 - Protocols (`handlers/protocols.rs`): primary selection, wlr/ext
   data-control, viewporter, fractional-scale (1.0), presentation-time,
@@ -101,14 +101,13 @@ Turkish; reply in Turkish. Code, docs, commits and this file stay in English
   xdg-foreign, xdg-activation. Own files in `handlers/`: wlr-screencopy
   (shm, winit/tty; headless replies `failed`), wlr-foreign-toplevel-management
   + ext-foreign-toplevel-list, wlr-output-management (read-only),
-  hyprland-global-shortcuts-v1 (XML recreated from memory, untested with a
-  real client).
+  hyprland-global-shortcuts-v1 (real XML, untested with a real client).
 - IPC (`ipc.rs`, `ipc_cmds.rs`): async request socket `.socket.sock` and
   event socket `.socket2.sock` under
   `$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/`. Requests include
   clients, workspaces, monitors, activewindow, layers, binds, devices,
   getoption, keyword, reload, configerrors, dispatch, getprop, eval, submap,
-  locked, setcursor (validated only), `[[BATCH]]`; hyprpaper/hyprsunset are
+  locked, status, rollinglog, setcursor (validated only), `[[BATCH]]`; hyprpaper/hyprsunset are
   forwarded to their own sockets. `src/bin/hyprctl.rs` is a std-only client
   (flags anywhere on the command line, like Hyprland's).
 - Tests: unit tests for all pure modules plus twenty shell tests in
@@ -119,14 +118,15 @@ Turkish; reply in Turkish. Code, docs, commits and this file stay in English
 - Smoke-tested in Xvfb with 3 `weston-terminal`s (`docs/screenshot.png`).
 
 - Protocols batch 2 (`handlers/extra.rs` owns the state): hyprland focus-grab,
-  toplevel-export/mapping, ctm-control (stored), surface (stored), lock-notify,
-  global-shortcuts (real XML), wlr-gamma (stored), ext-image-copy-capture,
+  toplevel-export/mapping, ctm-control, surface, lock-notify,
+  global-shortcuts (real XML), wlr-gamma, ext-image-copy-capture,
   linux-dmabuf v3, xdg-dialog/toplevel-icon/system-bell, alpha-modifier,
   tearing-control, fifo/commit-timing (unmanaged), security-context, tablet,
   text-input/input-method/virtual-keyboard, wlr-virtual-pointer, ext-workspace.
   Capture jobs go through `handlers/capture.rs`. Tests: `tests/globals.sh`
   (wayland-info, wlsunset, wtype+wev), `tests/probe.sh` (`src/bin/protocol-probe.rs`).
-  Missing: drm-lease, input-capture (libei), applying gamma/CTM/opacity.
+  Missing: drm-lease, input-capture (libei). The tty backend writes gamma and
+  the CTM diagonal to the CRTCs; surface opacity is applied to windows only.
 
 ## Roadmap
 
@@ -137,6 +137,20 @@ cursor, protocols, XWayland), 2 IPC/hyprctl parity, 3 window-management parity
 (dispatchers, binds, rules, layouts), 4 config parity, 5 visual effects,
 6 advanced output/render, 7 protocol completeness, 8 plugins, 9 hardening and
 release.
+
+## In progress: OsmiumOS gap list
+
+Branch `osmium` (unmerged). Source: `docs/hyprland-rust-gaps.md` in
+EtliBiftek/osmium-os (written against d9010fb, so many rows are stale). Rules:
+one commit and one test per item, update `docs/PARITY.md`.
+
+- CI is red only on `tests/dots-conf.sh` (m3ww): `unknown dispatcher
+  fakefullscreen` (`keybinds.conf:258`) and `invalid float 1200px`
+  (`hyprland.conf:42`). Fix these first.
+- Done on the branch: Phase 0, #9, #19, #24, #30. #1, #2, #4-6, #10, #12, #13,
+  #16, #31 and #32-38 were done in main (some partially, see the lists below).
+- Next: #26, #7, #8, #14, #17, #18, #20, #21, #22, #27, #29, #39-43, then the
+  partial ones (#3, #11, #15, #23, #28).
 
 ## Future work
 
@@ -326,10 +340,8 @@ Use a test config with `exec-once = weston-terminal` lines to open windows.
 - Gaps: tiling area = output shrunk by `gaps_out - gaps_in`, then each window
   rect shrunk by `gaps_in`, which gives `gaps_out` at screen edges and
   `2 * gaps_in` between windows (matches Hyprland).
-- Borders are drawn as 4 solid rects outside each window, on top of all
-  windows (overlapping floating windows can show a lower window's border).
-  Rounded/gradient borders need a custom shader later; gradients currently
-  use only the first color.
+- Borders, rounding, shadows and blur are drawn by `render::output_elements`
+  per output, in output-local coordinates; backends only call it.
 - `spawn` runs `sh -c 'eval "$1" &' sh <cmd>` and waits for that `sh`: the
   program is re-parented to init, so no SIGCHLD handler is needed. Do not
   ignore SIGCHLD globally (children would inherit `SIG_IGN`).
@@ -379,8 +391,8 @@ Use a test config with `exec-once = weston-terminal` lines to open windows.
   options, lua_config) build on Windows: copy them into a scratch lib crate
   (deps: tracing, bitflags, mlua, serde, serde_json, regex) to run their unit
   tests or fuzz them locally.
-- The owner does not want subagents (Pro plan limits); if one is
-  unavoidable, use Haiku.
+- Default is no subagents (Pro plan limits). Use one only when the owner asks
+  in that request, with the model the owner names (else Haiku).
 
 ## Conventions
 
