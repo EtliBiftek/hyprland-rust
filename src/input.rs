@@ -394,6 +394,16 @@ impl Hypr {
 
                 let button_state = event.state();
 
+                if ButtonState::Pressed == button_state && self.wm.kill_mode {
+                    self.wm.kill_mode = false;
+                    if let Some(w) = self.window_under(pointer.current_location()) {
+                        self.wm.target = Some(w);
+                        self.kill_window(None, true);
+                        self.wm.target = None;
+                    }
+                    self.wm.consumed_buttons.push(button);
+                    return;
+                }
                 if ButtonState::Pressed == button_state {
                     self.focus_grab_button(pointer.current_location());
                 }
@@ -760,6 +770,11 @@ impl Hypr {
             .chain(handle.raw_latin_sym_or_raw_current_sym())
             .map(|s| xkb::keysym_get_name(s).to_ascii_lowercase())
             .collect();
+        if pressed && self.wm.kill_mode && syms.iter().any(|s| s == "escape") {
+            self.wm.kill_mode = false;
+            out.consume = true;
+            return out;
+        }
         for b in &self.config.binds {
             if (b.submap != self.wm.submap && !b.flags.universal)
                 || (locked && !b.flags.locked)

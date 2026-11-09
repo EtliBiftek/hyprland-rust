@@ -54,6 +54,9 @@ jobs:
       - name: Session lock test (headless + swaylock)
         timeout-minutes: 3
         run: sh tests/session-lock.sh
+      - name: hyprctl kill test (Xvfb + weston-terminal)
+        timeout-minutes: 3
+        run: sh tests/hyprctl-kill.sh
       - name: Lua config test (headless + hyprland.lua)
         timeout-minutes: 3
         run: sh tests/lua-config.sh

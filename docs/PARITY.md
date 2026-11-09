@@ -629,7 +629,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `workspacerules` | parsed | Stub: JSON `[]`, text empty. |
 | `activeworkspace` | tested | `tests/ipc-xvfb.sh`. |
 | `clients` | tested | `tests/headless-smoke.sh` (layout check). |
-| `kill` | parsed | Stub: replies `ok`; the kill picker is not started. |
+| `kill` | tested | The next click kills the client under the pointer, Escape cancels (`tests/hyprctl-kill.sh`). |
 | `activewindow` | partial | Query. No test. |
 | `layers` | tested | `tests/layer-shell.sh`. |
 | `version` | tested | `tests/ipc-xvfb.sh`, which checks only the name. Version fields are placeholders. |
@@ -689,7 +689,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `focusedmon` | tested | `tests/ipc-xvfb.sh`. |
 | `focusedmonv2` | partial | Emitted from `ipc.rs`. No test. |
 | `fullscreen` | partial | Only from the dispatcher, not from client requests (known gap in CLAUDE.md). |
-| `kill` | none | Kill picker not implemented. |
+| `kill` | tested | See the hyprctl row. |
 | `lockgroups` | partial | Emitted from `wm_groups.rs`. No test. |
 | `minimized` | none | Not emitted. |
 | `monitoradded` | none | No hotplug. |

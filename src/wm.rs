@@ -51,6 +51,8 @@ pub struct WmState {
     pub consumed_keys: Vec<u32>,
     /// Mouse buttons whose press a bind consumed: the release is dropped too.
     pub consumed_buttons: Vec<u32>,
+    /// `hyprctl kill`: the next click kills the client under the pointer.
+    pub kill_mode: bool,
     /// Time of the last wheel event looked up in the binds.
     pub last_wheel_bind: u32,
     /// Modifiers in effect when each held key was pressed, so a release bind
@@ -107,6 +109,7 @@ impl WmState {
             repeat: None,
             consumed_keys: Vec::new(),
             consumed_buttons: Vec::new(),
+            kill_mode: false,
             last_wheel_bind: 0,
             key_mods: Vec::new(),
             passed_keys: Vec::new(),
@@ -1224,7 +1227,7 @@ impl Hypr {
         self.focus_window(Some(w));
     }
 
-    fn kill_window(&mut self, sel: Option<&WinSel>, force: bool) {
+    pub(crate) fn kill_window(&mut self, sel: Option<&WinSel>, force: bool) {
         let window = match sel {
             Some(s) => self.find_window(s).map(|(_, w)| w),
             None => self.focused_window(),

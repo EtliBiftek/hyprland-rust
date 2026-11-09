@@ -147,7 +147,7 @@ one commit and one test per item, update `docs/PARITY.md`.
 - Done on the branch: Phase 0, #9, #19, #24, #26, #30. #1, #2, #4-6, #10, #12, #13,
   #16, #31 and #32-38 were done in main (some partially, see the lists below).
 - #21 partial: `immediate`, `no_focus`, `stay_focused`, `min_size`, `max_size` are still stored only.
-- Next (#7, #8, #14, #17, #18, #20, #21 in CI): #22, #27, #29, #39-43, then the
+- Next (#7, #8, #14, #17, #18, #20, #21, #27 in CI): #22, #29, #39-43, then the
   partial ones (#3, #11, #15, #23, #28).
 - Quota rule (owner, 2026-11-09): use the quota to the end, no percent stop.
   The scheduled task `osmium-gaps-resume` (05:05, 11:05, 17:05, 23:05)

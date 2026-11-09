@@ -46,7 +46,11 @@ pub fn handle(h: &mut Hypr, req: &Request) -> Option<String> {
             _ => "ok".into(),
         },
         "splash" => "Rust never sleeps.".into(),
-        "kill" => "ok".into(),
+        // The next click kills the client under it (Escape cancels).
+        "kill" => {
+            h.wm.kill_mode = true;
+            "ok".into()
+        }
         "switchxkblayout" => switch_xkb_layout(h, args),
         "systeminfo" => system_info(h),
         // v0.57.1 `status`: which config format is loaded.
