@@ -333,6 +333,12 @@ impl Hypr {
             Target::Special(n) => self.toggle_special(n),
             t => {
                 if let Some(i) = self.ensure_ws(t) {
+                    let hide = "binds:hide_special_on_workspace_change";
+                    if crate::options::get_option(&self.config, hide)
+                        == Some(crate::options::OptValue::Bool(true))
+                    {
+                        self.hide_special();
+                    }
                     self.switch_to_index(i);
                 }
             }

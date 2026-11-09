@@ -56,7 +56,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `binds:drag_center_window` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `binds:`). |
 | `binds:drag_threshold` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `binds:`). |
 | `binds:focus_preferred_method` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `binds:`). |
-| `binds:hide_special_on_workspace_change` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `binds:`). |
+| `binds:hide_special_on_workspace_change` | tested | Bool. `tests/dispatchers.sh`. |
 | `binds:ignore_group_lock` | tested | Bool. Used by group dispatchers. |
 | `binds:movefocus_cycles_fullscreen` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `binds:`). |
 | `binds:movefocus_cycles_groupfirst` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `binds:`). |

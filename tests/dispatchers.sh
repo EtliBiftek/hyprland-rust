@@ -167,6 +167,14 @@ dsp forcerendererreload
 dsp bringactivetotop
 dsp setprop active bordersize 3
 
+# 9b. binds:hide_special_on_workspace_change closes the special workspace.
+timeout 5 "$HYPRCTL" keyword binds:hide_special_on_workspace_change true >/dev/null
+dsp togglespecialworkspace
+timeout 5 "$HYPRCTL" -j monitors | python3 -c 'import json,sys; assert json.load(sys.stdin)[0]["specialWorkspace"]["id"] != 0' || fail "special workspace not shown"
+dsp workspace 2
+timeout 5 "$HYPRCTL" -j monitors | python3 -c 'import json,sys; assert json.load(sys.stdin)[0]["specialWorkspace"]["id"] == 0' || fail "special workspace stayed open"
+dsp workspace 1
+
 # 10. Window argument: act on the unfocused window, the focus stays.
 timeout 5 "$HYPRCTL" dispatch exec weston-simple-shm >/dev/null || fail "dispatch exec"
 wait_clients 2
