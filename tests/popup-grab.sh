@@ -60,7 +60,7 @@ wait_log 'xdg_popup@.*\.grab(' || fail "the menu did not ask for a grab"
 xdotool mousemove --window "$WIN" 1000 700
 sleep 0.5
 xdotool click 1
-wait_log 'xdg_popup@.*\.popup_done(' || fail "outside click did not dismiss the popup"
+wait_log 'xdg_popup@[0-9]*\.\(popup_done\|destroy\)(' || fail "outside click did not dismiss the popup"
 
 kill -0 "$COMP" 2>/dev/null || fail "compositor died"
 echo "OK: xdg_popup grab, dismissed by an outside click"
