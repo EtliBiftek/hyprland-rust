@@ -151,6 +151,11 @@ one commit and one test per item, update `docs/PARITY.md`.
   #16, #31 and #32-38 were done in main (some partially, see the lists below).
 - Next: #26, #7, #8, #14, #17, #18, #20, #21, #22, #27, #29, #39-43, then the
   partial ones (#3, #11, #15, #23, #28).
+- Paused 2026-11-09 07:13 (UTC+3): weekly usage was already 97% at session
+  start (stop rule is 95%), so no item was started and the CI failure above is
+  still open. The weekly limit resets at 11:00; the one-shot scheduled task
+  `osmium-gaps-resume` continues at 11:05. Pointers: `parse_float` is in
+  `src/config.rs`; `fullscreenstate` is parsed in `Dispatcher::parse` there.
 
 ## Future work
 
