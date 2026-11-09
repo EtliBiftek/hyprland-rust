@@ -63,6 +63,9 @@ jobs:
       - name: Window snap test (Xvfb + xdotool)
         timeout-minutes: 3
         run: sh tests/snap.sh
+      - name: Window swallowing test (headless)
+        timeout-minutes: 3
+        run: sh tests/swallow.sh
       - name: Lua config test (headless + hyprland.lua)
         timeout-minutes: 3
         run: sh tests/lua-config.sh

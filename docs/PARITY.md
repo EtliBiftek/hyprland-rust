@@ -393,7 +393,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `misc:disable_watchdog_warning` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:disable_xdg_env_checks` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:enable_anr_dialog` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
-| `misc:enable_swallow` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
+| `misc:enable_swallow` | tested | Bool. `tests/swallow.sh`. The hidden terminal is not listed by `clients`. |
 | `misc:exit_window_retains_fullscreen` | partial | Int. The next focused window of the workspace becomes fullscreen; no test. |
 | `misc:float_force_onscreen` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:focus_on_activate` | tested | Bool, also the `focus_on_activate` rule (`tests/probe.sh`). |
@@ -416,8 +416,8 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `misc:session_lock_xray` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:size_limits_tiled` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:splash_font_family` | parsed | String. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
-| `misc:swallow_exception_regex` | parsed | String. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
-| `misc:swallow_regex` | parsed | String. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
+| `misc:swallow_exception_regex` | partial | String, full match on the title; no test. |
+| `misc:swallow_regex` | tested | String, full match on the class. |
 | `misc:vrr` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `opengl:nvidia_anti_flicker` | none | Bool. Not accepted: unknown option, config load error (`config.rs` `apply_inner`). |
 | `quirks:prefer_hdr` | none | Int. Not accepted: unknown option, config load error (`config.rs` `apply_inner`). |

@@ -51,6 +51,8 @@ pub struct WmState {
     pub consumed_keys: Vec<u32>,
     /// Mouse buttons whose press a bind consumed: the release is dropped too.
     pub consumed_buttons: Vec<u32>,
+    /// `misc:enable_swallow`: (window, the terminal it hides).
+    pub swallowed: Vec<(Window, Window)>,
     /// `cursor:hide_on_key_press` hid the cursor until the next motion.
     pub cursor_hidden: bool,
     /// For `cursor:inactive_timeout`.
@@ -113,6 +115,7 @@ impl WmState {
             repeat: None,
             consumed_keys: Vec::new(),
             consumed_buttons: Vec::new(),
+            swallowed: Vec::new(),
             cursor_hidden: false,
             last_motion: std::time::Instant::now(),
             kill_mode: false,
@@ -534,10 +537,29 @@ impl Hypr {
 
     /// Like `remove_window`, for windows without a surface (X11).
     pub fn remove_window_obj(&mut self, window: &Window) {
+        // A swallowed (hidden) window that goes away is simply forgotten.
+        self.wm.swallowed.retain(|(_, hidden)| hidden != window);
         let Some(idx) = self.ws_of(window) else {
             return;
         };
         let window = window.clone();
+        // The window that swallowed a terminal gives the slot back.
+        if let Some(p) = self.wm.swallowed.iter().position(|(by, _)| by == &window) {
+            let (_, hidden) = self.wm.swallowed.remove(p);
+            self.workspaces[idx].replace_in_layout(&window, &hidden);
+            self.ipc.emit(
+                "closewindow",
+                crate::ipc::window_addr(&window).trim_start_matches("0x"),
+            );
+            self.wm.pinned.retain(|w| w != &window);
+            self.wm.client_fs.retain(|w| w != &window);
+            self.space.unmap_elem(&window);
+            self.relayout();
+            if self.visible_ws().contains(&idx) {
+                self.focus_window(Some(hidden));
+            }
+            return;
+        }
         if crate::ipc::is_mapped(&window) {
             self.ipc.emit(
                 "closewindow",

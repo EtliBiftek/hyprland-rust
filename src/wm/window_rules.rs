@@ -49,7 +49,66 @@ pub(crate) fn rule_size(w: &Window, name: &str) -> Option<(i32, i32)> {
     Some((a.parse().ok()?, b.trim().parse().ok()?))
 }
 
+/// Parent pid from the text of `/proc/PID/stat` (the comm field may hold
+/// spaces and parentheses, so fields are counted after the last `)`).
+pub fn ppid_from_stat(stat: &str) -> Option<i32> {
+    stat.rsplit_once(')')?
+        .1
+        .split_whitespace()
+        .nth(1)?
+        .parse()
+        .ok()
+}
+
 impl Hypr {
+    /// `misc:enable_swallow`: a window opened from a terminal (class matching
+    /// `misc:swallow_regex`) takes the terminal's place until it closes.
+    fn try_swallow(&mut self, w: &Window) {
+        use crate::options::{flag, get_option, OptValue};
+        let text = |k: &str| match get_option(&self.config, k) {
+            Some(OptValue::Str(s)) if s != "[[EMPTY]]" => s,
+            _ => String::new(),
+        };
+        let full = |pat: &str, s: &str| {
+            !pat.is_empty()
+                && regex::Regex::new(&format!("^(?:{pat})$")).is_ok_and(|r| r.is_match(s))
+        };
+        let pattern = text("misc:swallow_regex");
+        if !flag(&self.config, "misc:enable_swallow") || pattern.is_empty() {
+            return;
+        }
+        let (class, title) = class_title(w);
+        if full(&text("misc:swallow_exception_regex"), &title) || full(&pattern, &class) {
+            return;
+        }
+        // Ancestors of the new window's process.
+        let mut pid = self.window_pid(w);
+        let mut ancestors = Vec::new();
+        for _ in 0..8 {
+            let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap_or_default();
+            match ppid_from_stat(&stat) {
+                Some(p) if p > 1 => {
+                    ancestors.push(p);
+                    pid = p;
+                }
+                _ => break,
+            }
+        }
+        let Some(i) = self.ws_of(w) else { return };
+        let parent = self.workspaces[i].windows().into_iter().find(|c| {
+            c != w && ancestors.contains(&self.window_pid(c)) && full(&pattern, &class_title(c).0)
+        });
+        let Some(parent) = parent else { return };
+        // The new window leaves its own slot and takes the terminal's.
+        let ws = &mut self.workspaces[i];
+        ws.remove(w);
+        ws.replace_in_layout(&parent, w);
+        self.space.unmap_elem(&parent);
+        self.wm.swallowed.push((w.clone(), parent));
+        self.relayout();
+        self.focus_window(Some(w.clone()));
+    }
+
     /// A visible window's `idle_inhibit` rule holds off idle.
     pub fn rule_inhibits_idle(&self) -> bool {
         self.space.elements().any(|w| {
@@ -205,6 +264,7 @@ impl Hypr {
                 self.set_floating(w, Some(true));
             }
         }
+        self.try_swallow(w);
         if self.config.rules.window.is_empty() {
             return;
         }
@@ -377,5 +437,17 @@ impl Hypr {
             }
         }
         self.refresh_window_rules(&w);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ppid_from_stat;
+
+    #[test]
+    fn ppid() {
+        assert_eq!(ppid_from_stat("42 (sh) S 7 42 7 0"), Some(7));
+        assert_eq!(ppid_from_stat("42 (a b) c) R 1234 1 1"), Some(1234));
+        assert_eq!(ppid_from_stat(""), None);
     }
 }
