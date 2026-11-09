@@ -86,8 +86,8 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `cursor:warp_on_toggle_special` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
 | `cursor:zoom_detached_camera` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
 | `cursor:zoom_disable_aa` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
-| `cursor:zoom_factor` | parsed | Float. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
-| `cursor:zoom_rigid` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
+| `cursor:zoom_factor` | tested | Float. Scene scaled around the cursor (`tests/render-fx.sh`); the cursor image is not scaled. |
+| `cursor:zoom_rigid` | tested | Bool. Cursor kept centered. |
 | `debug:colored_stdout_logs` | none | Bool. Not accepted: unknown option, config load error (`config.rs` `apply_inner`). |
 | `debug:damage_blink` | none | Bool. Not accepted: unknown option, config load error (`config.rs` `apply_inner`). |
 | `debug:damage_tracking` | none | Int. Not accepted: unknown option, config load error (`config.rs` `apply_inner`). |

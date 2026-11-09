@@ -122,6 +122,24 @@ assert near(px(s, 101, 101), (0, 255, 0), 6), "unrounded corner must be window c
 PY
 echo "ok: rounded corners"
 
+# 1b. cursor zoom ----------------------------------------------------------
+"$CTL" dispatch movecursor "300 250" >/dev/null
+kw cursor:zoom_factor 2
+sleep 1
+shot "$T/zoom.ppm"
+kw cursor:zoom_factor 1
+sleep 1
+python3 - "$T" <<'PY' || fail "cursor zoom check failed"
+import sys
+sys.path.insert(0, sys.argv[1])
+from px import *
+z = load(sys.argv[1] + "/zoom.ppm")
+print("zoom", px(z, 650, 500), px(z, 750, 500))
+assert near(px(z, 650, 500), (0, 255, 0), 6), "window not scaled around the cursor"
+assert near(px(z, 750, 500), (26, 26, 26), 6), "zoomed window too large"
+PY
+echo "ok: cursor zoom"
+
 # 2. gradient border -------------------------------------------------------
 kw general:border_size 10
 kw general:col.active_border "rgb(ff0000) rgb(0000ff) 0deg"

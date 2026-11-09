@@ -650,6 +650,36 @@ pub fn ws_style(
     }
 }
 
+/// Where the zoomed output goes: scaled by `z`, the point under the cursor
+/// stays put; `rigid` keeps the cursor centered instead (clamped to the output).
+pub fn zoom_rect(out: (f32, f32), cursor: (f32, f32), z: f32, rigid: bool) -> FRect {
+    let (w, h) = (out.0 * z, out.1 * z);
+    let (x, y) = if rigid {
+        (
+            (out.0 / 2.0 - cursor.0 * z).clamp(out.0 - w, 0.0),
+            (out.1 / 2.0 - cursor.1 * z).clamp(out.1 - h, 0.0),
+        )
+    } else {
+        (cursor.0 * (1.0 - z), cursor.1 * (1.0 - z))
+    };
+    FRect::new(x, y, w, h)
+}
+
+#[cfg(test)]
+mod zoom_tests {
+    use super::*;
+
+    #[test]
+    fn zoom() {
+        let r = zoom_rect((1000.0, 800.0), (300.0, 250.0), 2.0, false);
+        assert_eq!((r.x, r.y, r.w, r.h), (-300.0, -250.0, 2000.0, 1600.0));
+        let r = zoom_rect((1000.0, 800.0), (500.0, 400.0), 2.0, true);
+        assert_eq!((r.x, r.y), (-500.0, -400.0));
+        let r = zoom_rect((1000.0, 800.0), (0.0, 0.0), 2.0, true);
+        assert_eq!((r.x, r.y), (0.0, 0.0));
+    }
+}
+
 #[cfg(test)]
 mod style_tests {
     use super::*;

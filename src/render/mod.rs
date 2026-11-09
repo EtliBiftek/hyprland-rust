@@ -1032,6 +1032,7 @@ pub fn output_elements(h: &mut Hypr, r: &mut GlesRenderer, output: &Output) -> V
 
     let mut v = groupbar;
     v.extend(groups.into_iter().rev().flatten());
+    let v = cursor_zoom(h, r, output, geo, v);
     screen_shader(h, r, output, out, now, v)
 }
 
@@ -1066,6 +1067,87 @@ fn screen_shader(
     else {
         return v;
     };
+    let uniforms = if time {
+        fx.animating = true;
+        vec![u("time", now as f32)]
+    } else {
+        Vec::new()
+    };
+    let area = Rectangle::new((0, 0).into(), out.into());
+    match post_pass(
+        &mut fx.screens,
+        r,
+        output.name(),
+        prog,
+        out,
+        &v,
+        area,
+        uniforms,
+    ) {
+        Some(el) => vec![el],
+        None => v,
+    }
+}
+
+/// `cursor:zoom_factor`: shows the finished scene scaled around the cursor.
+/// shortcuts: the cursor itself is drawn by the backends and is not scaled;
+/// `zoom_disable_aa` and `zoom_detached_camera` are ignored.
+fn cursor_zoom(
+    h: &mut Hypr,
+    r: &mut GlesRenderer,
+    output: &Output,
+    geo: Rectangle<i32, Logical>,
+    v: Vec<FxElement>,
+) -> Vec<FxElement> {
+    use crate::options::{get_option, OptValue};
+    let zoom = match get_option(&h.config, "cursor:zoom_factor") {
+        Some(OptValue::Float(f)) if f > 1.0 => f as f32,
+        _ => return v,
+    };
+    let rigid = get_option(&h.config, "cursor:zoom_rigid") == Some(OptValue::Bool(true));
+    let (Some(prog), Some(pointer)) = (
+        h.fx.progs.as_ref().map(|p| p.plain.clone()),
+        h.seat.get_pointer(),
+    ) else {
+        return v;
+    };
+    let c = pointer.current_location() - geo.loc.to_f64();
+    let out = (geo.size.w, geo.size.h);
+    let rect = crate::animation::zoom_rect(
+        (out.0 as f32, out.1 as f32),
+        (c.x as f32, c.y as f32),
+        zoom,
+        rigid,
+    );
+    h.fx.animating = true;
+    match post_pass(
+        &mut h.fx.screens,
+        r,
+        format!("zoom:{}", output.name()),
+        prog,
+        out,
+        &v,
+        rect_i(rect),
+        Vec::new(),
+    ) {
+        Some(el) => vec![el],
+        None => v,
+    }
+}
+
+/// Draws `v` into a cached texture (redrawn only when `v` changed) and returns
+/// one element showing it at `area` through `prog`.
+#[allow(clippy::too_many_arguments)]
+fn post_pass(
+    slots: &mut HashMap<String, ScreenSlot>,
+    r: &mut GlesRenderer,
+    name: String,
+    prog: GlesTexProgram,
+    out: (i32, i32),
+    v: &[FxElement],
+    area: Rectangle<i32, Logical>,
+    uniforms: Vec<Uniform<'static>>,
+) -> Option<FxElement> {
     let refs: Vec<&FxElement> = v.iter().collect();
     let key: Vec<_> = refs
         .iter()
@@ -1077,39 +1159,22 @@ fn screen_shader(
             )
         })
         .collect();
-    let name = output.name();
-    let force = fx.screens.get(&name).is_none_or(|s| s.key != key);
+    let force = slots.get(&name).is_none_or(|s| s.key != key);
     if force {
-        let tex = match blur::render_scene(r, out.0, out.1, &refs, CLEAR) {
-            Ok(t) => t,
-            Err(e) => {
-                tracing::warn!("screen shader: {e}");
-                return v;
-            }
-        };
-        let slot = fx
-            .screens
-            .entry(name.clone())
-            .or_insert_with(|| ScreenSlot {
-                key: Vec::new(),
-                tex: tex.clone(),
-                el: FxTex::new(prog, tex.clone()),
-            });
+        let tex = blur::render_scene(r, out.0, out.1, &refs, CLEAR)
+            .map_err(|e| tracing::warn!("post pass: {e}"))
+            .ok()?;
+        let slot = slots.entry(name.clone()).or_insert_with(|| ScreenSlot {
+            key: Vec::new(),
+            tex: tex.clone(),
+            el: FxTex::new(prog, tex.clone()),
+        });
         slot.key = key;
         slot.tex = tex;
     }
-    let Some(slot) = fx.screens.get_mut(&name) else {
-        return v;
-    };
-    let uniforms = if time {
-        fx.animating = true;
-        vec![u("time", now as f32)]
-    } else {
-        Vec::new()
-    };
-    let area = Rectangle::new((0, 0).into(), out.into());
+    let slot = slots.get_mut(&name)?;
     slot.el.update(&slot.tex, None, area, uniforms, 1.0, force);
-    vec![FxElement::Tex(slot.el.clone())]
+    Some(FxElement::Tex(slot.el.clone()))
 }
 
 fn load_screen_shader(r: &mut GlesRenderer, path: String) -> ScreenShader {

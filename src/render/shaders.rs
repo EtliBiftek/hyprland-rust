@@ -32,6 +32,14 @@ precision mediump float;
 #endif
 "#;
 
+/// A texture as it is.
+fn plain_tex_src() -> String {
+    format!(
+        "{}void main() {{ gl_FragColor = texture2D(tex, vec2(v_coords.x, 1.0 - v_coords.y)); }}",
+        tex_header()
+    )
+}
+
 /// A Hyprland screen shader (`tex`, `v_texcoord`, GLSL ES 1.00 or 3.00) as a
 /// Smithay texture shader, which links against a GLSL ES 1.00 vertex stage.
 pub fn adapt_screen_shader(src: &str) -> String {
@@ -236,6 +244,7 @@ pub struct Programs {
     pub window: GlesTexProgram,
     pub blur_down: GlesTexProgram,
     pub blur_up: GlesTexProgram,
+    pub plain: GlesTexProgram,
     pub border: GlesPixelProgram,
     pub shadow: GlesPixelProgram,
 }
@@ -298,10 +307,12 @@ impl Programs {
                 f1("power"),
             ],
         )?;
+        let plain = r.compile_custom_texture_shader(plain_tex_src(), &[])?;
         Ok(Programs {
             window,
             blur_down,
             blur_up,
+            plain,
             border,
             shadow,
         })
