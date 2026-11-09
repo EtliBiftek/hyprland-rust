@@ -16,7 +16,7 @@ jobs:
             libinput-dev libseat-dev libgbm-dev libegl-dev libdrm-dev libgles-dev \
             pkg-config xvfb xdotool weston waybar dbus gdb libxkbcommon-x11-0 libgl1-mesa-dri \
             wl-clipboard grim wlrctl wlr-randr xwayland x11-apps xterm xclip \
-            xfonts-base python3-xlib seatd wayland-utils wlsunset wtype wev wayland-protocols
+            xfonts-base python3-xlib seatd wayland-utils swaylock wlsunset wtype wev wayland-protocols
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
@@ -51,6 +51,9 @@ jobs:
       - name: xdg_popup grab test (Xvfb + weston-terminal)
         timeout-minutes: 3
         run: sh tests/popup-grab.sh
+      - name: Session lock test (headless + swaylock)
+        timeout-minutes: 3
+        run: sh tests/session-lock.sh
       - name: Lua config test (headless + hyprland.lua)
         timeout-minutes: 3
         run: sh tests/lua-config.sh

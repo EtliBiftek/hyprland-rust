@@ -10,6 +10,8 @@ use std::{
     time::Duration,
 };
 
+use smithay::backend::renderer::utils::with_renderer_surface_state;
+use smithay::output::Output;
 use smithay::{
     backend::renderer::{
         element::{
@@ -290,27 +292,46 @@ impl SessionLockHandler for Hypr {
     }
 
     fn lock(&mut self, confirmation: SessionLocker) {
-        self.session_locked = true;
-        self.lock_notify(true);
+        if self.session_locked {
+            // Dropping the confirmation sends `finished`. Only a dead locker
+            // can be replaced, and only with the option set.
+            let live = self.lock_surfaces.iter().any(|(s, _)| s.alive());
+            let restore =
+                crate::options::get_option(&self.config, "misc:allow_session_lock_restore")
+                    == Some(crate::options::OptValue::Bool(true));
+            if live || !restore {
+                return;
+            }
+            self.lock_surfaces.clear();
+        } else {
+            self.session_locked = true;
+            self.lock_notify(true);
+        }
         // No key may reach a window between lock() and the lock surface.
         if let Some(kb) = self.seat.get_keyboard() {
             kb.set_focus(self, None, SERIAL_COUNTER.next_serial());
         }
-        confirmation.lock();
+        // shortcut: confirmed on the first committed lock surface, not after
+        // every output presented one; track per-output frames to be exact.
+        self.pending_lock = Some(confirmation);
     }
 
     fn unlock(&mut self) {
         self.session_locked = false;
         self.lock_notify(false);
+        self.pending_lock = None;
         self.lock_surfaces.clear();
         let focus = self.focused_window();
         self.focus_window(focus);
     }
 
-    fn new_surface(&mut self, surface: LockSurface, _output: WlOutput) {
-        if let Some(mode) = self.space.outputs().next().and_then(|o| o.current_mode()) {
+    fn new_surface(&mut self, surface: LockSurface, output: WlOutput) {
+        let Some(output) = Output::from_resource(&output) else {
+            return;
+        };
+        if let Some(geo) = self.space.output_geometry(&output) {
             surface.with_pending_state(|s| {
-                s.size = Some((mode.size.w as u32, mode.size.h as u32).into())
+                s.size = Some((geo.size.w as u32, geo.size.h as u32).into())
             });
         }
         surface.send_configure();
@@ -322,21 +343,45 @@ impl SessionLockHandler for Hypr {
                 SERIAL_COUNTER.next_serial(),
             );
         }
-        self.lock_surfaces.push(surface);
+        self.lock_surfaces.push((surface, output));
     }
 }
 delegate_session_lock!(Hypr);
 
 impl Hypr {
-    /// Render elements of the live lock surfaces, drawn instead of the windows
-    /// while the session is locked.
-    pub fn lock_elements<R>(&self, renderer: &mut R) -> Vec<WaylandSurfaceRenderElement<R>>
+    /// A lock surface got its first buffer: the screen no longer shows
+    /// anything of the session, so `locked` may be sent.
+    pub fn lock_commit(&mut self, surface: &WlSurface) {
+        let committed = self
+            .lock_surfaces
+            .iter()
+            .any(|(s, _)| s.wl_surface() == surface);
+        let has_buffer =
+            with_renderer_surface_state(surface, |st| st.buffer().is_some()).unwrap_or(false);
+        if committed && has_buffer {
+            if let Some(confirmation) = self.pending_lock.take() {
+                confirmation.lock();
+            }
+        }
+    }
+
+    /// Render elements of `output`'s live lock surface, drawn instead of the
+    /// windows while the session is locked.
+    pub fn lock_elements<R>(
+        &self,
+        renderer: &mut R,
+        output: &Output,
+    ) -> Vec<WaylandSurfaceRenderElement<R>>
     where
         R: Renderer + ImportAll,
         R::TextureId: Clone + 'static,
     {
         let mut out = Vec::new();
-        for s in self.lock_surfaces.iter().filter(|s| s.alive()) {
+        for (s, _) in self
+            .lock_surfaces
+            .iter()
+            .filter(|(s, o)| s.alive() && o == output)
+        {
             out.extend(render_elements_from_surface_tree::<
                 R,
                 WaylandSurfaceRenderElement<R>,

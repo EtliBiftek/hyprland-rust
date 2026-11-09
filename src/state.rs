@@ -30,7 +30,7 @@ use smithay::{
             data_device::DataDeviceState, ext_data_control,
             primary_selection::PrimarySelectionState, wlr_data_control,
         },
-        session_lock::{LockSurface, SessionLockManagerState},
+        session_lock::{LockSurface, SessionLockManagerState, SessionLocker},
         shell::{
             wlr_layer::WlrLayerShellState,
             xdg::{decoration::XdgDecorationState, XdgShellState},
@@ -99,7 +99,9 @@ pub struct Hypr {
     pub cursor_status: CursorImageStatus,
     /// Session lock held: only `lock_surfaces` are drawn and get input.
     pub session_locked: bool,
-    pub lock_surfaces: Vec<LockSurface>,
+    pub lock_surfaces: Vec<(LockSurface, smithay::output::Output)>,
+    /// Confirmation held until the first lock surface has a buffer.
+    pub pending_lock: Option<SessionLocker>,
 
     pub seat: Seat<Self>,
     /// Layer surface that currently holds keyboard focus (exclusive or clicked).
@@ -234,6 +236,7 @@ impl Hypr {
             cursor_status: CursorImageStatus::default_named(),
             session_locked: false,
             lock_surfaces: Vec::new(),
+            pending_lock: None,
             seat,
             layer_focus: None,
 
@@ -304,8 +307,13 @@ impl Hypr {
             return self
                 .lock_surfaces
                 .iter()
-                .find(|s| s.alive())
-                .map(|s| (s.wl_surface().clone(), Point::from((0.0, 0.0))));
+                .filter(|(s, _)| s.alive())
+                .find_map(|(s, o)| {
+                    let geo = self.space.output_geometry(o)?;
+                    geo.to_f64()
+                        .contains(pos)
+                        .then(|| (s.wl_surface().clone(), geo.loc.to_f64()))
+                });
         }
         self.layer_at(pos, [Layer::Overlay, Layer::Top])
             .map(|(_, s, p)| (s, p))

@@ -374,7 +374,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `master:slave_count_for_center_master` | tested | Int. Applied in `config.rs` `apply_inner`; read by the layout or group code. |
 | `master:smart_resizing` | partial | Bool. Applied in `config.rs` `apply_inner`; read by the layout or group code. |
 | `master:special_scale_factor` | partial | Float. Clamped to 0.0-1.0. |
-| `misc:allow_session_lock_restore` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
+| `misc:allow_session_lock_restore` | tested | Bool. A new locker may replace a crashed one (`tests/session-lock.sh`). |
 | `misc:always_follow_on_dnd` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:animate_manual_resizes` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:animate_mouse_windowdragging` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
@@ -723,7 +723,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `ext_foreign_toplevel_list_v1` | partial | `handlers/foreign_toplevel.rs` (Smithay list, synced every frame). No test client. |
 | `ext_idle_notifier_v1` | none | Not registered by the repo. |
 | `ext_image_copy_capture_manager_v1` | tested | `handlers/image_copy_capture.rs` (output + foreign-toplevel sources, shm). `tests/probe.sh` (`protocol-probe copycap`). Cursor sessions inert, no dmabuf. |
-| `ext_session_lock_manager_v1` | none | Not registered by the repo. |
+| `ext_session_lock_manager_v1` | tested | `locked` after the first lock surface commit, per-output sizes, a dead locker stays locked (`misc:allow_session_lock_restore`). `tests/session-lock.sh`. |
 | `ext_workspace_manager_v1` | partial | `handlers/ext_workspace.rs`: one group, normal workspaces, activate only. Global listed by `tests/globals.sh`. |
 | `hyprland_ctm_control_manager_v1` | partial | `handlers/ctm_control.rs`: validated and stored per output, not applied to the screen. `tests/globals.sh`. |
 | `hyprland_focus_grab_manager_v1` | tested | `handlers/focus_grab.rs`: `cleared` on an outside click, keyboard focus on commit. `tests/probe.sh`. Pointer focus not restricted. |

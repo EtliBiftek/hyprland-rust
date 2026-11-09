@@ -455,7 +455,7 @@ fn render(data: &mut CalloopData, crtc: crtc::Handle) {
         );
     }
     if state.session_locked {
-        let lock = state.lock_elements(&mut tty.renderer);
+        let lock = state.lock_elements(&mut tty.renderer, &output);
         elements.extend(lock.into_iter().map(TtyElement::Surface));
     } else {
         let fx = crate::render::output_elements(state, &mut tty.renderer, &output);

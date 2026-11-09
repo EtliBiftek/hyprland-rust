@@ -68,6 +68,7 @@ impl CompositorHandler for Hypr {
         };
 
         self.layer_commit(surface);
+        self.lock_commit(surface);
         let toplevel = self
             .window_for_surface(surface)
             .map(|(_, w)| w)

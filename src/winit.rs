@@ -85,7 +85,7 @@ pub fn init_winit(
                         let (renderer, mut framebuffer) = backend.bind().unwrap();
                         if state.session_locked {
                             // Locked: only the lock surfaces, no windows or borders.
-                            let lock = state.lock_elements(renderer);
+                            let lock = state.lock_elements(renderer, &output);
                             smithay::desktop::space::render_output::<
                                 _,
                                 WaylandSurfaceRenderElement<GlesRenderer>,
