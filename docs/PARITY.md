@@ -303,7 +303,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `input:follow_mouse` | tested | Int. 0-3 mapped; 2 behaves like 0 (no hover focus split). |
 | `input:follow_mouse_shrink` | parsed | Int. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
 | `input:follow_mouse_threshold` | parsed | Float. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
-| `input:force_no_accel` | parsed | Bool. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
+| `input:force_no_accel` | tested | Bool. Flat profile at speed 0. |
 | `input:kb_file` | parsed | String. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
 | `input:kb_layout` | tested | String. Keyboard layout via xkb; no per-device layouts. |
 | `input:kb_model` | partial | String. xkb model. |
@@ -322,7 +322,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `input:scroll_button` | parsed | Int. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
 | `input:scroll_button_lock` | parsed | Bool. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
 | `input:scroll_factor` | tested | Float. Pointer device option (libinput). |
-| `input:scroll_method` | parsed | String. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
+| `input:scroll_method` | tested | String. `2fg`, `edge`, `on_button_down`, `no_scroll` (libinput). |
 | `input:scroll_points` | parsed | String. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
 | `input:sensitivity` | tested | Float. Pointer device option (libinput). |
 | `input:special_fallthrough` | parsed | Bool. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
@@ -344,16 +344,16 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `input:touchdevice:enabled` | parsed | Bool. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
 | `input:touchdevice:output` | parsed | String. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
 | `input:touchdevice:transform` | parsed | Int. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
-| `input:touchpad:clickfinger_behavior` | parsed | Bool. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
+| `input:touchpad:clickfinger_behavior` | tested | Bool. libinput click method. |
 | `input:touchpad:disable_while_typing` | partial | Bool. Touchpad device option (default on for touchpads). |
 | `input:touchpad:drag_3fg` | parsed | Int. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
 | `input:touchpad:drag_lock` | parsed | Int. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
 | `input:touchpad:flip_x` | parsed | Bool. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
 | `input:touchpad:flip_y` | parsed | Bool. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
-| `input:touchpad:middle_button_emulation` | parsed | Bool. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
+| `input:touchpad:middle_button_emulation` | tested | Bool. libinput. |
 | `input:touchpad:natural_scroll` | tested | Bool. Touchpad device option. |
 | `input:touchpad:scroll_factor` | tested | Float. Used for finger scrolling. |
-| `input:touchpad:tap-and-drag` | parsed | Bool. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
+| `input:touchpad:tap-and-drag` | tested | Bool. libinput. |
 | `input:touchpad:tap-to-click` | tested | Bool. Touchpad device option (default on for touchpads). |
 | `input:touchpad:tap_button_map` | parsed | String. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
 | `input:virtualkeyboard:release_pressed_on_close` | parsed | Bool. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |

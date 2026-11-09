@@ -1233,6 +1233,14 @@ impl Default for Dwindle {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollMethod {
+    None,
+    TwoFinger,
+    Edge,
+    OnButtonDown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccelProfile {
     Flat,
     Adaptive,
@@ -1248,6 +1256,10 @@ pub struct DeviceOpts {
     pub left_handed: Option<bool>,
     pub tap_to_click: Option<bool>,
     pub disable_while_typing: Option<bool>,
+    pub scroll_method: Option<ScrollMethod>,
+    pub clickfinger_behavior: Option<bool>,
+    pub middle_button_emulation: Option<bool>,
+    pub tap_and_drag: Option<bool>,
     pub scroll_factor: Option<f32>,
     /// Keyboard: `kb_layout`, `kb_variant`, `kb_model`, `kb_options`, `kb_rules`
     /// (`device { }` only; the keymap switches when that keyboard types).
@@ -1263,6 +1275,12 @@ impl DeviceOpts {
         self.left_handed = other.left_handed.or(self.left_handed);
         self.tap_to_click = other.tap_to_click.or(self.tap_to_click);
         self.disable_while_typing = other.disable_while_typing.or(self.disable_while_typing);
+        self.scroll_method = other.scroll_method.or(self.scroll_method);
+        self.clickfinger_behavior = other.clickfinger_behavior.or(self.clickfinger_behavior);
+        self.middle_button_emulation = other
+            .middle_button_emulation
+            .or(self.middle_button_emulation);
+        self.tap_and_drag = other.tap_and_drag.or(self.tap_and_drag);
         self.scroll_factor = other.scroll_factor.or(self.scroll_factor);
         for (a, b) in self.kb.iter_mut().zip(&other.kb) {
             if b.is_some() {
@@ -1293,6 +1311,26 @@ impl DeviceOpts {
             "left_handed" => self.left_handed = Some(parse_bool(value)?),
             "tap-to-click" => self.tap_to_click = Some(parse_bool(value)?),
             "disable_while_typing" => self.disable_while_typing = Some(parse_bool(value)?),
+            "scroll_method" => {
+                self.scroll_method = match value {
+                    "2fg" => Some(ScrollMethod::TwoFinger),
+                    "edge" => Some(ScrollMethod::Edge),
+                    "on_button_down" => Some(ScrollMethod::OnButtonDown),
+                    "no_scroll" => Some(ScrollMethod::None),
+                    "" => None,
+                    other => return Err(format!("invalid scroll_method `{other}`")),
+                }
+            }
+            "clickfinger_behavior" => self.clickfinger_behavior = Some(parse_bool(value)?),
+            "middle_button_emulation" => self.middle_button_emulation = Some(parse_bool(value)?),
+            "tap-and-drag" => self.tap_and_drag = Some(parse_bool(value)?),
+            // shortcut: flat profile at speed 0, not raw deltas; use unaccelerated
+            // motion in input.rs if a user notices the difference.
+            "force_no_accel" if parse_bool(value)? => {
+                self.accel_profile = Some(AccelProfile::Flat);
+                self.sensitivity = Some(0.0);
+            }
+            "force_no_accel" => {}
             k if KB_KEYS.contains(&k) => {
                 let i = KB_KEYS.iter().position(|x| *x == k).unwrap_or(0);
                 self.kb[i] = Some(value.to_string());
@@ -2518,6 +2556,20 @@ mod tests {
         assert_eq!(wheel_key(0.0, -1.0), Some("mouse_left"));
         assert_eq!(wheel_key(0.0, 1.0), Some("mouse_right"));
         assert_eq!(wheel_key(0.0, 0.0), None);
+    }
+
+    #[test]
+    fn libinput_options() {
+        let (cfg, errors) = Config::parse_str(
+            "input {\nscroll_method = 2fg\nforce_no_accel = true\ntouchpad {\nclickfinger_behavior = true\ntap-and-drag = false\n}\n}",
+        );
+        assert!(errors.is_empty(), "{errors:?}");
+        let o = cfg.input.opts_for("x", true);
+        assert_eq!(o.scroll_method, Some(ScrollMethod::TwoFinger));
+        assert_eq!(o.accel_profile, Some(AccelProfile::Flat));
+        assert_eq!(o.sensitivity, Some(0.0));
+        assert_eq!(o.clickfinger_behavior, Some(true));
+        assert_eq!(o.tap_and_drag, Some(false));
     }
 
     #[test]

@@ -148,7 +148,8 @@ one commit and one test per item, update `docs/PARITY.md`.
   #16, #31 and #32-38 were done in main (some partially, see the lists below).
 - #21 partial: `immediate`, `no_focus`, `stay_focused`, `min_size`, `max_size` are still stored only.
 - #22 needs no change: Hyprland also only reports `minimized`.
-- Next: #39-43, then the
+- #42 in CI (`drag_lock`, `tap_button_map` still ignored).
+- Next: #39, #40, #41, #43, then the
   partial ones (#3, #11, #15, #23, #28).
 - Quota rule (owner, 2026-11-09): use the quota to the end, no percent stop.
   The scheduled task `osmium-gaps-resume` (05:05, 11:05, 17:05, 23:05)

@@ -30,7 +30,7 @@ use smithay::{
 };
 
 use crate::{
-    config::{AccelProfile, Dispatcher, Mods},
+    config::{AccelProfile, Dispatcher, Mods, ScrollMethod},
     gestures::{Kind, Outcome, Tracker},
     selectors::WinSel,
     state::Hypr,
@@ -316,6 +316,27 @@ impl Hypr {
         }
         if let Some(v) = o.disable_while_typing {
             let _ = d.config_dwt_set_enabled(v);
+        }
+        if let Some(m) = o.scroll_method {
+            let _ = d.config_scroll_set_method(match m {
+                ScrollMethod::None => input::ScrollMethod::NoScroll,
+                ScrollMethod::TwoFinger => input::ScrollMethod::TwoFinger,
+                ScrollMethod::Edge => input::ScrollMethod::Edge,
+                ScrollMethod::OnButtonDown => input::ScrollMethod::OnButtonDown,
+            });
+        }
+        if let Some(v) = o.clickfinger_behavior {
+            let _ = d.config_click_set_method(if v {
+                input::ClickMethod::Clickfinger
+            } else {
+                input::ClickMethod::ButtonAreas
+            });
+        }
+        if let Some(v) = o.middle_button_emulation {
+            let _ = d.config_middle_emulation_set_enabled(v);
+        }
+        if let Some(v) = o.tap_and_drag {
+            let _ = d.config_tap_set_drag_enabled(v);
         }
     }
 
