@@ -303,7 +303,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `input:follow_mouse` | tested | Int. 0-3 mapped; 2 behaves like 0 (no hover focus split). |
 | `input:follow_mouse_shrink` | parsed | Int. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
 | `input:follow_mouse_threshold` | parsed | Float. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
-| `input:force_no_accel` | tested | Bool. Flat profile at speed 0. |
+| `input:force_no_accel` | tested | Bool. Flat profile. |
 | `input:kb_file` | parsed | String. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
 | `input:kb_layout` | tested | String. Keyboard layout via xkb; no per-device layouts. |
 | `input:kb_model` | partial | String. xkb model. |

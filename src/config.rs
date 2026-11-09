@@ -1324,11 +1324,10 @@ impl DeviceOpts {
             "clickfinger_behavior" => self.clickfinger_behavior = Some(parse_bool(value)?),
             "middle_button_emulation" => self.middle_button_emulation = Some(parse_bool(value)?),
             "tap-and-drag" => self.tap_and_drag = Some(parse_bool(value)?),
-            // shortcut: flat profile at speed 0, not raw deltas; use unaccelerated
+            // shortcut: flat profile, not raw deltas; use unaccelerated
             // motion in input.rs if a user notices the difference.
             "force_no_accel" if parse_bool(value)? => {
                 self.accel_profile = Some(AccelProfile::Flat);
-                self.sensitivity = Some(0.0);
             }
             "force_no_accel" => {}
             k if KB_KEYS.contains(&k) => {
@@ -2567,7 +2566,6 @@ mod tests {
         let o = cfg.input.opts_for("x", true);
         assert_eq!(o.scroll_method, Some(ScrollMethod::TwoFinger));
         assert_eq!(o.accel_profile, Some(AccelProfile::Flat));
-        assert_eq!(o.sensitivity, Some(0.0));
         assert_eq!(o.clickfinger_behavior, Some(true));
         assert_eq!(o.tap_and_drag, Some(false));
     }
