@@ -161,6 +161,22 @@ assert near(px(z, 600, 500), (0, 255, 0), 6), "window not stretched by the outpu
 PY
 echo "ok: output scale"
 
+# 1d. misc:background_color --------------------------------------------------
+kw misc:background_color "rgb(0000ff)"
+sleep 1
+shot "$T/bg.ppm"
+kw misc:background_color "rgb(1a1a1a)"
+sleep 1
+python3 - "$T" <<'PY' || fail "background color check failed"
+import sys
+sys.path.insert(0, sys.argv[1])
+from px import *
+z = load(sys.argv[1] + "/bg.ppm")
+print("background", px(z, 1000, 700))
+assert near(px(z, 1000, 700), (0, 0, 255), 6), "background_color not drawn"
+PY
+echo "ok: background color"
+
 # 2. gradient border -------------------------------------------------------
 kw general:border_size 10
 kw general:col.active_border "rgb(ff0000) rgb(0000ff) 0deg"

@@ -463,6 +463,9 @@ fn render(data: &mut CalloopData, crtc: crtc::Handle) {
 
     // `dpms off`: a black frame.
     let out = &mut tty.outputs[idx];
+    if state.clear_changed() {
+        out.surface.reset_buffers();
+    }
     let rendered = if !state.wm.dpms_on {
         // `dpms off`: planes off and CRTC inactive; the next queued frame
         // turns it back on.
@@ -478,7 +481,7 @@ fn render(data: &mut CalloopData, crtc: crtc::Handle) {
         match out.surface.render_frame(
             &mut tty.renderer,
             &elements,
-            [0.1, 0.1, 0.1, 1.0],
+            state.clear_color(),
             FrameFlags::DEFAULT,
         ) {
             // After `dpms off` an unchanged frame must still be queued.

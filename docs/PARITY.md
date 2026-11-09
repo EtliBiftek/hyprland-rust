@@ -381,7 +381,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `misc:animate_manual_resizes` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:animate_mouse_windowdragging` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:anr_missed_pings` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
-| `misc:background_color` | parsed | Color. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
+| `misc:background_color` | tested | Color. `tests/render-fx.sh`; default is dark grey (26, 26, 26), not Hyprland's 0x111111. |
 | `misc:bell_sound` | parsed | String. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:close_special_on_empty` | partial | Bool. Gates closing an emptied special workspace; no test for off. |
 | `misc:col.splash` | parsed | Color. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |

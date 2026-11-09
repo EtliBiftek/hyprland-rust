@@ -190,3 +190,23 @@ impl Cursors {
         }
     }
 }
+
+impl crate::state::Hypr {
+    /// `misc:background_color`, dark grey when unset.
+    pub fn clear_color(&self) -> [f32; 4] {
+        self.config
+            .raw_options
+            .get("misc:background_color")
+            .and_then(|v| crate::config::parse_color(v).ok())
+            .unwrap_or([0.1, 0.1, 0.1, 1.0])
+    }
+}
+
+impl crate::state::Hypr {
+    /// True once after `misc:background_color` changed: the clear color is
+    /// not an element, so the backend must repaint everything itself.
+    pub fn clear_changed(&mut self) -> bool {
+        let c = self.clear_color();
+        std::mem::replace(&mut self.wm.last_clear, c) != c
+    }
+}

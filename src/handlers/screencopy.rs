@@ -329,7 +329,7 @@ impl Hypr {
             .map_err(|e| format!("create_buffer: {e:?}"))?;
         let scale = output.current_scale().fractional_scale();
         let mut tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
-        let clear = [0.1, 0.1, 0.1, 1.0];
+        let clear = self.clear_color();
         let mut target = renderer
             .bind(&mut tex)
             .map_err(|e| format!("bind: {e:?}"))?;

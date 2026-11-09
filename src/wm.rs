@@ -51,6 +51,8 @@ pub struct WmState {
     pub consumed_keys: Vec<u32>,
     /// Mouse buttons whose press a bind consumed: the release is dropped too.
     pub consumed_buttons: Vec<u32>,
+    /// Clear color of the last frame (see `clear_changed`).
+    pub last_clear: [f32; 4],
     /// `misc:enable_swallow`: (window, the terminal it hides).
     pub swallowed: Vec<(Window, Window)>,
     /// `cursor:hide_on_key_press` hid the cursor until the next motion.
@@ -115,6 +117,7 @@ impl WmState {
             repeat: None,
             consumed_keys: Vec::new(),
             consumed_buttons: Vec::new(),
+            last_clear: [0.1, 0.1, 0.1, 1.0],
             swallowed: Vec::new(),
             cursor_hidden: false,
             last_motion: std::time::Instant::now(),

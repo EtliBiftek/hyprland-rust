@@ -59,7 +59,6 @@ smithay::backend::renderer::element::render_elements! {
     Cursor=smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement<GlesRenderer>,
 }
 
-const CLEAR: [f32; 4] = [0.1, 0.1, 0.1, 1.0];
 type Key = Vec<(Id, CommitCounter)>;
 type Surf = WaylandSurfaceRenderElement<GlesRenderer>;
 
@@ -81,6 +80,8 @@ pub struct FxState {
     pub shader: Option<ScreenShader>,
     /// Per output name: the last scene shown through the screen shader.
     screens: HashMap<String, ScreenSlot>,
+    /// `misc:background_color` of this frame.
+    clear: [f32; 4],
 }
 
 pub struct ScreenShader {
@@ -192,6 +193,7 @@ struct Ctx<'a> {
     scr: FRect,
     /// `scr` plus `general:gaps_workspaces`: how far a workspace slides.
     ws_scr: FRect,
+    clear: [f32; 4],
     grabbed: bool,
     ws: Option<&'a WsAnim>,
     animating: bool,
@@ -339,7 +341,7 @@ fn ensure_blur(
     }
     let p = ctx.progs;
     let res = blur::reuse_tex(r, fw.blur_tex.take(), out.0, out.1).and_then(|mut t| {
-        blur::render_scene_into(r, &mut t, below, CLEAR)?;
+        blur::render_scene_into(r, &mut t, below, ctx.clear)?;
         let chain = &mut p.blur_chain.borrow_mut();
         blur::blur(r, &t, &p.blur_down, &p.blur_up, cfg.1, cfg.0, chain)?;
         Ok(t)
@@ -762,6 +764,12 @@ pub fn output_elements(h: &mut Hypr, r: &mut GlesRenderer, output: &Output) -> V
     let origin = (geo.loc.x, geo.loc.y);
     let out = (geo.size.w, geo.size.h);
     let scr = FRect::new(0.0, 0.0, out.0 as f32, out.1 as f32);
+    let h_clear = h.clear_color();
+    if h.fx.clear != h_clear {
+        // Cached scenes hold the old background.
+        h.fx.screens.clear();
+    }
+    h.fx.clear = h_clear;
     let ws_scr = scr.with_gap(
         match crate::options::get_option(&h.config, "general:gaps_workspaces") {
             Some(crate::options::OptValue::Int(g)) => g as f32,
@@ -931,6 +939,7 @@ pub fn output_elements(h: &mut Hypr, r: &mut GlesRenderer, output: &Output) -> V
         now,
         scr,
         ws_scr,
+        clear: h_clear,
         grabbed,
         ws: ws_anim.as_ref(),
         animating: ws_anim.is_some(),
@@ -1075,7 +1084,7 @@ fn output_scale_pass(
     let area = Rectangle::new((0, 0).into(), out.into());
     let crop = vec![u("crop", (0.0f32, 0.0f32, 1.0f32, 1.0f32))];
     match post_pass(
-        &mut h.fx.screens,
+        &mut h.fx,
         r,
         format!("scale:{}", output.name()),
         prog,
@@ -1126,16 +1135,7 @@ fn screen_shader(
         Vec::new()
     };
     let area = Rectangle::new((0, 0).into(), out.into());
-    match post_pass(
-        &mut fx.screens,
-        r,
-        output.name(),
-        prog,
-        out,
-        &v,
-        area,
-        uniforms,
-    ) {
+    match post_pass(fx, r, output.name(), prog, out, &v, area, uniforms) {
         Some(el) => vec![el],
         None => v,
     }
@@ -1180,7 +1180,7 @@ fn cursor_zoom(
     );
     let area = Rectangle::new((0, 0).into(), out.into());
     match post_pass(
-        &mut h.fx.screens,
+        &mut h.fx,
         r,
         format!("zoom:{}", output.name()),
         prog,
@@ -1198,7 +1198,7 @@ fn cursor_zoom(
 /// one element showing it at `area` through `prog`.
 #[allow(clippy::too_many_arguments)]
 fn post_pass(
-    slots: &mut HashMap<String, ScreenSlot>,
+    fx: &mut FxState,
     r: &mut GlesRenderer,
     name: String,
     prog: GlesTexProgram,
@@ -1218,25 +1218,28 @@ fn post_pass(
             )
         })
         .collect();
-    let force = slots.get(&name).is_none_or(|s| s.key != key);
+    let force = fx.screens.get(&name).is_none_or(|s| s.key != key);
     if force {
-        let old = slots.get(&name).map(|s| s.tex.clone());
+        let old = fx.screens.get(&name).map(|s| s.tex.clone());
         let tex = blur::reuse_tex(r, old, out.0, out.1)
             .and_then(|mut t| {
-                blur::render_scene_into(r, &mut t, &refs, CLEAR)?;
+                blur::render_scene_into(r, &mut t, &refs, fx.clear)?;
                 Ok(t)
             })
             .map_err(|e| tracing::warn!("post pass: {e}"))
             .ok()?;
-        let slot = slots.entry(name.clone()).or_insert_with(|| ScreenSlot {
-            key: Vec::new(),
-            tex: tex.clone(),
-            el: FxTex::new(prog, tex.clone()),
-        });
+        let slot = fx
+            .screens
+            .entry(name.clone())
+            .or_insert_with(|| ScreenSlot {
+                key: Vec::new(),
+                tex: tex.clone(),
+                el: FxTex::new(prog, tex.clone()),
+            });
         slot.key = key;
         slot.tex = tex;
     }
-    let slot = slots.get_mut(&name)?;
+    let slot = fx.screens.get_mut(&name)?;
     slot.el.update(&slot.tex, None, area, uniforms, 1.0, force);
     Some(FxElement::Tex(slot.el.clone()))
 }

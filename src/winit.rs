@@ -80,6 +80,9 @@ pub fn init_winit(
                     } else {
                         crate::render::output_elements(state, backend.renderer(), &output)
                     };
+                    if state.clear_changed() {
+                        damage_tracker = OutputDamageTracker::from_output(&output);
+                    }
                     let age = backend.buffer_age().unwrap_or(0);
                     // A failed frame is logged and skipped, not fatal.
                     let damage = backend.bind().map_err(|e| format!("bind: {e:?}")).and_then(
@@ -101,7 +104,7 @@ pub fn init_winit(
                                     std::iter::empty::<&Space<Window>>(),
                                     &lock,
                                     &mut damage_tracker,
-                                    [0.1, 0.1, 0.1, 1.0],
+                                    state.clear_color(),
                                 )
                                 .map(|r| r.damage.cloned())
                                 .map_err(|e| format!("{e:?}"))
@@ -112,7 +115,7 @@ pub fn init_winit(
                                         &mut framebuffer,
                                         age,
                                         &elements,
-                                        [0.1, 0.1, 0.1, 1.0],
+                                        state.clear_color(),
                                     )
                                     .map(|r| r.damage.cloned())
                                     .map_err(|e| format!("{e:?}"))
