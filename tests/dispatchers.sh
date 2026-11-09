@@ -224,5 +224,13 @@ settle
 AFTER=$(timeout 5 "$HYPRCTL" -j activewindow | python3 -c 'import json,sys; print(json.load(sys.stdin)["address"])')
 [ "$BEFORE" = "$AFTER" ] || fail "no_focus: focus moved from $BEFORE to $AFTER"
 
+# 12. general:no_focus_fallback: closing the focused window focuses nothing.
+timeout 5 "$HYPRCTL" keyword general:no_focus_fallback true >/dev/null
+dsp killactive
+wait_clients 2
+sleep 0.5
+timeout 5 "$HYPRCTL" -j activewindow | python3 -c 'import json,sys; d = json.load(sys.stdin); assert not d.get("address"), d' || fail "no_focus_fallback: still focused"
+timeout 5 "$HYPRCTL" keyword general:no_focus_fallback false >/dev/null
+
 kill -0 "$COMP" 2>/dev/null || fail "compositor died"
 echo "OK: dispatchers (renameworkspace, togglepseudo, movecursor, movecursortocorner, alterzorder, event, dpms, no-ops)"

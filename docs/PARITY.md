@@ -225,7 +225,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `general:layout` | tested | String. Only `dwindle` and `master` are implemented. |
 | `general:locale` | parsed | String. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
 | `general:modal_parent_blocking` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
-| `general:no_focus_fallback` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
+| `general:no_focus_fallback` | tested | Bool. Closing the focused window focuses nothing (`tests/dispatchers.sh`). Directional focus never wraps anyway. |
 | `general:resize_corner` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
 | `general:resize_on_border` | done | Bool. Left press in the border band around a floating window starts a resize; tiled windows not resizable this way. |
 | `general:snap:border_overlap` | tested | Bool. Unit test. |

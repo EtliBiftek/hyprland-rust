@@ -554,6 +554,14 @@ impl Hypr {
                 None
             };
             let next = master.or_else(|| ws.last_focused.clone());
+            // Closing the focused window leaves nothing focused.
+            let was_focused = self.focused_window().is_none_or(|f| f == window);
+            let next =
+                if was_focused && crate::options::flag(&self.config, "general:no_focus_fallback") {
+                    None
+                } else {
+                    next
+                };
             self.focus_window(next);
         }
         self.gc_workspaces();
