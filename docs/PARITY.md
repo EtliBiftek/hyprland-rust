@@ -62,8 +62,8 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `binds:movefocus_cycles_groupfirst` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `binds:`). |
 | `binds:pass_mouse_when_bound` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `binds:`). |
 | `binds:scroll_event_delay` | tested | Int, default 300 ms. Gates `mouse_up/down/left/right` binds; `bind = MODS, mouse:N` works too (`tests/keybinds-xvfb.sh`). |
-| `binds:window_direction_monitor_fallback` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `binds:`). |
-| `binds:workspace_back_and_forth` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `binds:`). |
+| `binds:window_direction_monitor_fallback` | tested | Bool. `movefocus`, `movewindow` (`tests/multimon.sh`). |
+| `binds:workspace_back_and_forth` | tested | Int. `tests/dispatchers.sh`. |
 | `binds:workspace_center_on` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `binds:`). |
 | `cursor:default_monitor` | parsed | String. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
 | `cursor:enable_hyprcursor` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
@@ -383,7 +383,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `misc:anr_missed_pings` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:background_color` | parsed | Color. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:bell_sound` | parsed | String. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
-| `misc:close_special_on_empty` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
+| `misc:close_special_on_empty` | partial | Bool. Gates closing an emptied special workspace; no test for off. |
 | `misc:col.splash` | parsed | Color. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:disable_autoreload` | tested | Bool. Controls config file watching (`reload.rs`). |
 | `misc:disable_hyprland_guiutils_check` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |

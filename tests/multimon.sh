@@ -114,6 +114,11 @@ for _ in $(seq 50); do
     sleep 0.1
 done
 [ "$(clients_on 1)" = 1 ] || fail "new window did not open on HEADLESS-2"
+ctl dispatch movefocus l >/dev/null
+wait_for "[m['name'] for m in d if m['focused']][0]" HEADLESS-1 || fail "movefocus over the edge stayed on HEADLESS-2"
+ctl dispatch movefocus r >/dev/null
+wait_for "[m['name'] for m in d if m['focused']][0]" HEADLESS-2 || fail "movefocus r did not return"
+echo "ok: window_direction_monitor_fallback"
 x=$(ctl -j clients | json "[c for c in d if c['monitor']==1][0]['at'][0]")
 [ "$x" -ge 1000 ] || fail "window on HEADLESS-2 is at x=$x"
 echo "ok: new window on the focused monitor, placed inside it"

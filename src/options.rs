@@ -133,6 +133,14 @@ pub fn get_option(cfg: &Config, key: &str) -> Option<OptValue> {
     })
 }
 
+/// A bool (or 0/1 int) option is on.
+pub fn flag(cfg: &Config, key: &str) -> bool {
+    matches!(
+        get_option(cfg, key),
+        Some(OptValue::Bool(true)) | Some(OptValue::Int(1..))
+    )
+}
+
 /// An option without a `Config` field: what the config set, else Hyprland's
 /// default.
 fn raw_option(cfg: &Config, key: &str) -> Option<OptValue> {

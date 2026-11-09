@@ -181,6 +181,13 @@ dsp workspace 2
 timeout 5 "$HYPRCTL" -j monitors | python3 -c 'import json,sys; assert json.load(sys.stdin)[0]["specialWorkspace"].get("id", 0) == 0' || fail "special workspace stayed open"
 dsp workspace 1
 
+# 9b2. binds:workspace_back_and_forth: the current workspace goes back.
+timeout 5 "$HYPRCTL" keyword binds:workspace_back_and_forth 1 >/dev/null
+dsp workspace 3
+dsp workspace 3
+timeout 5 "$HYPRCTL" -j activeworkspace | python3 -c 'import json,sys; assert json.load(sys.stdin)["id"] == 1' || fail "workspace_back_and_forth"
+timeout 5 "$HYPRCTL" keyword binds:workspace_back_and_forth 0 >/dev/null
+
 # 9c. fakefullscreen: only the client's state changes.
 dsp fakefullscreen
 clients | python3 -c 'import json,sys; w = json.load(sys.stdin)[0]; assert (w["fullscreen"], w["fullscreenClient"]) == (0, 2), w' || fail "fakefullscreen on"

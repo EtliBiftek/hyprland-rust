@@ -329,7 +329,17 @@ impl Hypr {
         match &target {
             Target::Special(n) => self.toggle_special(n),
             t => {
-                if let Some(i) = self.ensure_ws(t) {
+                if let Some(mut i) = self.ensure_ws(t) {
+                    if i == self.active_workspace
+                        && crate::options::flag(&self.config, "binds:workspace_back_and_forth")
+                    {
+                        // The previous workspace may be gone: it is recreated.
+                        let prev = self.wm.previous_workspace.map(Target::Id);
+                        match prev.and_then(|p| self.ensure_ws(&p)) {
+                            Some(p) => i = p,
+                            None => return,
+                        }
+                    }
                     let hide = "binds:hide_special_on_workspace_change";
                     if crate::options::get_option(&self.config, hide)
                         == Some(crate::options::OptValue::Bool(true))
@@ -521,7 +531,10 @@ impl Hypr {
         self.space.unmap_elem(&window);
         if self.visible_ws().contains(&idx) {
             // An emptied special workspace closes itself.
-            if self.workspaces[idx].is_special() && self.workspaces[idx].windows().is_empty() {
+            if self.workspaces[idx].is_special()
+                && self.workspaces[idx].windows().is_empty()
+                && crate::options::flag(&self.config, "misc:close_special_on_empty")
+            {
                 self.hide_special();
             }
             self.relayout();
@@ -1048,7 +1061,23 @@ impl Hypr {
         };
         if let Some(to) = find_in_direction(&rects, &from, dir) {
             self.focus_window(Some(to));
+        } else if let Some(m) = self.edge_monitor(dir) {
+            self.focus_monitor_index(m);
         }
+    }
+
+    /// `binds:window_direction_monitor_fallback`: the monitor past the edge.
+    fn edge_monitor(&self, dir: Direction) -> Option<usize> {
+        let fallback = "binds:window_direction_monitor_fallback";
+        if !crate::options::flag(&self.config, fallback) {
+            return None;
+        }
+        self.resolve_mon(match dir {
+            Direction::Left => "l",
+            Direction::Right => "r",
+            Direction::Up => "u",
+            Direction::Down => "d",
+        })
     }
 
     /// `movewindow` / `swapwindow`: swap with the tiled neighbour in `dir`.
@@ -1064,6 +1093,9 @@ impl Hypr {
         if let Some(to) = find_in_direction(&rects, &from, dir) {
             self.workspaces[i].tiled.swap(&from, &to);
             self.relayout();
+        } else if let Some(m) = self.edge_monitor(dir) {
+            let name = self.wm.mons[m].name.clone();
+            self.dispatch(&Dispatcher::MoveWindowToMonitor(name));
         }
     }
 
