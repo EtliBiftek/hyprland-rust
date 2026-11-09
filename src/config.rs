@@ -508,6 +508,8 @@ impl Dispatcher {
                 };
                 Dispatcher::FullscreenState(n(0)?, n(1)?, w.get(2) == Some(&"toggle"))
             }
+            // Pre-0.41 name of "tell the client it is fullscreen".
+            "fakefullscreen" => Dispatcher::FullscreenState(-1, 2, true),
             "sendshortcut" | "sendkeystate" => {
                 let parts: Vec<&str> = arg.splitn(4, ',').map(str::trim).collect();
                 let mods = Mods::parse(parts.first().copied().unwrap_or(""))?;
@@ -2417,6 +2419,10 @@ mod tests {
         assert_eq!(p("fullscreen", "1"), Ok(Dispatcher::Maximize));
         assert_eq!(p("fullscreen", ""), Ok(Dispatcher::Fullscreen));
         assert!(p("fullscreen", "9").is_err());
+        assert_eq!(
+            p("fakefullscreen", ""),
+            Ok(Dispatcher::FullscreenState(-1, 2, true))
+        );
         assert_eq!(
             p("movewindow", "l"),
             Ok(Dispatcher::MoveWindow(Direction::Left))

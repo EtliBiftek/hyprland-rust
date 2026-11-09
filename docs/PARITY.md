@@ -582,6 +582,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `setfloating` | partial | v0.57.1: `hl.dsp.window.float`. |
 | `settiled` | partial | v0.57.1: `hl.dsp.window.float`. |
 | `fullscreen` | partial | Modes 0, 1 (maximize), 2 only. v0.57.1: `hl.dsp.window.fullscreen`. |
+| `fakefullscreen` | tested | Pre-0.41 name, same as `fullscreenstate -1 2 toggle`. |
 | `movefocus` | partial | Direction-based focus. v0.57.1: `hl.dsp.focus`. |
 | `cyclenext` | partial | v0.57.1: `hl.dsp.window.cycle_next`. |
 | `togglesplit` | partial | dwindle split toggle. No v0.57.1 Lua entry. |
