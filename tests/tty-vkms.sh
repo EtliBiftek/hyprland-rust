@@ -127,6 +127,21 @@ sys.exit(0 if win > 1000 else 1)
 PY
 echo "ok: tty backend renders the client (screencopy)"
 
+# dpms off really deactivates the CRTCs (debugfs), on brings them back.
+crtc_active() { sudo sh -c 'cat /sys/kernel/debug/dri/*/state' 2>/dev/null | grep -c 'active=1'; }
+before=$(crtc_active)
+if [ "$before" -ge 1 ]; then
+    ctl dispatch dpms off >/dev/null
+    sleep 1
+    [ "$(crtc_active)" = 0 ] || fail "dpms off left a CRTC active"
+    ctl dispatch dpms on >/dev/null
+    sleep 1
+    [ "$(crtc_active)" = "$before" ] || fail "dpms on: $(crtc_active) active, wanted $before"
+    echo "ok: dpms switches the CRTCs"
+else
+    echo "skip: no debugfs drm state"
+fi
+
 if [ "$TWO" = 1 ]; then
     [ "$mons" = 2 ] || fail "VKMS has two connectors but $mons monitors"
     x2=$(ctl -j monitors | json 'sorted(m["x"] for m in d)[1]')

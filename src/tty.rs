@@ -67,6 +67,8 @@ struct TtyOutput {
     surface: DrmOutput<Allocator, Exporter, (), DrmDeviceFd>,
     /// A frame is queued and we are waiting for its vblank.
     frame_pending: bool,
+    /// `dpms off` already cleared the CRTC.
+    dpms_off: bool,
     /// A retry timer is armed (last render had no damage or failed).
     timer_armed: bool,
     /// Gamma ramps last written to the CRTC (`None`: identity).
@@ -227,6 +229,7 @@ impl Tty {
                 connector: conn.handle(),
                 surface,
                 frame_pending: false,
+                dpms_off: false,
                 timer_armed: false,
                 gamma: None,
             });
@@ -459,28 +462,34 @@ fn render(data: &mut CalloopData, crtc: crtc::Handle) {
     }
 
     // `dpms off`: a black frame.
-    // shortcut: the CRTC stays active (no DPMS property); real power saving
-    // needs the connector DPMS state or an inactive CRTC.
-    if !state.wm.dpms_on {
-        elements.clear();
-    }
     let out = &mut tty.outputs[idx];
-    let rendered = match out.surface.render_frame(
-        &mut tty.renderer,
-        &elements,
-        if state.wm.dpms_on {
-            [0.1, 0.1, 0.1, 1.0]
-        } else {
-            [0.0, 0.0, 0.0, 1.0]
-        },
-        FrameFlags::DEFAULT,
-    ) {
-        Ok(result) => !result.is_empty,
-        Err(e) => {
-            tracing::warn!("render_frame failed: {e:?}");
-            false
+    let rendered = if !state.wm.dpms_on {
+        // `dpms off`: planes off and CRTC inactive; the next queued frame
+        // turns it back on.
+        if !out.dpms_off {
+            if let Err(e) = out.surface.with_compositor(|c| c.clear()) {
+                tracing::warn!("dpms off failed: {e:?}");
+            }
+            out.dpms_off = true;
+            out.frame_pending = false;
+        }
+        false
+    } else {
+        match out.surface.render_frame(
+            &mut tty.renderer,
+            &elements,
+            [0.1, 0.1, 0.1, 1.0],
+            FrameFlags::DEFAULT,
+        ) {
+            // After `dpms off` an unchanged frame must still be queued.
+            Ok(result) => !result.is_empty || out.dpms_off,
+            Err(e) => {
+                tracing::warn!("render_frame failed: {e:?}");
+                false
+            }
         }
     };
+    out.dpms_off = !state.wm.dpms_on;
     if rendered {
         match out.surface.queue_frame(()) {
             Ok(()) => out.frame_pending = true,

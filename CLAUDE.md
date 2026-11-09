@@ -150,7 +150,7 @@ one commit and one test per item, update `docs/PARITY.md`.
 - #22 needs no change: Hyprland also only reports `minimized`.
 - #42 done (`drag_lock`, `tap_button_map` still ignored). #43 partial: `binds:scroll_event_delay` and `binds:hide_special_on_workspace_change` done, the other `misc:`/`cursor:` options remain.
 - #41 partial: `resize_on_border`, `extend_border_grab_area`, `snap:*` done; `gaps_workspaces` (needs a workspace animation gap) and `no_focus_fallback` remain.
-- #11 partial: input wakes dpms; the CRTC stays active on tty.
+- #11 done in CI (CRTC off via `DrmCompositor::clear`; VKMS debugfs test).
 - #15 partial: `addreserved`, output-management apply (position, scale, transform; no mode change) done; fractional scale fixed at 1.0 remains.
 - #23 partial: `overlay_cursor` done (in CI); dmabuf export remains.
 - Next: #41 rest (`gaps_workspaces`, `no_focus_fallback`), #43 rest, then the
