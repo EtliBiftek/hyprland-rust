@@ -1439,7 +1439,8 @@ impl Hypr {
             if inside {
                 return None;
             }
-            r.border_edges(pos.x, pos.y, band).map(|e| (w.clone(), loc, size, e))
+            r.border_edges(pos.x, pos.y, band)
+                .map(|e| (w.clone(), loc, size, e))
         });
         let Some((window, loc, size, (l, r, t, b))) = hit else {
             return false;

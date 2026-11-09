@@ -640,9 +640,18 @@ mod tests {
         let r = Rect::new(100, 100, 200, 100);
         assert_eq!(r.border_edges(150.0, 150.0, 5), None);
         assert_eq!(r.border_edges(50.0, 150.0, 5), None);
-        assert_eq!(r.border_edges(97.0, 150.0, 5), Some((true, false, false, false)));
-        assert_eq!(r.border_edges(298.0, 198.0, 5), Some((false, true, false, true)));
-        assert_eq!(r.border_edges(150.0, 96.0, 5), Some((false, false, true, false)));
+        assert_eq!(
+            r.border_edges(97.0, 150.0, 5),
+            Some((true, false, false, false))
+        );
+        assert_eq!(
+            r.border_edges(298.0, 198.0, 5),
+            Some((false, true, false, true))
+        );
+        assert_eq!(
+            r.border_edges(150.0, 96.0, 5),
+            Some((false, false, true, false))
+        );
     }
 
     use super::*;
