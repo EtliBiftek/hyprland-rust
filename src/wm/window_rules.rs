@@ -42,6 +42,13 @@ pub(crate) fn rule_flag(w: &Window, name: &str) -> bool {
     state(w).borrow().dynp.flag(name)
 }
 
+/// `min_size` / `max_size` rule of `w`, as (width, height).
+pub(crate) fn rule_size(w: &Window, name: &str) -> Option<(i32, i32)> {
+    let s = state(w).borrow();
+    let (a, b) = s.dynp.other(name)?.trim().split_once(char::is_whitespace)?;
+    Some((a.parse().ok()?, b.trim().parse().ok()?))
+}
+
 impl Hypr {
     /// A visible window's `idle_inhibit` rule holds off idle.
     pub fn rule_inhibits_idle(&self) -> bool {
@@ -210,7 +217,7 @@ impl Hypr {
     }
 
     fn run_plan(&mut self, w: &Window, plan: &rules::StaticPlan) {
-        let mut refocus = plan.no_initial_focus;
+        let mut refocus = plan.no_initial_focus || rule_flag(w, "no_focus");
         if let Some(f) = plan.float {
             self.set_floating(w, Some(f));
         }

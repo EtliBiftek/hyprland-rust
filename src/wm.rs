@@ -739,6 +739,14 @@ impl Hypr {
         if self.session_locked {
             return;
         }
+        use window_rules::rule_flag;
+        let refused = window.as_ref().is_some_and(|w| rule_flag(w, "no_focus"));
+        let held = self
+            .focused_window()
+            .is_some_and(|f| Some(&f) != window.as_ref() && rule_flag(&f, "stay_focused"));
+        if refused || held {
+            return;
+        }
         let serial = SERIAL_COUNTER.next_serial();
         let keyboard = self.seat.get_keyboard().unwrap();
 

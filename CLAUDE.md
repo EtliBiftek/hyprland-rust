@@ -146,7 +146,7 @@ one commit and one test per item, update `docs/PARITY.md`.
 
 - Done on the branch (CI green at 7fb760f): Phase 0, #7, #8, #9, #14, #17, #18, #19, #20, #21 (partial), #24, #26, #27, #28, #29, #30, #39, #40, #42. #1, #2, #4-6, #10, #12, #13,
   #16, #31 and #32-38 were done in main (some partially, see the lists below).
-- #21 partial: `immediate`, `no_focus`, `stay_focused`, `min_size`, `max_size` are still stored only.
+- #21 partial: only `immediate` is still stored only.
 - #22 needs no change: Hyprland also only reports `minimized`.
 - #42 done (`drag_lock`, `tap_button_map` still ignored). #43 partial: `binds:scroll_event_delay` and `binds:hide_special_on_workspace_change` done, the other `misc:`/`cursor:` options remain.
 - #41 partial: `resize_on_border`, `extend_border_grab_area`, `snap:*` done; `gaps_workspaces` (needs a workspace animation gap) and `no_focus_fallback` remain.

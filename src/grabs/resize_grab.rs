@@ -119,6 +119,12 @@ impl PointerGrab<Hypr> for ResizeSurfaceGrab {
             })
         });
 
+        use crate::wm::window_rules::rule_size;
+        let (min_size, max_size) = (
+            rule_size(&self.window, "min_size").map_or(min_size, Size::from),
+            rule_size(&self.window, "max_size").map_or(max_size, Size::from),
+        );
+
         let min_width = min_size.w.max(1);
         let min_height = min_size.h.max(1);
 

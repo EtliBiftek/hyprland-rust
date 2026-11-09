@@ -39,7 +39,7 @@ Repo inconsistencies outside the tables: `input:tap-to-click` (no touchpad prefi
 
 `hyprctl getoption` and `hl.get_config` answer every option in the v0.57.1 table (`src/option_defaults.rs`): options without a `Config` field report the configured text or the default, typed like Hyprland. "parsed" rows are still not applied.
 
-Window rules applied beyond the tables: toplevels with a parent or a fixed size float on their own, `keep_aspect_ratio` (resize grab), `idle_inhibit` (`always`, `focus`, `fullscreen`). Still stored only: `immediate`, `no_focus`, `stay_focused`, `min_size`, `max_size`.
+Window rules applied beyond the tables: toplevels with a parent or a fixed size float on their own, `keep_aspect_ratio` (resize grab), `idle_inhibit` (`always`, `focus`, `fullscreen`). Also `no_focus`, `stay_focused`, `min_size`, `max_size` (resize grab). Still stored only: `immediate`.
 
 ## Config options (v0.57.1 registry, 407 options)
 

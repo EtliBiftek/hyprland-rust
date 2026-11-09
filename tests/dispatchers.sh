@@ -214,5 +214,14 @@ assert other["focusHistoryID"] == 0, other
 print("window argument ok")
 PY
 
+# 11. no_focus rule: a new window does not take the focus.
+BEFORE=$(timeout 5 "$HYPRCTL" -j activewindow | python3 -c 'import json,sys; print(json.load(sys.stdin)["address"])')
+timeout 5 "$HYPRCTL" keyword windowrule "match:class .*, no_focus on" >/dev/null
+timeout 5 "$HYPRCTL" dispatch exec weston-simple-shm >/dev/null || fail "dispatch exec"
+wait_clients 3
+settle
+AFTER=$(timeout 5 "$HYPRCTL" -j activewindow | python3 -c 'import json,sys; print(json.load(sys.stdin)["address"])')
+[ "$BEFORE" = "$AFTER" ] || fail "no_focus: focus moved from $BEFORE to $AFTER"
+
 kill -0 "$COMP" 2>/dev/null || fail "compositor died"
 echo "OK: dispatchers (renameworkspace, togglepseudo, movecursor, movecursortocorner, alterzorder, event, dpms, no-ops)"
