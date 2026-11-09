@@ -407,9 +407,22 @@ impl Hypr {
                             return;
                         }
                     }
+                    if self.pointer_bind(&format!("mouse:{button}"), true) {
+                        self.wm.consumed_buttons.push(button);
+                        return;
+                    }
                     // Click to focus (follow_mouse = 3 detaches focus from the pointer).
                     if self.config.input.follow_mouse != 3 {
                         self.click_focus(pointer.current_location());
+                    }
+                }
+                if ButtonState::Released == button_state {
+                    if !pointer.is_grabbed() {
+                        self.pointer_bind(&format!("mouse:{button}"), false);
+                    }
+                    if let Some(p) = self.wm.consumed_buttons.iter().position(|b| *b == button) {
+                        self.wm.consumed_buttons.remove(p);
+                        return;
                     }
                 }
 
@@ -426,6 +439,17 @@ impl Hypr {
             }
             InputEvent::PointerAxis { event, .. } => {
                 let source = event.source();
+
+                let amount = |a| event.amount_v120(a).or(event.amount(a)).unwrap_or(0.0);
+                if source == AxisSource::Wheel
+                    && self.wheel_bind(
+                        event.time_msec(),
+                        amount(Axis::Vertical),
+                        amount(Axis::Horizontal),
+                    )
+                {
+                    return;
+                }
 
                 // `touchpad:scroll_factor` applies to finger scrolling only.
                 // shortcut: one factor for all touchpads, not per `device { }`.
@@ -536,6 +560,56 @@ impl Hypr {
 
     /// The `bindm` bind for `button` with the current modifiers. `Some(true)`
     /// for `resizewindow`, `Some(false)` for `movewindow`.
+    /// Runs the non-`bindm` binds of a mouse button or wheel key. Returns
+    /// whether the event was consumed.
+    fn pointer_bind(&mut self, key: &str, pressed: bool) -> bool {
+        let Some(m) = self.seat.get_keyboard().map(|k| k.modifier_state()) else {
+            return false;
+        };
+        let mods = Mods {
+            shift: m.shift,
+            ctrl: m.ctrl,
+            alt: m.alt,
+            logo: m.logo,
+        };
+        let inhibited = self.seat.keyboard_shortcuts_inhibited();
+        let hits: Vec<_> = self
+            .config
+            .binds
+            .iter()
+            .filter(|b| {
+                !b.flags.mouse
+                    && b.key == key
+                    && b.flags.release != pressed
+                    && (b.submap == self.wm.submap || b.flags.universal)
+                    && (!self.session_locked || b.flags.locked)
+                    && (!inhibited || b.flags.bypass)
+                    && (b.flags.ignore_mods || b.mods == mods)
+            })
+            .map(|b| (b.dispatcher.clone(), !b.flags.non_consuming))
+            .collect();
+        let consume = hits.iter().any(|h| h.1);
+        for (d, _) in hits {
+            self.dispatch(&d);
+        }
+        consume
+    }
+
+    /// `mouse_up/down/left/right` binds, one per `binds:scroll_event_delay`.
+    fn wheel_bind(&mut self, time: u32, vertical: f64, horizontal: f64) -> bool {
+        let Some(key) = crate::config::wheel_key(vertical, horizontal) else {
+            return false;
+        };
+        let delay = self.config.scroll_event_delay.unwrap_or(300);
+        if time.wrapping_sub(self.wm.last_wheel_bind) < delay
+            || self.seat.get_pointer().is_some_and(|p| p.is_grabbed())
+        {
+            return false;
+        }
+        self.wm.last_wheel_bind = time;
+        self.pointer_bind(key, true)
+    }
+
     fn mouse_bind(&self, button: u32) -> Option<bool> {
         let m = self.seat.get_keyboard()?.modifier_state();
         let mods = Mods {

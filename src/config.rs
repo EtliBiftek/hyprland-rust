@@ -1469,6 +1469,8 @@ pub struct Config {
     pub misc: Misc,
     /// `cursor:no_warps`: focusing a monitor does not move the pointer.
     pub cursor_no_warps: bool,
+    /// `binds:scroll_event_delay` in ms; `None` is Hyprland's default, 300.
+    pub scroll_event_delay: Option<u32>,
     pub xwayland: XwaylandCfg,
     /// Config file plus every `source`d file that was read (for autoreload).
     pub files: Vec<PathBuf>,
@@ -2024,6 +2026,10 @@ impl Parser {
                 cfg.group.groupbar.col_locked_inactive = parse_color(value)?
             }
             "binds:ignore_group_lock" => cfg.ignore_group_lock = parse_bool(value)?,
+            "binds:scroll_event_delay" => {
+                cfg.scroll_event_delay =
+                    Some(value.parse().map_err(|_| format!("invalid int `{value}`"))?)
+            }
             "env" => {
                 let (k, v) = value.split_once(',').ok_or("env: expected `KEY,VALUE`")?;
                 cfg.env.push((k.trim().to_string(), v.trim().to_string()));
@@ -2175,6 +2181,25 @@ fn parse_int(value: &str) -> Result<i32, String> {
     value
         .parse()
         .map_err(|_| format!("invalid integer `{value}`"))
+}
+
+/// Bind key of a wheel event (positive delta is down/right, like libinput).
+pub fn wheel_key(vertical: f64, horizontal: f64) -> Option<&'static str> {
+    if vertical != 0.0 {
+        Some(if vertical > 0.0 {
+            "mouse_down"
+        } else {
+            "mouse_up"
+        })
+    } else if horizontal != 0.0 {
+        Some(if horizontal < 0.0 {
+            "mouse_left"
+        } else {
+            "mouse_right"
+        })
+    } else {
+        None
+    }
 }
 
 fn parse_float(value: &str) -> Result<f32, String> {
@@ -2470,6 +2495,15 @@ mod tests {
         );
         let d = p("movetoworkspace", "3,address:0xabc");
         assert_eq!(d.name_arg(), ("movetoworkspace", "3,address:0xabc".into()));
+    }
+
+    #[test]
+    fn wheel_keys() {
+        assert_eq!(wheel_key(120.0, 0.0), Some("mouse_down"));
+        assert_eq!(wheel_key(-120.0, 0.0), Some("mouse_up"));
+        assert_eq!(wheel_key(0.0, -1.0), Some("mouse_left"));
+        assert_eq!(wheel_key(0.0, 1.0), Some("mouse_right"));
+        assert_eq!(wheel_key(0.0, 0.0), None);
     }
 
     #[test]

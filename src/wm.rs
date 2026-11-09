@@ -49,6 +49,10 @@ pub struct WmState {
     pub repeat: Option<(u32, RegistrationToken)>,
     /// Keycodes whose press was consumed by a bind (their release is too).
     pub consumed_keys: Vec<u32>,
+    /// Mouse buttons whose press a bind consumed: the release is dropped too.
+    pub consumed_buttons: Vec<u32>,
+    /// Time of the last wheel event looked up in the binds.
+    pub last_wheel_bind: u32,
     /// Modifiers in effect when each held key was pressed, so a release bind
     /// still matches if the modifier is let go first.
     pub key_mods: Vec<(u32, Mods)>,
@@ -102,6 +106,8 @@ impl WmState {
             submap: String::new(),
             repeat: None,
             consumed_keys: Vec::new(),
+            consumed_buttons: Vec::new(),
+            last_wheel_bind: 0,
             key_mods: Vec::new(),
             passed_keys: Vec::new(),
             libinput_devices: Vec::new(),

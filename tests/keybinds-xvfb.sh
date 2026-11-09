@@ -18,6 +18,8 @@ bind = SUPER, 2, workspace, 2
 bind = SUPER, N, workspace, +1
 bind = SUPER, W, workspace, name:web
 bind = SUPER, P, workspace, previous
+bind = SUPER, mouse:272, exec, touch $T/button-fired
+bind = SUPER, mouse_down, workspace, 7
 bindr = SUPER, R, exec, touch $T/release-fired
 binde = SUPER, K, exec, echo x >> $T/repeat
 bindd = SUPER, D, Test description, exec, true
@@ -97,6 +99,17 @@ echo "ok: workspace name:web"
 xdotool key super+p
 ws_is '"id":3' || fail "workspace previous did not return to 3"
 echo "ok: workspace previous"
+
+xdotool keydown super click 5 keyup super
+ws_is '"id":7' || fail "SUPER+mouse_down did not select workspace 7"
+echo "ok: wheel bind"
+xdotool keydown super click 1 keyup super
+for _ in $(seq 25); do
+    [ -e "$T/button-fired" ] && break
+    sleep 0.2
+done
+[ -e "$T/button-fired" ] || fail "SUPER+mouse:272 did not fire"
+echo "ok: mouse button bind"
 
 xdotool key super+r
 for _ in $(seq 25); do

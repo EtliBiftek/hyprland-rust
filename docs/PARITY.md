@@ -57,7 +57,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `binds:movefocus_cycles_fullscreen` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `binds:`). |
 | `binds:movefocus_cycles_groupfirst` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `binds:`). |
 | `binds:pass_mouse_when_bound` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `binds:`). |
-| `binds:scroll_event_delay` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `binds:`). |
+| `binds:scroll_event_delay` | tested | Int, default 300 ms. Gates `mouse_up/down/left/right` binds; `bind = MODS, mouse:N` works too (`tests/keybinds-xvfb.sh`). |
 | `binds:window_direction_monitor_fallback` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `binds:`). |
 | `binds:workspace_back_and_forth` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `binds:`). |
 | `binds:workspace_center_on` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `binds:`). |
