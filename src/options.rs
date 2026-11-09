@@ -75,6 +75,8 @@ pub fn get_option(cfg: &Config, key: &str) -> Option<OptValue> {
         "dwindle:default_split_ratio" => Float(cfg.dwindle.default_split_ratio.into()),
         "misc:disable_autoreload" => Bool(cfg.misc.disable_autoreload),
         "general:layout" => Str(cfg.general.layout.clone()),
+        "general:resize_on_border" => Bool(cfg.general.resize_on_border),
+        "general:extend_border_grab_area" => Int(cfg.general.extend_border_grab_area.into()),
         "dwindle:force_split" => Int(cfg.dwindle.force_split.into()),
         "dwindle:smart_split" => Bool(cfg.dwindle.smart_split),
         "dwindle:smart_resizing" => Bool(cfg.dwindle.smart_resizing),

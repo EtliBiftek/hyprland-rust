@@ -1417,6 +1417,61 @@ impl Hypr {
         true
     }
 
+    /// `general:resize_on_border`: a press in the border band around a
+    /// floating window of the active workspace starts a resize from the edges
+    /// under the pointer. shortcut: tiled windows are not resizable this way.
+    pub fn start_border_resize(&mut self, button: u32) -> bool {
+        if !self.config.general.resize_on_border {
+            return false;
+        }
+        let band = self.config.general.border_size + self.config.general.extend_border_grab_area;
+        let pointer = self.seat.get_pointer().unwrap();
+        let pos = pointer.current_location();
+        let ws = &self.workspaces[self.active_workspace];
+        let hit = ws.floating.iter().find_map(|w| {
+            let loc = self.space.element_location(w)?;
+            let size = w.geometry().size;
+            let r = crate::layout::Rect::new(loc.x, loc.y, size.w, size.h);
+            let inside = pos.x >= r.x as f64
+                && pos.x < (r.x + r.w) as f64
+                && pos.y >= r.y as f64
+                && pos.y < (r.y + r.h) as f64;
+            if inside {
+                return None;
+            }
+            r.border_edges(pos.x, pos.y, band).map(|e| (w.clone(), loc, size, e))
+        });
+        let Some((window, loc, size, (l, r, t, b))) = hit else {
+            return false;
+        };
+        let mut edges = ResizeEdge::empty();
+        if l {
+            edges |= ResizeEdge::LEFT;
+        }
+        if r {
+            edges |= ResizeEdge::RIGHT;
+        }
+        if t {
+            edges |= ResizeEdge::TOP;
+        }
+        if b {
+            edges |= ResizeEdge::BOTTOM;
+        }
+        self.focus_window(Some(window.clone()));
+        if let Some(t) = window.toplevel() {
+            t.with_pending_state(|s| s.states.set(xdg_toplevel::State::Resizing));
+            t.send_pending_configure();
+        }
+        let start_data = PointerGrabStartData {
+            focus: None,
+            button,
+            location: pos,
+        };
+        let grab = ResizeSurfaceGrab::start(start_data, window, edges, Rectangle::new(loc, size));
+        pointer.set_grab(self, grab, SERIAL_COUNTER.next_serial(), Focus::Clear);
+        true
+    }
+
     pub fn dispatch(&mut self, action: &Dispatcher) {
         tracing::debug!(?action, "dispatch");
         match action {

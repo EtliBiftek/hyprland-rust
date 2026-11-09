@@ -216,7 +216,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `general:col.inactive_border` | partial | Gradient. Only the first colour of a gradient is used. |
 | `general:col.nogroup_border` | parsed | Gradient. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
 | `general:col.nogroup_border_active` | parsed | Gradient. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
-| `general:extend_border_grab_area` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
+| `general:extend_border_grab_area` | done | Int. Extra grab pixels outside the border. |
 | `general:float_gaps` | parsed | CssGap. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
 | `general:gaps_in` | tested | CssGap. Int only; CSS form (`a b c d`) not parsed. Used by layout and tiling. |
 | `general:gaps_out` | tested | CssGap. Int only; CSS form not parsed. |
@@ -227,7 +227,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `general:modal_parent_blocking` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
 | `general:no_focus_fallback` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
 | `general:resize_corner` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
-| `general:resize_on_border` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
+| `general:resize_on_border` | done | Bool. Left press in the border band around a floating window starts a resize; tiled windows not resizable this way. |
 | `general:snap:border_overlap` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
 | `general:snap:enabled` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
 | `general:snap:monitor_gap` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |

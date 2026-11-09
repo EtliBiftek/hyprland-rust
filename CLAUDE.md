@@ -149,7 +149,8 @@ one commit and one test per item, update `docs/PARITY.md`.
 - #21 partial: `immediate`, `no_focus`, `stay_focused`, `min_size`, `max_size` are still stored only.
 - #22 needs no change: Hyprland also only reports `minimized`.
 - #42 done (`drag_lock`, `tap_button_map` still ignored). #43 partial: `binds:scroll_event_delay` and `binds:hide_special_on_workspace_change` done, the other `misc:`/`cursor:` options remain.
-- Next: #39, #40, #41, #43, then the
+- #41 partial: `resize_on_border` + `extend_border_grab_area` (floating windows) done; `snap:*`, `gaps_workspaces`, `no_focus_fallback` remain.
+- Next: #39, #40, #41 rest, #43, then the
   partial ones (#3, #11, #15, #23, #28).
 - Quota rule (owner, 2026-11-09): use the quota to the end, no percent stop.
   The scheduled task `osmium-gaps-resume` (05:05, 11:05, 17:05, 23:05)

@@ -800,6 +800,10 @@ pub struct General {
     pub inactive_border: crate::animation::Gradient,
     /// `general:layout`: `dwindle` or `master`.
     pub layout: String,
+    /// `general:resize_on_border`: drag a floating window's border to resize.
+    pub resize_on_border: bool,
+    /// `general:extend_border_grab_area`: extra grab pixels outside the border.
+    pub extend_border_grab_area: i32,
 }
 
 impl Default for General {
@@ -814,6 +818,8 @@ impl Default for General {
             active_border: crate::animation::Gradient::solid([1.0, 1.0, 1.0, 1.0]),
             inactive_border: crate::animation::Gradient::solid([0.27, 0.27, 0.27, 1.0]),
             layout: "dwindle".into(),
+            resize_on_border: false,
+            extend_border_grab_area: 15,
         }
     }
 }
@@ -1995,6 +2001,10 @@ impl Parser {
                 cfg.dwindle.default_split_ratio = r.clamp(0.1, 1.9);
             }
             "general:layout" => cfg.general.layout = value.to_string(),
+            "general:resize_on_border" => cfg.general.resize_on_border = parse_bool(value)?,
+            "general:extend_border_grab_area" => {
+                cfg.general.extend_border_grab_area = parse_int(value)?.max(0)
+            }
             "dwindle:force_split" => cfg.dwindle.force_split = parse_int(value)?.clamp(0, 2),
             "dwindle:smart_split" => cfg.dwindle.smart_split = parse_bool(value)?,
             "dwindle:smart_resizing" => cfg.dwindle.smart_resizing = parse_bool(value)?,

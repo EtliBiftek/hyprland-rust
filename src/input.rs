@@ -442,6 +442,9 @@ impl Hypr {
                         self.wm.consumed_buttons.push(button);
                         return;
                     }
+                    if button == 0x110 && self.start_border_resize(button) {
+                        return;
+                    }
                     // Click to focus (follow_mouse = 3 detaches focus from the pointer).
                     if self.config.input.follow_mouse != 3 {
                         self.click_focus(pointer.current_location());

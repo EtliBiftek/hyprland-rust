@@ -167,6 +167,12 @@ dsp forcerendererreload
 dsp bringactivetotop
 dsp setprop active bordersize 3
 
+# 9a. resize_on_border options are stored and readable.
+timeout 5 "$HYPRCTL" keyword general:resize_on_border true >/dev/null
+timeout 5 "$HYPRCTL" keyword general:extend_border_grab_area 9 >/dev/null
+timeout 5 "$HYPRCTL" -j getoption general:resize_on_border | python3 -c 'import json,sys; assert json.load(sys.stdin)["int"] == 1' || fail "resize_on_border"
+timeout 5 "$HYPRCTL" -j getoption general:extend_border_grab_area | python3 -c 'import json,sys; assert json.load(sys.stdin)["int"] == 9' || fail "extend_border_grab_area"
+
 # 9b. binds:hide_special_on_workspace_change closes the special workspace.
 timeout 5 "$HYPRCTL" keyword binds:hide_special_on_workspace_change true >/dev/null
 dsp togglespecialworkspace

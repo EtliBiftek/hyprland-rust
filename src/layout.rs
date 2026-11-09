@@ -19,6 +19,25 @@ impl Rect {
         Self { x, y, w, h }
     }
 
+    /// Border hit-test (`resize_on_border`): the edges `(left, right, top,
+    /// bottom)` whose band of `band` pixels around this rectangle's outline
+    /// holds `(px, py)`. `None` when the point is outside the grown rectangle
+    /// or deeper than `band` inside it.
+    pub fn border_edges(&self, px: f64, py: f64, band: i32) -> Option<(bool, bool, bool, bool)> {
+        let b = band as f64;
+        let (x0, y0) = (self.x as f64, self.y as f64);
+        let (x1, y1) = (x0 + self.w as f64, y0 + self.h as f64);
+        if px < x0 - b || px >= x1 + b || py < y0 - b || py >= y1 + b {
+            return None;
+        }
+        let e = (px < x0 + b, px >= x1 - b, py < y0 + b, py >= y1 - b);
+        // Strictly inside the geometry and clear of every band: not a border.
+        if !(e.0 || e.1 || e.2 || e.3) {
+            return None;
+        }
+        Some(e)
+    }
+
     /// Shrinks the rectangle by `by` pixels on every side (never below 1x1).
     pub fn shrink(self, by: i32) -> Self {
         let w = (self.w - 2 * by).max(1);
@@ -616,6 +635,16 @@ pub fn border_sides(r: Rect, b: i32) -> [Rect; 4] {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn border_edges_bands() {
+        let r = Rect::new(100, 100, 200, 100);
+        assert_eq!(r.border_edges(150.0, 150.0, 5), None);
+        assert_eq!(r.border_edges(50.0, 150.0, 5), None);
+        assert_eq!(r.border_edges(97.0, 150.0, 5), Some((true, false, false, false)));
+        assert_eq!(r.border_edges(298.0, 198.0, 5), Some((false, true, false, true)));
+        assert_eq!(r.border_edges(150.0, 96.0, 5), Some((false, false, true, false)));
+    }
+
     use super::*;
 
     const AREA: Rect = Rect::new(0, 0, 1000, 500);
