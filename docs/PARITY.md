@@ -773,7 +773,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `zwlr_foreign_toplevel_manager_v1` | tested | `handlers/foreign_toplevel.rs`, `tests/foreign-toplevel.sh` (wlrctl list/fullscreen/close). Minimize and set_rectangle ignored. |
 | `zwlr_gamma_control_manager_v1` | tested | `handlers/gamma_control.rs`: ramps validated and stored, not applied on any backend. `tests/globals.sh` runs wlsunset. |
 | `zwlr_layer_shell_v1` | tested | `tests/layer-shell.sh` (waybar). Layer popups are constrained to the output (`tests/probe.sh`). |
-| `zwlr_output_manager_v1` | partial | `handlers/output_management.rs`: read-only heads announced at bind (`wlr-randr` in `tests/foreign-toplevel.sh`); apply/test answer `failed`. |
+| `zwlr_output_manager_v1` | tested | `handlers/output_management.rs`: heads at bind (`wlr-randr`), `apply` of position, scale and transform (`tests/foreign-toplevel.sh`); other modes and disabling answer `failed`. |
 | `zwlr_output_power_manager_v1` | none | Not registered by the repo. |
 | `zwlr_screencopy_manager_v1` | tested | `handlers/screencopy.rs`, `tests/screencopy.sh` (grim, winit in Xvfb). shm only, no cursor overlay, headless answers `failed`. |
 | `zwlr_virtual_pointer_manager_v1` | partial | `handlers/virtual_pointer.rs`: motion, absolute motion, button, axis. No client test (global in `tests/globals.sh`). |

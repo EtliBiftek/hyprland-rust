@@ -53,6 +53,12 @@ timeout 10 wlr-randr >"$T/randr" || fail "wlr-randr failed"
 grep -q "HEADLESS-1" "$T/randr" || fail "wlr-randr does not list HEADLESS-1: $(cat "$T/randr")"
 grep -q "1000x800" "$T/randr" || fail "wlr-randr does not list the 1000x800 mode: $(cat "$T/randr")"
 echo "ok: wlr-output-management lists the output"
+timeout 10 wlr-randr --output HEADLESS-1 --pos 30 40 --scale 2 || fail "wlr-randr apply failed"
+sleep 0.5
+timeout 5 "$CTL" -j monitors | python3 -c 'import json,sys; m = json.load(sys.stdin)[0]; assert (m["x"], m["y"], m["scale"]) == (30, 40, 2.0), m' || fail "wlr-randr change not applied"
+if timeout 10 wlr-randr --output HEADLESS-1 --off 2>/dev/null; then fail "disable should be refused"; fi
+timeout 10 wlr-randr --output HEADLESS-1 --pos 0 0 --scale 1 || fail "wlr-randr restore failed"
+echo "ok: wlr-output-management apply"
 
 [ -z "$(timeout 10 wlrctl toplevel list)" ] || fail "toplevel list is not empty at start"
 
