@@ -341,6 +341,7 @@ impl Hypr {
     }
 
     pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
+        self.wm.frame_gen = self.wm.frame_gen.wrapping_add(1);
         self.notify_idle_activity();
         match event {
             InputEvent::Keyboard { event, .. } => {

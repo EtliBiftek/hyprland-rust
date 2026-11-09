@@ -31,6 +31,7 @@ impl CompositorHandler for Hypr {
     }
 
     fn commit(&mut self, surface: &WlSurface) {
+        self.wm.frame_gen = self.wm.frame_gen.wrapping_add(1);
         on_commit_buffer_handler::<Self>(surface);
         if !is_sync_subsurface(surface) {
             let mut root = surface.clone();

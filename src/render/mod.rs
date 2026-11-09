@@ -1174,7 +1174,6 @@ fn cursor_zoom(
         zoom,
         rigid,
     );
-    h.fx.animating = true;
     let crop = (
         -rect.x / rect.w,
         -rect.y / rect.h,

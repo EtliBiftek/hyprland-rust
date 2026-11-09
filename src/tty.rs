@@ -69,6 +69,9 @@ struct TtyOutput {
     frame_pending: bool,
     /// `dpms off` already cleared the CRTC.
     dpms_off: bool,
+    /// `WmState::frame_gen` of the last frame built for this output.
+    seen_gen: u64,
+    last_draw: std::time::Instant,
     /// A retry timer is armed (last render had no damage or failed).
     timer_armed: bool,
     /// Gamma ramps last written to the CRTC (`None`: identity).
@@ -230,6 +233,8 @@ impl Tty {
                 surface,
                 frame_pending: false,
                 dpms_off: false,
+                seen_gen: 0,
+                last_draw: std::time::Instant::now(),
                 timer_armed: false,
                 gamma: None,
             });
@@ -418,87 +423,102 @@ fn render(data: &mut CalloopData, crtc: crtc::Handle) {
     };
     let scale = output.current_scale().fractional_scale();
 
-    state.screencopy_process(&mut tty.renderer, &output);
+    // Nothing changed since this output's last frame: do not build one.
+    // shortcut: a 250 ms refresh covers sources that do not bump `frame_gen`
+    // (protocol requests without a commit); bump it there if the lag shows.
+    let o = &mut tty.outputs[idx];
+    let idle = o.seen_gen == state.wm.frame_gen
+        && !state.fx.animating
+        && !state.screencopy.busy()
+        && state.extra.capture.jobs.is_empty()
+        && o.dpms_off != state.wm.dpms_on
+        && o.last_draw.elapsed() < Duration::from_millis(250);
+    if !idle {
+        o.seen_gen = state.wm.frame_gen;
+        o.last_draw = std::time::Instant::now();
+        state.screencopy_process(&mut tty.renderer, &output);
 
-    // wlr-gamma-control / hyprland-ctm-control: DRM gamma ramps.
-    let name = output.name();
-    let want = crate::handlers::gamma_control::effective_ramps(
-        state.extra.gamma.ramps.get(&name).map(|v| v.as_slice()),
-        state.extra.ctm.applied.get(&name),
-        crate::handlers::gamma_control::GAMMA_SIZE as usize,
-    );
-    if want != tty.outputs[idx].gamma {
-        let identity: [Vec<u16>; 3] =
-            std::array::from_fn(|_| (0..256u32).map(|i| (i * 65535 / 255) as u16).collect());
-        let r = want.as_ref().unwrap_or(&identity);
-        if let Err(e) = tty.manager.device().set_gamma(crtc, &r[0], &r[1], &r[2]) {
-            tracing::warn!("gamma on {name}: {e}");
-        }
-        tty.outputs[idx].gamma = want;
-    }
-
-    // Front to back: cursor, borders, windows. Locked: cursor and lock surfaces.
-    let mut elements: Vec<TtyElement> = Vec::new();
-    let pointer = state.seat.get_pointer().unwrap().current_location();
-    if geo.to_f64().contains(pointer) && state.cursor_visible() {
-        let local = pointer - geo.loc.to_f64();
-        elements.extend(
-            state
-                .cursors
-                .elements(&mut tty.renderer, &state.cursor_status, local, scale)
-                .into_iter()
-                .map(|c| match c {
-                    CursorElement::Image(e) => TtyElement::Cursor(e),
-                    CursorElement::Surface(e) => TtyElement::Surface(e),
-                }),
+        // wlr-gamma-control / hyprland-ctm-control: DRM gamma ramps.
+        let name = output.name();
+        let want = crate::handlers::gamma_control::effective_ramps(
+            state.extra.gamma.ramps.get(&name).map(|v| v.as_slice()),
+            state.extra.ctm.applied.get(&name),
+            crate::handlers::gamma_control::GAMMA_SIZE as usize,
         );
-    }
-    if state.session_locked {
-        let lock = state.lock_elements(&mut tty.renderer, &output);
-        elements.extend(lock.into_iter().map(TtyElement::Surface));
-    } else {
-        let fx = crate::render::output_elements(state, &mut tty.renderer, &output);
-        elements.extend(fx.into_iter().map(TtyElement::Fx));
-    }
+        if want != tty.outputs[idx].gamma {
+            let identity: [Vec<u16>; 3] =
+                std::array::from_fn(|_| (0..256u32).map(|i| (i * 65535 / 255) as u16).collect());
+            let r = want.as_ref().unwrap_or(&identity);
+            if let Err(e) = tty.manager.device().set_gamma(crtc, &r[0], &r[1], &r[2]) {
+                tracing::warn!("gamma on {name}: {e}");
+            }
+            tty.outputs[idx].gamma = want;
+        }
 
-    // `dpms off`: a black frame.
+        // Front to back: cursor, borders, windows. Locked: cursor and lock surfaces.
+        let mut elements: Vec<TtyElement> = Vec::new();
+        let pointer = state.seat.get_pointer().unwrap().current_location();
+        if geo.to_f64().contains(pointer) && state.cursor_visible() {
+            let local = pointer - geo.loc.to_f64();
+            elements.extend(
+                state
+                    .cursors
+                    .elements(&mut tty.renderer, &state.cursor_status, local, scale)
+                    .into_iter()
+                    .map(|c| match c {
+                        CursorElement::Image(e) => TtyElement::Cursor(e),
+                        CursorElement::Surface(e) => TtyElement::Surface(e),
+                    }),
+            );
+        }
+        if state.session_locked {
+            let lock = state.lock_elements(&mut tty.renderer, &output);
+            elements.extend(lock.into_iter().map(TtyElement::Surface));
+        } else {
+            let fx = crate::render::output_elements(state, &mut tty.renderer, &output);
+            elements.extend(fx.into_iter().map(TtyElement::Fx));
+        }
+
+        // `dpms off`: a black frame.
+        let out = &mut tty.outputs[idx];
+        if state.clear_changed() {
+            out.surface.reset_buffers();
+        }
+        let rendered = if !state.wm.dpms_on {
+            // `dpms off`: planes off and CRTC inactive; the next queued frame
+            // turns it back on.
+            if !out.dpms_off {
+                if let Err(e) = out.surface.with_compositor(|c| c.clear()) {
+                    tracing::warn!("dpms off failed: {e:?}");
+                }
+                out.dpms_off = true;
+                out.frame_pending = false;
+            }
+            false
+        } else {
+            match out.surface.render_frame(
+                &mut tty.renderer,
+                &elements,
+                state.clear_color(),
+                FrameFlags::DEFAULT,
+            ) {
+                // After `dpms off` an unchanged frame must still be queued.
+                Ok(result) => !result.is_empty || out.dpms_off,
+                Err(e) => {
+                    tracing::warn!("render_frame failed: {e:?}");
+                    false
+                }
+            }
+        };
+        out.dpms_off = !state.wm.dpms_on;
+        if rendered {
+            match out.surface.queue_frame(()) {
+                Ok(()) => out.frame_pending = true,
+                Err(e) => tracing::warn!("queue_frame failed: {e:?}"),
+            }
+        }
+    }
     let out = &mut tty.outputs[idx];
-    if state.clear_changed() {
-        out.surface.reset_buffers();
-    }
-    let rendered = if !state.wm.dpms_on {
-        // `dpms off`: planes off and CRTC inactive; the next queued frame
-        // turns it back on.
-        if !out.dpms_off {
-            if let Err(e) = out.surface.with_compositor(|c| c.clear()) {
-                tracing::warn!("dpms off failed: {e:?}");
-            }
-            out.dpms_off = true;
-            out.frame_pending = false;
-        }
-        false
-    } else {
-        match out.surface.render_frame(
-            &mut tty.renderer,
-            &elements,
-            state.clear_color(),
-            FrameFlags::DEFAULT,
-        ) {
-            // After `dpms off` an unchanged frame must still be queued.
-            Ok(result) => !result.is_empty || out.dpms_off,
-            Err(e) => {
-                tracing::warn!("render_frame failed: {e:?}");
-                false
-            }
-        }
-    };
-    out.dpms_off = !state.wm.dpms_on;
-    if rendered {
-        match out.surface.queue_frame(()) {
-            Ok(()) => out.frame_pending = true,
-            Err(e) => tracing::warn!("queue_frame failed: {e:?}"),
-        }
-    }
     // No vblank will come without a queued frame: poll again in ~one frame.
     if !out.frame_pending && !out.timer_armed {
         out.timer_armed = true;

@@ -36,7 +36,7 @@ pub enum Target {
 /// Completion callback: `true` when the pixels were written.
 pub type Done = Box<dyn FnOnce(bool, Duration)>;
 
-struct Job {
+pub(crate) struct Job {
     target: Target,
     buffer: WlBuffer,
     done: Done,
@@ -44,7 +44,7 @@ struct Job {
 
 #[derive(Default)]
 pub struct CaptureState {
-    jobs: Vec<Job>,
+    pub(crate) jobs: Vec<Job>,
 }
 
 impl Hypr {

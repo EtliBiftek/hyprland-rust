@@ -51,6 +51,9 @@ pub struct WmState {
     pub consumed_keys: Vec<u32>,
     /// Mouse buttons whose press a bind consumed: the release is dropped too.
     pub consumed_buttons: Vec<u32>,
+    /// Bumped whenever something may have changed on screen (commits, input,
+    /// layout, IPC); the tty backend skips building frames while it stands still.
+    pub frame_gen: u64,
     /// Clear color of the last frame (see `clear_changed`).
     pub last_clear: [f32; 4],
     /// `misc:enable_swallow`: (window, the terminal it hides).
@@ -117,6 +120,7 @@ impl WmState {
             repeat: None,
             consumed_keys: Vec::new(),
             consumed_buttons: Vec::new(),
+            frame_gen: 1,
             last_clear: [0.1, 0.1, 0.1, 1.0],
             swallowed: Vec::new(),
             cursor_hidden: false,
@@ -615,6 +619,7 @@ impl Hypr {
 
     /// Positions every visible window and sends configures.
     pub fn relayout(&mut self) {
+        self.wm.frame_gen = self.wm.frame_gen.wrapping_add(1);
         self.sync_layouts();
         let open: Vec<Window> = self.workspaces.iter().flat_map(|ws| ws.windows()).collect();
         self.wm.pseudo.retain(|p| open.contains(p));
@@ -795,6 +800,7 @@ impl Hypr {
 
     /// Gives keyboard focus to `window` (or clears focus) and raises it.
     pub fn focus_window(&mut self, window: Option<Window>) {
+        self.wm.frame_gen = self.wm.frame_gen.wrapping_add(1);
         // Locked: keyboard focus stays on the lock surface.
         if self.session_locked {
             return;

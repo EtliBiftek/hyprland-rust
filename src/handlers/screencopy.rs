@@ -65,6 +65,13 @@ struct Pending {
     overlay_cursor: bool,
 }
 
+impl ScreencopyState {
+    /// A client is waiting for a frame.
+    pub fn busy(&self) -> bool {
+        !self.pending.is_empty()
+    }
+}
+
 #[derive(Default)]
 pub struct ScreencopyState {
     pending: Vec<Pending>,

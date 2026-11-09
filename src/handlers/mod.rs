@@ -69,7 +69,7 @@ impl SeatHandler for Hypr {
         _seat: &Seat<Self>,
         image: smithay::input::pointer::CursorImageStatus,
     ) {
-        // Stored only: the cursor is still drawn as a plain square.
+        self.wm.frame_gen = self.wm.frame_gen.wrapping_add(1);
         self.cursor_status = image;
     }
 

@@ -905,6 +905,7 @@ fn add_client(handle: &LoopHandle<'_, CalloopData>, stream: UnixStream) {
 }
 
 pub fn handle_request(h: &mut Hypr, raw: &str) -> String {
+    h.wm.frame_gen = h.wm.frame_gen.wrapping_add(1);
     match parse_batch(raw) {
         Some(reqs) => reqs
             .iter()
