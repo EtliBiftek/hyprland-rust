@@ -1034,7 +1034,41 @@ pub fn output_elements(h: &mut Hypr, r: &mut GlesRenderer, output: &Output) -> V
     let mut v = groupbar;
     v.extend(groups.into_iter().rev().flatten());
     let v = cursor_zoom(h, r, output, geo, v);
-    screen_shader(h, r, output, out, now, v)
+    let v = screen_shader(h, r, output, out, now, v);
+    output_scale_pass(h, r, output, out, v)
+}
+
+/// The effects are all built in logical pixels. On a scaled output the scene
+/// is drawn at that size and stretched over the output.
+/// shortcut: blurry on HiDPI; render the scene at physical size to sharpen it.
+fn output_scale_pass(
+    h: &mut Hypr,
+    r: &mut GlesRenderer,
+    output: &Output,
+    out: (i32, i32),
+    v: Vec<FxElement>,
+) -> Vec<FxElement> {
+    if (output.current_scale().fractional_scale() - 1.0).abs() < 1e-3 {
+        return v;
+    }
+    let Some(prog) = h.fx.progs.as_ref().map(|p| p.plain.clone()) else {
+        return v;
+    };
+    let area = Rectangle::new((0, 0).into(), out.into());
+    let crop = vec![u("crop", (0.0f32, 0.0f32, 1.0f32, 1.0f32))];
+    match post_pass(
+        &mut h.fx.screens,
+        r,
+        format!("scale:{}", output.name()),
+        prog,
+        out,
+        &v,
+        area,
+        crop,
+    ) {
+        Some(el) => vec![el],
+        None => v,
+    }
 }
 
 /// `decoration:screen_shader`: draws the finished scene into a texture and

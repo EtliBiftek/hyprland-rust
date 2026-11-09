@@ -391,7 +391,7 @@ impl Hypr {
                 renderer,
                 s.wl_surface(),
                 (0, 0),
-                1.0,
+                output.current_scale().fractional_scale(),
                 1.0,
                 Kind::Unspecified,
             ));

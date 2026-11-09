@@ -327,7 +327,8 @@ impl Hypr {
         let mut tex: GlesTexture = renderer
             .create_buffer(Fourcc::Abgr8888, (size.w, size.h).into())
             .map_err(|e| format!("create_buffer: {e:?}"))?;
-        let mut tracker = OutputDamageTracker::new(size, 1.0, Transform::Normal);
+        let scale = output.current_scale().fractional_scale();
+        let mut tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
         let clear = [0.1, 0.1, 0.1, 1.0];
         let mut target = renderer
             .bind(&mut tex)
