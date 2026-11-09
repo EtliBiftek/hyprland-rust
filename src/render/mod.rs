@@ -190,6 +190,8 @@ struct Ctx<'a> {
     anim: &'a Animations,
     now: f64,
     scr: FRect,
+    /// `scr` plus `general:gaps_workspaces`: how far a workspace slides.
+    ws_scr: FRect,
     grabbed: bool,
     ws: Option<&'a WsAnim>,
     animating: bool,
@@ -536,8 +538,13 @@ fn window_group(
     // Workspace switch: windows arriving slide in.
     match ctx.ws {
         Some(wa) if fw.ws_slide => {
-            let (dx, dy, ao) =
-                ws_style(wa.style, wa.anim.progress(now), wa.dir, wa.special, ctx.scr);
+            let (dx, dy, ao) = ws_style(
+                wa.style,
+                wa.anim.progress(now),
+                wa.dir,
+                wa.special,
+                ctx.ws_scr,
+            );
             rect = rect.moved(dx, dy);
             alpha *= ao.unwrap_or(1.0);
         }
@@ -719,7 +726,7 @@ fn ghost_group(ctx: &mut Ctx, g: &Ghost) -> Vec<FxElement> {
     let base = fw.last;
     let (rect, alpha) = match g.ws {
         Some((dir, special)) => {
-            let (dx, dy, ao) = ws_style(g.style, q, dir, special, ctx.scr);
+            let (dx, dy, ao) = ws_style(g.style, q, dir, special, ctx.ws_scr);
             (base.moved(dx, dy), ao.unwrap_or(1.0))
         }
         None => {
@@ -751,6 +758,12 @@ pub fn output_elements(h: &mut Hypr, r: &mut GlesRenderer, output: &Output) -> V
     let origin = (geo.loc.x, geo.loc.y);
     let out = (geo.size.w, geo.size.h);
     let scr = FRect::new(0.0, 0.0, out.0 as f32, out.1 as f32);
+    let ws_scr = scr.with_gap(
+        match crate::options::get_option(&h.config, "general:gaps_workspaces") {
+            Some(crate::options::OptValue::Int(g)) => g as f32,
+            _ => 0.0,
+        },
+    );
     let now = h.start_time.elapsed().as_secs_f64();
 
     // Gather (immutable) data.
@@ -913,6 +926,7 @@ pub fn output_elements(h: &mut Hypr, r: &mut GlesRenderer, output: &Output) -> V
         anim: &anim,
         now,
         scr,
+        ws_scr,
         grabbed,
         ws: ws_anim.as_ref(),
         animating: ws_anim.is_some(),

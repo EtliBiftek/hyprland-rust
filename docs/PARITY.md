@@ -220,7 +220,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `general:float_gaps` | parsed | CssGap. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
 | `general:gaps_in` | tested | CssGap. Int only; CSS form (`a b c d`) not parsed. Used by layout and tiling. |
 | `general:gaps_out` | tested | CssGap. Int only; CSS form not parsed. |
-| `general:gaps_workspaces` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
+| `general:gaps_workspaces` | tested | Int. Extra distance of the workspace slide (unit test). |
 | `general:hover_icon_on_border` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |
 | `general:layout` | tested | String. Only `dwindle` and `master` are implemented. |
 | `general:locale` | parsed | String. Accepted, ignored (`is_known_unimplemented` prefix `general:`). |

@@ -573,6 +573,11 @@ impl FRect {
     }
 
     /// Scaled about its center.
+    /// Grown by `gap` on both axes.
+    pub fn with_gap(self, gap: f32) -> FRect {
+        FRect::new(self.x, self.y, self.w + gap, self.h + gap)
+    }
+
     pub fn scaled(self, sx: f32, sy: f32) -> FRect {
         let (w, h) = (self.w * sx, self.h * sy);
         FRect::new(
@@ -671,6 +676,8 @@ mod zoom_tests {
 
     #[test]
     fn zoom() {
+        let scr = FRect::new(0.0, 0.0, 1000.0, 800.0).with_gap(50.0);
+        assert_eq!(ws_style(Style::Default, 0.0, 1.0, false, scr).0, 1050.0);
         let r = zoom_rect((1000.0, 800.0), (300.0, 250.0), 2.0, false);
         assert_eq!((r.x, r.y, r.w, r.h), (-300.0, -250.0, 2000.0, 1600.0));
         let r = zoom_rect((1000.0, 800.0), (500.0, 400.0), 2.0, true);
