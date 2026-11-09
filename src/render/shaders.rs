@@ -246,6 +246,8 @@ pub struct Programs {
     pub blur_down: GlesTexProgram,
     pub blur_up: GlesTexProgram,
     pub plain: GlesTexProgram,
+    /// Downsample textures of the last blur, reused by the next one.
+    pub blur_chain: std::cell::RefCell<Vec<smithay::backend::renderer::gles::GlesTexture>>,
     pub border: GlesPixelProgram,
     pub shadow: GlesPixelProgram,
 }
@@ -317,6 +319,7 @@ impl Programs {
             blur_down,
             blur_up,
             plain,
+            blur_chain: Default::default(),
             border,
             shadow,
         })

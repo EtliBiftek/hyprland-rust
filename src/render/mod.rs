@@ -338,13 +338,17 @@ fn ensure_blur(
         return;
     }
     let p = ctx.progs;
-    let res = blur::render_scene(r, out.0, out.1, below, CLEAR).and_then(|t| {
-        blur::blur(r, &t, &p.blur_down, &p.blur_up, cfg.1, cfg.0)?;
+    let res = blur::reuse_tex(r, fw.blur_tex.take(), out.0, out.1).and_then(|mut t| {
+        blur::render_scene_into(r, &mut t, below, CLEAR)?;
+        let chain = &mut p.blur_chain.borrow_mut();
+        blur::blur(r, &t, &p.blur_down, &p.blur_up, cfg.1, cfg.0, chain)?;
         Ok(t)
     });
     match res {
         Ok(t) => {
             fw.blur_tex = Some(t);
+            // Same texture id, new pixels: the element must count as changed.
+            fw.dirty = true;
             fw.blur_key = key;
             fw.blur_cfg = cfg;
         }
@@ -1087,8 +1091,7 @@ fn output_scale_pass(
 
 /// `decoration:screen_shader`: draws the finished scene into a texture and
 /// returns one full-output element that shows it through the user's shader.
-/// shortcuts: a new texture per changed frame (reuse the last one if it costs);
-/// the cursor is drawn above the shader and screenshots include it.
+/// shortcut: the cursor is drawn above the shader and screenshots include it.
 fn screen_shader(
     h: &mut Hypr,
     r: &mut GlesRenderer,
@@ -1217,7 +1220,12 @@ fn post_pass(
         .collect();
     let force = slots.get(&name).is_none_or(|s| s.key != key);
     if force {
-        let tex = blur::render_scene(r, out.0, out.1, &refs, CLEAR)
+        let old = slots.get(&name).map(|s| s.tex.clone());
+        let tex = blur::reuse_tex(r, old, out.0, out.1)
+            .and_then(|mut t| {
+                blur::render_scene_into(r, &mut t, &refs, CLEAR)?;
+                Ok(t)
+            })
             .map_err(|e| tracing::warn!("post pass: {e}"))
             .ok()?;
         let slot = slots.entry(name.clone()).or_insert_with(|| ScreenSlot {

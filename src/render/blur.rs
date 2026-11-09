@@ -19,22 +19,33 @@ pub fn new_tex(r: &mut GlesRenderer, w: i32, h: i32) -> Result<GlesTexture, Stri
         .map_err(|e| format!("create_buffer: {e:?}"))
 }
 
-/// Renders `elements` (front to back, output-local) into a new texture.
-pub fn render_scene(
+/// `tex` if it is `w` x `h`, else a new texture: scene textures are reused
+/// across frames instead of being allocated per redraw.
+pub fn reuse_tex(
     r: &mut GlesRenderer,
+    tex: Option<GlesTexture>,
     w: i32,
     h: i32,
+) -> Result<GlesTexture, String> {
+    match tex {
+        Some(t) if (t.size().w, t.size().h) == (w.max(1), h.max(1)) => Ok(t),
+        _ => new_tex(r, w, h),
+    }
+}
+
+/// Renders `elements` (front to back, output-local) into `tex`.
+pub fn render_scene_into(
+    r: &mut GlesRenderer,
+    tex: &mut GlesTexture,
     elements: &[&FxElement],
     clear: [f32; 4],
-) -> Result<GlesTexture, String> {
-    let mut tex = new_tex(r, w, h)?;
-    {
-        let mut target = r.bind(&mut tex).map_err(|e| format!("bind: {e:?}"))?;
-        let mut dt = OutputDamageTracker::new((w, h), 1.0, Transform::Normal);
-        dt.render_output(r, &mut target, 0, elements, clear)
-            .map_err(|e| format!("render scene: {e:?}"))?;
-    }
-    Ok(tex)
+) -> Result<(), String> {
+    let size = tex.size();
+    let mut target = r.bind(tex).map_err(|e| format!("bind: {e:?}"))?;
+    let mut dt = OutputDamageTracker::new((size.w, size.h), 1.0, Transform::Normal);
+    dt.render_output(r, &mut target, 0, elements, clear)
+        .map_err(|e| format!("render scene: {e:?}"))?;
+    Ok(())
 }
 
 /// Draws all of `src` over all of `dst` with `prog`.
@@ -81,13 +92,24 @@ pub fn blur(
     up: &GlesTexProgram,
     passes: i32,
     size: i32,
+    cache: &mut Vec<GlesTexture>,
 ) -> Result<(), String> {
     let full = scene.size();
     let offset = (size as f32 * 0.5).max(1.0);
-    let mut chain = vec![scene.clone()];
-    for i in 1..=passes.max(1) {
-        chain.push(new_tex(r, full.w >> i, full.h >> i)?);
+    // The downsample textures are kept between calls: same sizes every frame.
+    let n = passes.max(1) as usize;
+    cache.truncate(n);
+    for i in 0..n {
+        let (w, h) = (full.w >> (i + 1), full.h >> (i + 1));
+        let t = reuse_tex(r, cache.get(i).cloned(), w, h)?;
+        if i < cache.len() {
+            cache[i] = t;
+        } else {
+            cache.push(t);
+        }
     }
+    let mut chain = vec![scene.clone()];
+    chain.extend(cache.iter().cloned());
     let hp = |t: &GlesTexture| {
         let s = t.size();
         Uniform::new("halfpixel", (0.5 / s.w as f32, 0.5 / s.h as f32))

@@ -81,43 +81,53 @@ pub fn init_winit(
                         crate::render::output_elements(state, backend.renderer(), &output)
                     };
                     let age = backend.buffer_age().unwrap_or(0);
-                    let result = {
-                        let (renderer, mut framebuffer) = backend.bind().unwrap();
-                        if state.session_locked {
-                            // Locked: only the lock surfaces, no windows or borders.
-                            let lock = state.lock_elements(renderer, &output);
-                            smithay::desktop::space::render_output::<
-                                _,
-                                WaylandSurfaceRenderElement<GlesRenderer>,
-                                _,
-                                _,
-                            >(
-                                &output,
-                                renderer,
-                                &mut framebuffer,
-                                1.0,
-                                age,
-                                std::iter::empty::<&Space<Window>>(),
-                                &lock,
-                                &mut damage_tracker,
-                                [0.1, 0.1, 0.1, 1.0],
-                            )
-                            .unwrap()
-                        } else {
-                            damage_tracker
-                                .render_output(
+                    // A failed frame is logged and skipped, not fatal.
+                    let damage = backend.bind().map_err(|e| format!("bind: {e:?}")).and_then(
+                        |(renderer, mut framebuffer)| {
+                            if state.session_locked {
+                                // Locked: only the lock surfaces, no windows or borders.
+                                let lock = state.lock_elements(renderer, &output);
+                                smithay::desktop::space::render_output::<
+                                    _,
+                                    WaylandSurfaceRenderElement<GlesRenderer>,
+                                    _,
+                                    _,
+                                >(
+                                    &output,
                                     renderer,
                                     &mut framebuffer,
+                                    1.0,
                                     age,
-                                    &elements,
+                                    std::iter::empty::<&Space<Window>>(),
+                                    &lock,
+                                    &mut damage_tracker,
                                     [0.1, 0.1, 0.1, 1.0],
                                 )
-                                .unwrap()
+                                .map(|r| r.damage.cloned())
+                                .map_err(|e| format!("{e:?}"))
+                            } else {
+                                damage_tracker
+                                    .render_output(
+                                        renderer,
+                                        &mut framebuffer,
+                                        age,
+                                        &elements,
+                                        [0.1, 0.1, 0.1, 1.0],
+                                    )
+                                    .map(|r| r.damage.cloned())
+                                    .map_err(|e| format!("{e:?}"))
+                            }
+                        },
+                    );
+                    match damage {
+                        Ok(Some(d)) => {
+                            if let Err(e) = backend.submit(Some(&d)) {
+                                tracing::warn!("submit failed: {e:?}");
+                            }
                         }
-                    };
-                    // Nothing changed: skip the swap.
-                    if let Some(damage) = result.damage {
-                        backend.submit(Some(damage)).unwrap();
+                        // Nothing changed: skip the swap.
+                        Ok(None) => {}
+                        Err(e) => tracing::warn!("render failed: {e}"),
                     }
 
                     state.screencopy_process(backend.renderer(), &output);

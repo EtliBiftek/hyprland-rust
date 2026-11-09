@@ -145,7 +145,8 @@ pub fn flag(cfg: &Config, key: &str) -> bool {
 /// default.
 fn raw_option(cfg: &Config, key: &str) -> Option<OptValue> {
     use OptValue::*;
-    let (_, kind, default) = OPTION_DEFAULTS.iter().find(|o| o.0 == key)?;
+    let i = OPTION_DEFAULTS.binary_search_by(|o| o.0.cmp(key)).ok()?;
+    let (_, kind, default) = &OPTION_DEFAULTS[i];
     let v = cfg.raw_options.get(key).map_or(*default, String::as_str);
     Some(match kind {
         'b' => Bool(matches!(v, "1" | "true" | "yes" | "on")),
