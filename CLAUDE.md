@@ -144,7 +144,7 @@ Branch `osmium` (unmerged). Source: `docs/hyprland-rust-gaps.md` in
 EtliBiftek/osmium-os (written against d9010fb, so many rows are stale). Rules:
 one commit and one test per item, update `docs/PARITY.md`.
 
-- Done on the branch (CI green at b8a6035): Phase 0, #7, #8, #9, #14, #17, #18, #19, #20, #21 (partial), #24, #26, #27, #28, #29, #30, #39, #40, #42. #1, #2, #4-6, #10, #12, #13,
+- Done on the branch (CI green at f52fc35): Phase 0, #7, #8, #9, #14, #17, #18, #19, #20, #21 (partial), #24, #26, #27, #28, #29, #30, #39, #40, #42. #1, #2, #4-6, #10, #12, #13,
   #16, #31 and #32-38 were done in main (some partially, see the lists below).
 - #21 partial: only `immediate` is still stored only.
 - #22 needs no change: Hyprland also only reports `minimized`.
@@ -153,8 +153,9 @@ one commit and one test per item, update `docs/PARITY.md`.
 - #11 done (CRTC off via `DrmCompositor::clear`; VKMS debugfs test).
 - #15 partial: `addreserved`, output-management apply, `keyword monitor`, output scale rendering at physical size, fractional-scale preferred scale (largest output, sent once) done.
 - #23 partial: `overlay_cursor` done; dmabuf export remains.
+- Also done: `enable_swallow`, `background_color`, `on_focus_under_fullscreen`, `exit_window_retains_fullscreen`, `warp_on_change_workspace`; tty builds frames only on change (`WmState::frame_gen`, 250 ms fallback), scene/blur textures are reused.
 - Next: #43 rest, then the
-  partial ones (#3, #11, #15, #23).
+  partial ones (#3, #23 dmabuf).
 - Quota rule (owner, 2026-11-09): use the quota to the end, no percent stop.
   The scheduled task `osmium-gaps-resume` (05:05, 11:05, 17:05, 23:05)
   continues the list; keep this section current after every item.
