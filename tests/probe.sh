@@ -46,6 +46,7 @@ sleep 2
 timeout 60 "$PROBE" export || fail "probe export"
 pkill -f weston 2>/dev/null || true
 timeout 60 "$PROBE" copycap || fail "probe copycap"
+timeout 30 "$PROBE" layerpopup || fail "probe layerpopup"
 
 # Focus grab: two windows (left and right half), grab the first, click the right half.
 "$PROBE" focusgrab >"$T/grab.out" 2>&1 &

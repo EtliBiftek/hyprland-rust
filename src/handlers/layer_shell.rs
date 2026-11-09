@@ -4,7 +4,9 @@ use std::time::Duration;
 
 use smithay::{
     delegate_layer_shell, delegate_xdg_decoration,
-    desktop::{layer_map_for_output, LayerSurface, PopupKind, WindowSurfaceType},
+    desktop::{
+        get_popup_toplevel_coords, layer_map_for_output, LayerSurface, PopupKind, WindowSurfaceType,
+    },
     output::Output,
     reexports::{
         wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode,
@@ -13,7 +15,7 @@ use smithay::{
             Resource,
         },
     },
-    utils::{Logical, Point, SERIAL_COUNTER},
+    utils::{Logical, Point, Rectangle, SERIAL_COUNTER},
     wayland::{
         compositor::with_states,
         shell::{
@@ -28,6 +30,27 @@ use smithay::{
 };
 
 use crate::Hypr;
+
+impl Hypr {
+    /// Keeps a layer surface's popup on its output.
+    fn unconstrain_layer_popup(&self, parent: &WlrLayerSurface, popup: &PopupSurface) {
+        let Some((size, layer_loc)) = self.space.outputs().find_map(|o| {
+            let map = layer_map_for_output(o);
+            let layer = map.layers().find(|l| l.layer_surface() == parent)?;
+            let geo = map.layer_geometry(layer)?;
+            Some((self.space.output_geometry(o)?.size, geo.loc))
+        }) else {
+            return;
+        };
+        // Relative to the popup's parent, in output-local coordinates.
+        let mut target = Rectangle::new(Point::from((0, 0)), size);
+        target.loc -= layer_loc;
+        target.loc -= get_popup_toplevel_coords(&PopupKind::Xdg(popup.clone()));
+        popup.with_pending_state(|state| {
+            state.geometry = state.positioner.get_unconstrained_geometry(target);
+        });
+    }
+}
 
 impl WlrLayerShellHandler for Hypr {
     fn shell_state(&mut self) -> &mut WlrLayerShellState {
@@ -59,8 +82,8 @@ impl WlrLayerShellHandler for Hypr {
         }
     }
 
-    fn new_popup(&mut self, _parent: WlrLayerSurface, popup: PopupSurface) {
-        // shortcut: layer popups are not constrained to the output.
+    fn new_popup(&mut self, parent: WlrLayerSurface, popup: PopupSurface) {
+        self.unconstrain_layer_popup(&parent, &popup);
         let _ = self.popups.track_popup(PopupKind::Xdg(popup));
     }
 

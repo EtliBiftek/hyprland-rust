@@ -2,6 +2,7 @@
 //!
 //! `protocol-probe export`    hyprland-toplevel-mapping + hyprland-toplevel-export of a red window
 //! `protocol-probe copycap`   ext-image-copy-capture of a toplevel source and an output source
+//! `protocol-probe layerpopup` a layer popup placed off screen comes back on screen
 //! `protocol-probe focusgrab` hyprland-focus-grab: prints `grabbed`, then `cleared` when a click
 //!                            outside the whitelisted window clears it
 //! Prints `OK ...` and exits 0, or prints `FAIL ...` and exits 1.
@@ -46,10 +47,17 @@ use wayland_protocols::{
         },
     },
     xdg::shell::client::{
+        xdg_popup::{self, XdgPopup},
+        xdg_positioner::{self, XdgPositioner},
         xdg_surface::{self, XdgSurface},
         xdg_toplevel::XdgToplevel,
         xdg_wm_base::{self, XdgWmBase},
     },
+};
+
+use wayland_protocols_wlr::layer_shell::v1::client::{
+    zwlr_layer_shell_v1::{self, ZwlrLayerShellV1},
+    zwlr_layer_surface_v1::{self, ZwlrLayerSurfaceV1},
 };
 
 macro_rules! hypr_client {
@@ -117,6 +125,7 @@ struct P {
     sess_size: Option<(u32, u32)>,
     sess_done: bool,
     sess_stopped: bool,
+    popup_x: Option<i32>,
 }
 
 fn bind_err(n: &str) -> ! {
@@ -250,6 +259,59 @@ fn main() {
     let mut p = P::default();
 
     match mode.as_str() {
+        "layerpopup" => {
+            let shell: ZwlrLayerShellV1 = globals
+                .bind(&qh, 1..=4, ())
+                .unwrap_or_else(|_| bind_err("zwlr_layer_shell_v1"));
+            let (buffer, _file) = ctx.buffer(100, 30, Some(RED));
+            let surface = ctx.compositor.create_surface(&qh, ());
+            let layer = shell.get_layer_surface(
+                &surface,
+                None,
+                zwlr_layer_shell_v1::Layer::Top,
+                "probe".into(),
+                &qh,
+                WinData {
+                    surface: surface.clone(),
+                    buffer,
+                },
+            );
+            layer.set_size(100, 30);
+            layer.set_anchor(
+                zwlr_layer_surface_v1::Anchor::Top | zwlr_layer_surface_v1::Anchor::Left,
+            );
+            surface.commit();
+            wait(&mut p, &mut q, 2, |_| false);
+
+            let positioner = ctx.wm.create_positioner(&qh, ());
+            positioner.set_size(400, 100);
+            positioner.set_anchor_rect(0, 0, 10, 10);
+            positioner.set_offset(-500, 0);
+            positioner.set_constraint_adjustment(
+                xdg_positioner::ConstraintAdjustment::SlideX
+                    | xdg_positioner::ConstraintAdjustment::SlideY,
+            );
+            let (buffer, _popup_file) = ctx.buffer(400, 100, Some(RED));
+            let popup_surface = ctx.compositor.create_surface(&qh, ());
+            let xs = ctx.wm.get_xdg_surface(
+                &popup_surface,
+                &qh,
+                WinData {
+                    surface: popup_surface.clone(),
+                    buffer,
+                },
+            );
+            let popup = xs.get_popup(None, &positioner, &qh, ());
+            layer.get_popup(&popup);
+            popup_surface.commit();
+            if !wait(&mut p, &mut q, 5, |p| p.popup_x.is_some()) {
+                fail("no popup configure");
+            }
+            match p.popup_x {
+                Some(x) if x >= 0 => println!("OK layer popup at x={x}"),
+                x => fail(&format!("layer popup off screen: {x:?}")),
+            }
+        }
         "focusgrab" => {
             let mgr: HyprlandFocusGrabManagerV1 = globals
                 .bind(&qh, 1..=1, ())
@@ -426,6 +488,8 @@ noop!(
     WlSurface,
     WlOutput,
     XdgToplevel,
+    XdgPositioner,
+    ZwlrLayerShellV1,
     ExtImageCaptureSourceV1,
     ExtForeignToplevelImageCaptureSourceManagerV1,
     ExtOutputImageCaptureSourceManagerV1,
@@ -458,6 +522,38 @@ impl Dispatch<XdgWmBase, ()> for P {
     ) {
         if let xdg_wm_base::Event::Ping { serial } = event {
             wm.pong(serial);
+        }
+    }
+}
+
+impl Dispatch<XdgPopup, ()> for P {
+    fn event(
+        p: &mut Self,
+        _: &XdgPopup,
+        event: xdg_popup::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let xdg_popup::Event::Configure { x, .. } = event {
+            p.popup_x = Some(x);
+        }
+    }
+}
+
+impl Dispatch<ZwlrLayerSurfaceV1, WinData> for P {
+    fn event(
+        _: &mut Self,
+        layer: &ZwlrLayerSurfaceV1,
+        event: zwlr_layer_surface_v1::Event,
+        data: &WinData,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let zwlr_layer_surface_v1::Event::Configure { serial, .. } = event {
+            layer.ack_configure(serial);
+            data.surface.attach(Some(&data.buffer), 0, 0);
+            data.surface.commit();
         }
     }
 }
