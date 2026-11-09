@@ -401,11 +401,11 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `misc:force_default_wallpaper` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:initial_workspace_token_timeout` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:initial_workspace_tracking` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
-| `misc:key_press_enables_dpms` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
+| `misc:key_press_enables_dpms` | tested | Bool. `tests/keybinds-xvfb.sh`. |
 | `misc:layers_hog_keyboard_focus` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:lockdead_screen_delay` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:middle_click_paste` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
-| `misc:mouse_move_enables_dpms` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
+| `misc:mouse_move_enables_dpms` | tested | Bool. `tests/keybinds-xvfb.sh`. |
 | `misc:mouse_move_focuses_monitor` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:name_vk_after_proc` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:new_float_force_onscreen` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |

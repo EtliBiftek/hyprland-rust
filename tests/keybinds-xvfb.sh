@@ -151,6 +151,24 @@ sleep 0.5
 [ ! -e "$T/submap-fired" ] || fail "submap bind still active after submap reset"
 echo "ok: submap enter, bind inside, reset"
 
+# DPMS: input wakes the screen when the options are set.
+dpms() { "$CTL" -j monitors | grep -q "\"dpmsStatus\": *$1"; }
+"$CTL" dispatch dpms off >/dev/null
+dpms false || fail "dpms off"
+xdotool key a
+sleep 0.5
+dpms false || fail "a key woke the screen with the option off"
+"$CTL" keyword misc:key_press_enables_dpms true >/dev/null
+xdotool key a
+sleep 0.5
+dpms true || fail "key_press_enables_dpms"
+"$CTL" keyword misc:mouse_move_enables_dpms true >/dev/null
+"$CTL" dispatch dpms off >/dev/null
+xdotool mousemove --window "$WIN" 150 150
+sleep 0.5
+dpms true || fail "mouse_move_enables_dpms"
+echo "ok: input wakes dpms"
+
 xdotool key super+shift+e
 for _ in $(seq 25); do
     kill -0 "$COMP" 2>/dev/null || break

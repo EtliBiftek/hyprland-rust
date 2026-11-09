@@ -347,10 +347,12 @@ impl Hypr {
                 if event.state() == KeyState::Pressed {
                     let name = smithay::backend::input::Device::name(&event.device());
                     self.keymap_follow_device(&name);
+                    self.wake_dpms("misc:key_press_enables_dpms");
                 }
                 self.on_key(event.key_code(), event.state(), Event::time_msec(&event));
             }
             InputEvent::PointerMotion { event, .. } => {
+                self.wake_dpms("misc:mouse_move_enables_dpms");
                 // Relative motion (libinput mice): move and clamp to the output.
                 let pointer = self.seat.get_pointer().unwrap();
                 let from = pointer.current_location();
@@ -380,6 +382,7 @@ impl Hypr {
                 pointer.frame(self);
             }
             InputEvent::PointerMotionAbsolute { event, .. } => {
+                self.wake_dpms("misc:mouse_move_enables_dpms");
                 // Absolute devices (winit, tablets) map to the focused output.
                 let Some(output_geo) = self.output_geometry() else {
                     return;
@@ -594,6 +597,16 @@ impl Hypr {
 
     /// The `bindm` bind for `button` with the current modifiers. `Some(true)`
     /// for `resizewindow`, `Some(false)` for `movewindow`.
+    /// `misc:key_press_enables_dpms` / `mouse_move_enables_dpms`.
+    fn wake_dpms(&mut self, option: &str) {
+        if !self.wm.dpms_on
+            && crate::options::get_option(&self.config, option)
+                == Some(crate::options::OptValue::Bool(true))
+        {
+            self.wm.dpms_on = true;
+        }
+    }
+
     /// Runs the non-`bindm` binds of a mouse button or wheel key. Returns
     /// whether the event was consumed.
     fn pointer_bind(&mut self, key: &str, pressed: bool) -> bool {

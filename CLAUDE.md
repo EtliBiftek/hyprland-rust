@@ -150,10 +150,11 @@ one commit and one test per item, update `docs/PARITY.md`.
 - #22 needs no change: Hyprland also only reports `minimized`.
 - #42 done (`drag_lock`, `tap_button_map` still ignored). #43 partial: `binds:scroll_event_delay` and `binds:hide_special_on_workspace_change` done, the other `misc:`/`cursor:` options remain.
 - #41 partial: `resize_on_border`, `extend_border_grab_area`, `snap:*` done; `gaps_workspaces` (needs a workspace animation gap) and `no_focus_fallback` remain.
-- Next (#39, #40 in CI): #41 rest, #43, then the
+- #11 partial: input wakes dpms; the CRTC stays active on tty.
+- Next (#39 done, #40, #41 snap, #43 focus_on_activate, #11 wake in CI): #41 rest, #43, then the
   partial ones (#3, #11, #15, #23, #28).
 - Quota rule (owner, 2026-11-09): use the quota to the end, no percent stop.
-  The scheduled task `osmium-gaps-resume` (05:05, 11:05, 17:05, 23:05)
+  The scheduled task `osmium-gaps-resume` (05:05, 11:05, 23:05)
   continues the list; keep this section current after every item.
 
 ## Future work
