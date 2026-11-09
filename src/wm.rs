@@ -51,6 +51,10 @@ pub struct WmState {
     pub consumed_keys: Vec<u32>,
     /// Mouse buttons whose press a bind consumed: the release is dropped too.
     pub consumed_buttons: Vec<u32>,
+    /// `cursor:hide_on_key_press` hid the cursor until the next motion.
+    pub cursor_hidden: bool,
+    /// For `cursor:inactive_timeout`.
+    pub last_motion: std::time::Instant,
     /// `hyprctl kill`: the next click kills the client under the pointer.
     pub kill_mode: bool,
     /// Time of the last wheel event looked up in the binds.
@@ -109,6 +113,8 @@ impl WmState {
             repeat: None,
             consumed_keys: Vec::new(),
             consumed_buttons: Vec::new(),
+            cursor_hidden: false,
+            last_motion: std::time::Instant::now(),
             kill_mode: false,
             last_wheel_bind: 0,
             key_mods: Vec::new(),

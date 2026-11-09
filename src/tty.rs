@@ -440,7 +440,7 @@ fn render(data: &mut CalloopData, crtc: crtc::Handle) {
     // Front to back: cursor, borders, windows. Locked: cursor and lock surfaces.
     let mut elements: Vec<TtyElement> = Vec::new();
     let pointer = state.seat.get_pointer().unwrap().current_location();
-    if geo.to_f64().contains(pointer) {
+    if geo.to_f64().contains(pointer) && state.cursor_visible() {
         let local = pointer - geo.loc.to_f64();
         elements.extend(
             state

@@ -97,4 +97,10 @@ timeout 20 grim -c -t ppm -g "880,580 60x60" "$T/cursor.ppm" || fail "grim -c fa
 cmp -s "$T/plain.ppm" "$T/cursor.ppm" && fail "grim -c shows no cursor"
 echo "ok: overlay_cursor"
 
+"$CTL" keyword cursor:inactive_timeout 1 >/dev/null
+sleep 2
+timeout 20 grim -c -t ppm -g "880,580 60x60" "$T/hidden.ppm" || fail "grim -c failed"
+cmp -s "$T/plain.ppm" "$T/hidden.ppm" || fail "cursor:inactive_timeout left the cursor visible"
+echo "ok: cursor:inactive_timeout"
+
 echo "OK: wlr-screencopy through grim"

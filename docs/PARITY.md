@@ -67,11 +67,11 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `binds:workspace_center_on` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `binds:`). |
 | `cursor:default_monitor` | parsed | String. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
 | `cursor:enable_hyprcursor` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
-| `cursor:hide_on_key_press` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
+| `cursor:hide_on_key_press` | partial | Bool. Hides the cursor until motion; no test. |
 | `cursor:hide_on_tablet` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
 | `cursor:hide_on_touch` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
 | `cursor:hotspot_padding` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
-| `cursor:inactive_timeout` | parsed | Float. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
+| `cursor:inactive_timeout` | tested | Float. `tests/screencopy.sh`. |
 | `cursor:invisible` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
 | `cursor:min_refresh_rate` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |
 | `cursor:no_break_fs_vrr` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `cursor:`). |

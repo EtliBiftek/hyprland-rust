@@ -348,11 +348,13 @@ impl Hypr {
                     let name = smithay::backend::input::Device::name(&event.device());
                     self.keymap_follow_device(&name);
                     self.wake_dpms("misc:key_press_enables_dpms");
+                    self.cursor_on_key();
                 }
                 self.on_key(event.key_code(), event.state(), Event::time_msec(&event));
             }
             InputEvent::PointerMotion { event, .. } => {
                 self.wake_dpms("misc:mouse_move_enables_dpms");
+                self.cursor_on_motion();
                 // Relative motion (libinput mice): move and clamp to the output.
                 let pointer = self.seat.get_pointer().unwrap();
                 let from = pointer.current_location();
@@ -383,6 +385,7 @@ impl Hypr {
             }
             InputEvent::PointerMotionAbsolute { event, .. } => {
                 self.wake_dpms("misc:mouse_move_enables_dpms");
+                self.cursor_on_motion();
                 // Absolute devices (winit, tablets) map to the focused output.
                 let Some(output_geo) = self.output_geometry() else {
                     return;

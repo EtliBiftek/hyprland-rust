@@ -40,6 +40,28 @@ pub struct Cursors {
 }
 
 impl crate::state::Hypr {
+    pub fn cursor_on_key(&mut self) {
+        if crate::options::flag(&self.config, "cursor:hide_on_key_press") {
+            self.wm.cursor_hidden = true;
+        }
+    }
+
+    pub fn cursor_on_motion(&mut self) {
+        self.wm.cursor_hidden = false;
+        self.wm.last_motion = std::time::Instant::now();
+    }
+
+    /// False while hidden by a key press or `cursor:inactive_timeout`.
+    pub fn cursor_visible(&self) -> bool {
+        use crate::options::{get_option, OptValue};
+        let timeout = match get_option(&self.config, "cursor:inactive_timeout") {
+            Some(OptValue::Float(t)) => t,
+            _ => 0.0,
+        };
+        !self.wm.cursor_hidden
+            && (timeout <= 0.0 || self.wm.last_motion.elapsed().as_secs_f64() < timeout)
+    }
+
     /// The cursor on `output` as effect elements (screenshots with a cursor).
     pub fn cursor_fx_elements(
         &mut self,
@@ -53,7 +75,7 @@ impl crate::state::Hypr {
             return Vec::new();
         };
         let pos = pointer.current_location();
-        if !geo.to_f64().contains(pos) {
+        if !geo.to_f64().contains(pos) || !self.cursor_visible() {
             return Vec::new();
         }
         self.cursors
