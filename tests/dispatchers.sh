@@ -172,7 +172,7 @@ timeout 5 "$HYPRCTL" keyword binds:hide_special_on_workspace_change true >/dev/n
 dsp togglespecialworkspace
 timeout 5 "$HYPRCTL" -j monitors | python3 -c 'import json,sys; assert json.load(sys.stdin)[0]["specialWorkspace"]["id"] != 0' || fail "special workspace not shown"
 dsp workspace 2
-timeout 5 "$HYPRCTL" -j monitors | python3 -c 'import json,sys; assert json.load(sys.stdin)[0]["specialWorkspace"]["id"] == 0' || fail "special workspace stayed open"
+timeout 5 "$HYPRCTL" -j monitors | python3 -c 'import json,sys; assert json.load(sys.stdin)[0]["specialWorkspace"].get("id", 0) == 0' || fail "special workspace stayed open"
 dsp workspace 1
 
 # 10. Window argument: act on the unfocused window, the focus stays.
