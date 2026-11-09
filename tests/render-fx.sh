@@ -125,7 +125,6 @@ echo "ok: rounded corners"
 # 1b. cursor zoom ----------------------------------------------------------
 "$CTL" dispatch movecursor "300 250" >/dev/null
 kw cursor:zoom_factor 2
-"$CTL" cursorpos; "$CTL" getoption cursor:zoom_factor; "$CTL" -j getoption cursor:zoom_factor
 sleep 1
 shot "$T/zoom.ppm"
 kw cursor:zoom_factor 1

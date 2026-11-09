@@ -36,7 +36,7 @@ precision mediump float;
 fn plain_tex_src() -> String {
     format!(
         "{}uniform vec4 crop;
-void main() {{ gl_FragColor = texture2D(tex, vec2(crop.x + v_coords.x * crop.z, 1.0 - crop.y - v_coords.y * crop.w)); }}",
+void main() {{ gl_FragColor = texture2D(tex, vec2(crop.x + v_coords.x * crop.z, crop.y + v_coords.y * crop.w)); }}",
         tex_header()
     )
 }
@@ -46,7 +46,7 @@ void main() {{ gl_FragColor = texture2D(tex, vec2(crop.x + v_coords.x * crop.z, 
 pub fn adapt_screen_shader(src: &str) -> String {
     let mut out = format!(
         "#version 100\n//_DEFINES_\n{PRECISION}\nvarying vec2 v_coords;\n\
-#define v_texcoord vec2(v_coords.x, 1.0 - v_coords.y)\n"
+#define v_texcoord v_coords\n"
     );
     for line in src.lines() {
         let words: Vec<&str> = line.split_whitespace().collect();
