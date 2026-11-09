@@ -144,6 +144,8 @@ echo "ok: cursor zoom"
 
 # 1c. output scale: the whole scene fills the output ------------------------
 "$CTL" keyword monitor "winit, preferred, 0x0, 2" >/dev/null
+sleep 0.5
+"$CTL" -j clients | head -c 400; "$CTL" monitors | head -3
 sleep 1
 shot "$T/scaled.ppm"
 "$CTL" keyword monitor "winit, preferred, 0x0, 1" >/dev/null
@@ -154,6 +156,8 @@ sys.path.insert(0, sys.argv[1])
 from px import *
 z = load(sys.argv[1] + "/scaled.ppm")
 print("scaled", z[0], z[1], px(z, z[0] // 2, z[1] // 2))
+green = [(x, y) for y in range(0, z[1], 10) for x in range(0, z[0], 10) if near(px(z, x, y), (0, 255, 0), 6)]
+print("green bbox", min(g[0] for g in green), min(g[1] for g in green), max(g[0] for g in green), max(g[1] for g in green)) if green else print("no green")
 assert z[0] == 1280, "scaled shot has the wrong size"
 assert near(px(z, 600, 500), (0, 255, 0), 6), "window not stretched by the output scale"
 PY
