@@ -236,7 +236,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `gestures:workspace_swipe_create_new` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `gestures:`). |
 | `gestures:workspace_swipe_direction_lock` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `gestures:`). |
 | `gestures:workspace_swipe_direction_lock_threshold` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `gestures:`). |
-| `gestures:workspace_swipe_distance` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `gestures:`). |
+| `gestures:workspace_swipe_distance` | tested | Int, an old `px` suffix (`1200px`) is accepted. Used by the workspace swipe gesture. |
 | `gestures:workspace_swipe_forever` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `gestures:`). |
 | `gestures:workspace_swipe_invert` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `gestures:`). |
 | `gestures:workspace_swipe_min_speed_to_force` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `gestures:`). |

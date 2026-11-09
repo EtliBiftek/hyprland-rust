@@ -144,18 +144,13 @@ Branch `osmium` (unmerged). Source: `docs/hyprland-rust-gaps.md` in
 EtliBiftek/osmium-os (written against d9010fb, so many rows are stale). Rules:
 one commit and one test per item, update `docs/PARITY.md`.
 
-- CI is red only on `tests/dots-conf.sh` (m3ww): `unknown dispatcher
-  fakefullscreen` (`keybinds.conf:258`) and `invalid float 1200px`
-  (`hyprland.conf:42`). Fix these first.
-- Done on the branch: Phase 0, #9, #19, #24, #30. #1, #2, #4-6, #10, #12, #13,
+- Done on the branch: Phase 0, #9, #19, #24, #26, #30. #1, #2, #4-6, #10, #12, #13,
   #16, #31 and #32-38 were done in main (some partially, see the lists below).
-- Next: #26, #7, #8, #14, #17, #18, #20, #21, #22, #27, #29, #39-43, then the
+- Next: #7, #8, #14, #17, #18, #20, #21, #22, #27, #29, #39-43, then the
   partial ones (#3, #11, #15, #23, #28).
-- Paused 2026-11-09 07:13 (UTC+3): weekly usage was already 97% at session
-  start (stop rule is 95%), so no item was started and the CI failure above is
-  still open. The weekly limit resets at 11:00; the one-shot scheduled task
-  `osmium-gaps-resume` continues at 11:05. Pointers: `parse_float` is in
-  `src/config.rs`; `fullscreenstate` is parsed in `Dispatcher::parse` there.
+- Quota rule (owner, 2026-11-09): use the quota to the end, no percent stop.
+  The scheduled task `osmium-gaps-resume` (05:05, 11:05, 17:05, 23:05)
+  continues the list; keep this section current after every item.
 
 ## Future work
 

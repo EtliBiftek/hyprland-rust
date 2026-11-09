@@ -1877,7 +1877,9 @@ impl Parser {
             "misc:disable_autoreload" => cfg.misc.disable_autoreload = parse_bool(value)?,
             "cursor:no_warps" => cfg.cursor_no_warps = parse_bool(value)?,
             "gestures:workspace_swipe_distance" => {
-                cfg.swipe.distance = parse_float(value)?.max(1.0) as f64
+                // Old dotfiles write `1200px`.
+                let v = value.strip_suffix("px").unwrap_or(value);
+                cfg.swipe.distance = parse_float(v)?.max(1.0) as f64
             }
             "gestures:workspace_swipe_invert" => cfg.swipe.invert = parse_bool(value)?,
             "gestures:workspace_swipe_cancel_ratio" => {
@@ -2411,6 +2413,13 @@ mod tests {
         assert_eq!(cfg.binds[1].submap, "resize");
         assert_eq!(cfg.binds[2].submap, "resize");
         assert_eq!(cfg.binds[2].dispatcher, Dispatcher::Submap(String::new()));
+    }
+
+    #[test]
+    fn swipe_distance_accepts_px() {
+        let (cfg, errors) = Config::parse_str("gestures {\nworkspace_swipe_distance = 1200px\n}");
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(cfg.swipe.distance, 1200.0);
     }
 
     #[test]
