@@ -125,6 +125,7 @@ echo "ok: rounded corners"
 # 1b. cursor zoom ----------------------------------------------------------
 "$CTL" dispatch movecursor "300 250" >/dev/null
 kw cursor:zoom_factor 2
+"$CTL" cursorpos; "$CTL" getoption cursor:zoom_factor; "$CTL" -j getoption cursor:zoom_factor
 sleep 1
 shot "$T/zoom.ppm"
 kw cursor:zoom_factor 1
@@ -135,6 +136,8 @@ sys.path.insert(0, sys.argv[1])
 from px import *
 z = load(sys.argv[1] + "/zoom.ppm")
 print("zoom", px(z, 650, 500), px(z, 750, 500))
+green = [(x, y) for y in range(0, z[1], 10) for x in range(0, z[0], 10) if near(px(z, x, y), (0, 255, 0), 6)]
+print("green bbox", z[0], z[1], min(g[0] for g in green), min(g[1] for g in green), max(g[0] for g in green), max(g[1] for g in green)) if green else print("no green")
 assert near(px(z, 650, 500), (0, 255, 0), 6), "window not scaled around the cursor"
 assert near(px(z, 750, 500), (26, 26, 26), 6), "zoomed window too large"
 PY
