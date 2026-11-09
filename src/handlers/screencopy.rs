@@ -314,7 +314,7 @@ impl Hypr {
             .bind(&mut tex)
             .map_err(|e| format!("bind: {e:?}"))?;
         if self.session_locked {
-            let lock = self.lock_elements(renderer);
+            let lock = self.lock_elements(renderer, output);
             render_output::<_, WaylandSurfaceRenderElement<GlesRenderer>, _, _>(
                 output,
                 renderer,
