@@ -16,6 +16,7 @@ COMP=
 cleanup() {
     [ -n "$COMP" ] && kill "$COMP" 2>/dev/null || true
     pkill -f weston-simple-shm 2>/dev/null || true
+    pkill weston-terminal 2>/dev/null || true
 }
 trap cleanup EXIT
 export XDG_RUNTIME_DIR="$T"
@@ -216,8 +217,8 @@ PY
 
 # 11. no_focus rule: a new window does not take the focus.
 BEFORE=$(timeout 5 "$HYPRCTL" -j activewindow | python3 -c 'import json,sys; print(json.load(sys.stdin)["address"])')
-timeout 5 "$HYPRCTL" keyword windowrule "match:class .*, no_focus on" >/dev/null
-timeout 5 "$HYPRCTL" dispatch exec weston-simple-shm >/dev/null || fail "dispatch exec"
+timeout 5 "$HYPRCTL" keyword windowrule "match:class terminal, no_focus on" >/dev/null
+timeout 5 "$HYPRCTL" dispatch exec weston-terminal >/dev/null || fail "dispatch exec"
 wait_clients 3
 settle
 AFTER=$(timeout 5 "$HYPRCTL" -j activewindow | python3 -c 'import json,sys; print(json.load(sys.stdin)["address"])')
