@@ -167,5 +167,25 @@ dsp forcerendererreload
 dsp bringactivetotop
 dsp setprop active bordersize 3
 
+# 10. Window argument: act on the unfocused window, the focus stays.
+timeout 5 "$HYPRCTL" dispatch exec weston-simple-shm >/dev/null || fail "dispatch exec"
+wait_clients 2
+settle
+ADDR=$(clients | python3 -c 'import json,sys; print(max(json.load(sys.stdin), key=lambda w: w["focusHistoryID"])["address"])')
+dsp setfloating "address:$ADDR"
+dsp movetoworkspacesilent "5,address:$ADDR"
+sleep 0.5
+clients >"$T/c4.json"
+python3 - "$T/c4.json" "$ADDR" <<'PY' || fail "window argument: $(cat "$T/c4.json")"
+import json, sys
+ws = json.load(open(sys.argv[1]))
+target = next(w for w in ws if w["address"] == sys.argv[2])
+other = next(w for w in ws if w["address"] != sys.argv[2])
+assert target["workspace"]["id"] == 5 and target["floating"] is True, target
+assert other["workspace"]["id"] == 1 and other["floating"] is False, other
+assert other["focusHistoryID"] == 0, other
+print("window argument ok")
+PY
+
 kill -0 "$COMP" 2>/dev/null || fail "compositor died"
 echo "OK: dispatchers (renameworkspace, togglepseudo, movecursor, movecursortocorner, alterzorder, event, dpms, no-ops)"

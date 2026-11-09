@@ -536,7 +536,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `hl.dsp.window.tag` | tested | Legacy `tagwindow`, `tests/window-rules.sh`. |
 | `hl.dsp.window.clear_tags` | none | Not implemented. |
 | `hl.dsp.window.toggle_swallow` | none | Not implemented. |
-| `hl.dsp.window.pin` | partial | Legacy `pin`. No test. |
+| `hl.dsp.window.pin` | tested | Legacy `pin`, honours `window`; so do `float`, `fullscreen`, `fullscreen_state`, `move` and `resize`. |
 | `hl.dsp.window.bring_to_top` | none | Not implemented. |
 | `hl.dsp.window.alter_zorder` | none | Not implemented. |
 | `hl.dsp.window.set_prop` | none | Not implemented. |
@@ -576,8 +576,9 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `forcekillactive` | partial | v0.57.1: `hl.dsp.window.kill`. |
 | `exit` | tested | `tests/keybinds-xvfb.sh`. |
 | `workspace` | tested | `tests/keybinds-xvfb.sh` and `tests/ipc-xvfb.sh`. Selectors: number, `+N`, `name:`, `previous`. v0.57.1: `hl.dsp.focus`. |
-| `movetoworkspace` | partial | Selectors as `workspace`. v0.57.1: `hl.dsp.window.move`. |
-| `movetoworkspacesilent` | partial | Selectors as `workspace`. |
+| `movetoworkspace` | tested | Selectors as `workspace`, optional `,WINDOW`. v0.57.1: `hl.dsp.window.move`. |
+| `movetoworkspacesilent` | tested | Selectors as `workspace`, optional `,WINDOW` (`tests/dispatchers.sh`). |
+| `movewindowpixel` / `resizewindowpixel` | partial | `moveactive` / `resizeactive` with a required `,WINDOW`. |
 | `togglefloating` | partial | v0.57.1: `hl.dsp.window.float`. |
 | `setfloating` | partial | v0.57.1: `hl.dsp.window.float`. |
 | `settiled` | partial | v0.57.1: `hl.dsp.window.float`. |

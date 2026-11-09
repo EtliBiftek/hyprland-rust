@@ -32,6 +32,9 @@ pub struct WmState {
     pub loop_handle: LoopHandle<'static, CalloopData>,
     /// Window with keyboard focus (if it is on a visible workspace).
     pub focused: Option<Window>,
+    /// Set while a `Dispatcher::OnWindow` runs: its window stands in for the
+    /// focused one.
+    pub target: Option<Window>,
     /// The window focused before `focused`, for `focuscurrentorlast`.
     pub prev_focus: Option<Window>,
     /// Id of the workspace we came from, for `workspace, previous`.
@@ -91,6 +94,7 @@ impl WmState {
         Self {
             loop_handle,
             focused: None,
+            target: None,
             prev_focus: None,
             previous_workspace: None,
             special_shown: None,
@@ -419,6 +423,9 @@ impl Hypr {
     // ---------------------------------------------------------------- windows
 
     pub fn focused_window(&self) -> Option<Window> {
+        if self.wm.target.is_some() {
+            return self.wm.target.clone();
+        }
         let f = self.wm.focused.clone()?;
         self.visible_ws()
             .into_iter()
@@ -1407,6 +1414,20 @@ impl Hypr {
             }
             Dispatcher::Lua(id) => self.lua_bind(*id),
             Dispatcher::Workspace(sel) => self.select_workspace(sel),
+            Dispatcher::OnWindow(inner, sel) => {
+                let Some((_, window)) = self.find_window(sel) else {
+                    return;
+                };
+                let focused = self.wm.focused.clone();
+                self.wm.target = Some(window);
+                self.dispatch(inner);
+                self.wm.target = None;
+                // Only a following move takes the focus along.
+                if !matches!(**inner, Dispatcher::MoveToWorkspace(_)) && self.wm.focused != focused
+                {
+                    self.focus_window(focused);
+                }
+            }
             Dispatcher::MoveToWorkspace(sel) => self.move_to_workspace(sel, false),
             Dispatcher::MoveToWorkspaceSilent(sel) => self.move_to_workspace(sel, true),
             Dispatcher::ToggleFloating => self.toggle_floating(),

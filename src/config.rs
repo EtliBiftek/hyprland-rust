@@ -169,6 +169,9 @@ pub enum Dispatcher {
     Workspace(WsSel),
     MoveToWorkspace(WsSel),
     MoveToWorkspaceSilent(WsSel),
+    /// A window dispatcher aimed at `WinSel` instead of the focused window
+    /// (`movetoworkspace 3,address:0x..`, `pin class:foo`, ...).
+    OnWindow(Box<Dispatcher>, WinSel),
     ToggleFloating,
     SetFloating,
     SetTiled,
@@ -313,6 +316,18 @@ impl Dispatcher {
             Dispatcher::ForceKillActive => ("forcekillactive", String::new()),
             Dispatcher::Exit => ("exit", String::new()),
             Dispatcher::Workspace(s) => ("workspace", s.to_string()),
+            Dispatcher::OnWindow(d, w) => {
+                let (name, arg) = d.name_arg();
+                let w = sel(w);
+                (
+                    name,
+                    if arg.is_empty() {
+                        w
+                    } else {
+                        format!("{arg},{w}")
+                    },
+                )
+            }
             Dispatcher::MoveToWorkspace(s) => ("movetoworkspace", s.to_string()),
             Dispatcher::MoveToWorkspaceSilent(s) => ("movetoworkspacesilent", s.to_string()),
             Dispatcher::ToggleFloating => ("togglefloating", String::new()),
@@ -437,8 +452,30 @@ impl Dispatcher {
 
     pub fn parse(name: &str, arg: &str) -> Result<Self, String> {
         let arg = arg.trim();
+        let lower = name.trim().to_ascii_lowercase();
+        let inner = match lower.as_str() {
+            "movewindowpixel" => "moveactive",
+            "resizewindowpixel" => "resizeactive",
+            n => n,
+        };
+        let target = match inner {
+            "movetoworkspace" | "movetoworkspacesilent" | "fullscreen" | "fullscreenstate"
+            | "moveactive" | "resizeactive" => arg.split_once(','),
+            "togglefloating" | "setfloating" | "settiled" | "pin"
+                if !arg.is_empty() && arg != "active" =>
+            {
+                Some(("", arg))
+            }
+            _ => None,
+        };
+        if let Some((rest, win)) = target {
+            return Ok(Dispatcher::OnWindow(
+                Box::new(Self::parse(inner, rest)?),
+                win.parse()?,
+            ));
+        }
         let dir = || Direction::parse(arg);
-        Ok(match name.trim().to_ascii_lowercase().as_str() {
+        Ok(match lower.as_str() {
             "exec" => Dispatcher::Exec(arg.to_string()),
             "killactive" => Dispatcher::KillActive,
             "forcekillactive" => Dispatcher::ForceKillActive,
@@ -2413,6 +2450,26 @@ mod tests {
         assert_eq!(cfg.binds[1].submap, "resize");
         assert_eq!(cfg.binds[2].submap, "resize");
         assert_eq!(cfg.binds[2].dispatcher, Dispatcher::Submap(String::new()));
+    }
+
+    #[test]
+    fn dispatchers_take_a_window() {
+        let p = |n: &str, a: &str| Dispatcher::parse(n, a).unwrap();
+        let addr = WinSel::Address("0xabc".into());
+        let on = |d: Dispatcher| Dispatcher::OnWindow(Box::new(d), addr.clone());
+        assert_eq!(
+            p("movetoworkspacesilent", "3,address:0xabc"),
+            on(Dispatcher::MoveToWorkspaceSilent("3".parse().unwrap()))
+        );
+        assert_eq!(p("pin", "address:0xabc"), on(Dispatcher::Pin));
+        assert_eq!(p("pin", "active"), Dispatcher::Pin);
+        assert_eq!(p("setfloating", ""), Dispatcher::SetFloating);
+        assert_eq!(
+            p("movewindowpixel", "exact 1 2,address:0xabc"),
+            on(p("moveactive", "exact 1 2"))
+        );
+        let d = p("movetoworkspace", "3,address:0xabc");
+        assert_eq!(d.name_arg(), ("movetoworkspace", "3,address:0xabc".into()));
     }
 
     #[test]

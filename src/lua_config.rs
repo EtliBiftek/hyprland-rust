@@ -1055,6 +1055,15 @@ const DSP: &[&str] = &[
 ];
 
 /// `hl.dsp.<path>(arg)` as hyprlang dispatcher text.
+/// Appends the optional `window` argument to a translated dispatcher.
+fn on_window(a: &A, line: String) -> String {
+    match a.s("window") {
+        Some(w) if line.contains(", ") => format!("{line},{w}"),
+        Some(w) => format!("{line}, {w}"),
+        None => line,
+    }
+}
+
 fn translate(path: &str, a: &A) -> Result<String, String> {
     let unsupported = || Err(format!("hl.dsp.{path} is not supported yet"));
     Ok(match path {
@@ -1099,29 +1108,35 @@ fn translate(path: &str, a: &A) -> Result<String, String> {
             None => "forcekillactive".into(),
         },
         "window.signal" => format!("signal, {}", a.need("signal", "window.signal")?),
-        "window.float" => match action(a) {
-            "on" => "setfloating".into(),
-            "off" => "settiled".into(),
-            _ => "togglefloating".into(),
-        },
+        "window.float" => on_window(
+            a,
+            match action(a) {
+                "on" => "setfloating".into(),
+                "off" => "settiled".into(),
+                _ => "togglefloating".into(),
+            },
+        ),
         "window.fullscreen" => {
             let mode = match a.s("mode").as_deref() {
                 Some("maximized" | "1") => 1,
                 _ => 0,
             };
-            format!("fullscreen, {mode}")
+            on_window(a, format!("fullscreen, {mode}"))
         }
         // shortcut: no separate client fullscreen state; internal 2/1 map to
         // fullscreen/maximize and a client-only "spoof" (internal 0) is a no-op.
-        "window.fullscreen_state" => format!(
-            "fullscreenstate, {} {}{}",
-            a.s("internal").unwrap_or("-1".into()),
-            a.s("client").unwrap_or("-1".into()),
-            if action(a) == "toggle" && a.s("action").is_some() {
-                " toggle"
-            } else {
-                ""
-            }
+        "window.fullscreen_state" => on_window(
+            a,
+            format!(
+                "fullscreenstate, {} {}{}",
+                a.s("internal").unwrap_or("-1".into()),
+                a.s("client").unwrap_or("-1".into()),
+                if action(a) == "toggle" && a.s("action").is_some() {
+                    " toggle"
+                } else {
+                    ""
+                }
+            ),
         ),
         "send_shortcut" | "send_key_state" => {
             let mods = a.s("mods").unwrap_or_default();
@@ -1139,17 +1154,23 @@ fn translate(path: &str, a: &A) -> Result<String, String> {
             if let Some(d) = a.s("direction") {
                 format!("movewindow, {}", dir(&d)?)
             } else if let Some(ws) = a.s("workspace") {
-                if a.b("follow") == Some(false) {
-                    format!("movetoworkspacesilent, {ws}")
-                } else {
-                    format!("movetoworkspace, {ws}")
-                }
+                on_window(
+                    a,
+                    if a.b("follow") == Some(false) {
+                        format!("movetoworkspacesilent, {ws}")
+                    } else {
+                        format!("movetoworkspace, {ws}")
+                    },
+                )
             } else if let (Some(x), Some(y)) = (a.s("x"), a.s("y")) {
-                if a.b("relative") == Some(true) {
-                    format!("moveactive, {x} {y}")
-                } else {
-                    format!("moveactive, exact {x} {y}")
-                }
+                on_window(
+                    a,
+                    if a.b("relative") == Some(true) {
+                        format!("moveactive, {x} {y}")
+                    } else {
+                        format!("moveactive, exact {x} {y}")
+                    },
+                )
             } else if let Some(d) = a.s("into_group").or(a.s("into_or_create_group")) {
                 format!("moveintogroup, {}", dir(&d)?)
             } else if let Some(d) = a.s("out_of_group") {
@@ -1179,7 +1200,7 @@ fn translate(path: &str, a: &A) -> Result<String, String> {
         },
         "window.tag" => format!("tagwindow, {}", a.need("tag", "window.tag")?),
         "window.toggle_swallow" => "toggleswallow".into(),
-        "window.pin" => "pin".into(),
+        "window.pin" => on_window(a, "pin".into()),
         "window.bring_to_top" => "bringactivetotop".into(),
         "window.alter_zorder" => format!("alterzorder, {}", a.need("mode", "alter_zorder")?),
         "window.set_prop" => format!(
@@ -1190,8 +1211,10 @@ fn translate(path: &str, a: &A) -> Result<String, String> {
         "window.deny_from_group" => format!("denywindowfromgroup, {}", action(a)),
         "window.drag" => "movewindow".into(),
         "window.resize" => match (a.s("x"), a.s("y")) {
-            (Some(x), Some(y)) if a.b("relative") == Some(true) => format!("resizeactive, {x} {y}"),
-            (Some(x), Some(y)) => format!("resizeactive, exact {x} {y}"),
+            (Some(x), Some(y)) if a.b("relative") == Some(true) => {
+                on_window(a, format!("resizeactive, {x} {y}"))
+            }
+            (Some(x), Some(y)) => on_window(a, format!("resizeactive, exact {x} {y}")),
             _ => "resizewindow".into(),
         },
         "group.toggle" => "togglegroup".into(),
@@ -2142,6 +2165,8 @@ mod tests {
                local anon = hl.window_rule({{ match = {{ class = "x" }}, float = true }})
                assert(anon.name:find("^lua%-rule%-"))
                hl.bind("SUPER + ALT + F", hl.dsp.window.fullscreen_state({{ internal = 0, client = 3 }}))
+               hl.bind("SUPER + P", hl.dsp.window.pin({{ window = "address:0xa" }}))
+               hl.bind("SUPER + M", hl.dsp.window.move({{ workspace = 3, window = "address:0xa" }}))
                hl.bind("SUPER + B", hl.dsp.window.move({{ bogus = 1 }}))"#,
             dir.display().to_string().replace('\\', "/")
         );
@@ -2150,6 +2175,11 @@ mod tests {
         assert!(text.contains("windowrule[Mode]:enable = false"), "{text}");
         assert!(
             text.contains("bind = SUPER ALT, F, fullscreenstate, 0 3"),
+            "{text}"
+        );
+        assert!(text.contains("bind = SUPER, P, pin, address:0xa"), "{text}");
+        assert!(
+            text.contains("bind = SUPER, M, movetoworkspace, 3,address:0xa"),
             "{text}"
         );
         // A bad hl.dsp.* call is a config error, not a script abort.
