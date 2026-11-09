@@ -32,10 +32,11 @@ precision mediump float;
 #endif
 "#;
 
-/// A texture as it is.
+/// The part of a texture given by `crop` (x, y, w, h in 0..1, y down).
 fn plain_tex_src() -> String {
     format!(
-        "{}void main() {{ gl_FragColor = texture2D(tex, vec2(v_coords.x, 1.0 - v_coords.y)); }}",
+        "{}uniform vec4 crop;
+void main() {{ gl_FragColor = texture2D(tex, vec2(crop.x + v_coords.x * crop.z, 1.0 - crop.y - v_coords.y * crop.w)); }}",
         tex_header()
     )
 }
@@ -307,7 +308,10 @@ impl Programs {
                 f1("power"),
             ],
         )?;
-        let plain = r.compile_custom_texture_shader(plain_tex_src(), &[])?;
+        let plain = r.compile_custom_texture_shader(
+            plain_tex_src(),
+            &[UniformName::new("crop", UniformType::_4f)],
+        )?;
         Ok(Programs {
             window,
             blur_down,

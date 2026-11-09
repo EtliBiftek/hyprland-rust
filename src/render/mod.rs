@@ -1120,6 +1120,13 @@ fn cursor_zoom(
         rigid,
     );
     h.fx.animating = true;
+    let crop = (
+        -rect.x / rect.w,
+        -rect.y / rect.h,
+        out.0 as f32 / rect.w,
+        out.1 as f32 / rect.h,
+    );
+    let area = Rectangle::new((0, 0).into(), out.into());
     match post_pass(
         &mut h.fx.screens,
         r,
@@ -1127,8 +1134,8 @@ fn cursor_zoom(
         prog,
         out,
         &v,
-        rect_i(rect),
-        Vec::new(),
+        area,
+        vec![u("crop", crop)],
     ) {
         Some(el) => vec![el],
         None => v,
