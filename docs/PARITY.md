@@ -740,7 +740,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `vicinae_hotkey_manager_v1` | none | Not registered by the repo. |
 | `wl_compositor` | tested | Smithay `CompositorState`; used by every test client. |
 | `wl_data_device_manager` | partial | Clipboard only (`delegate_data_device`); no primary selection. No test. |
-| `wl_drm` | none | Not registered by the repo. |
+| `wl_drm` | none | Not registered: `bind_wl_display` needs smithay's `use_system_lib` (libwayland-server backend). |
 | `wl_output` | partial | `OutputManagerState`; one output. No test. |
 | `wl_seat` | tested | Keyboard input in `tests/keybinds-xvfb.sh`. |
 | `wl_shm` | tested | `weston-simple-shm` in the shell tests. |
@@ -780,7 +780,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `zwp_idle_inhibit_manager_v1` | none | Not registered by the repo. |
 | `zwp_input_method_manager_v2` | partial | `handlers/input_method.rs`: popups tracked but not drawn. No client test. |
 | `zwp_keyboard_shortcuts_inhibit_manager_v1` | none | Not registered by the repo. |
-| `zwp_linux_dmabuf_v1` | partial | `handlers/dmabuf.rs`: v3, renderer formats (winit, tty) or linear ARGB/XRGB (headless); imports accepted untested; no feedback, capture stays shm. |
+| `zwp_linux_dmabuf_v1` | partial | `handlers/dmabuf.rs`: renderer formats (winit, tty) or linear ARGB/XRGB (headless); default feedback (v4) when EGL names a render node, else v3; imports are tested against the renderer (`tests/probe.sh`). No per-surface feedback or scanout tranches (the v4 path has not run in CI: llvmpipe has no render node); capture stays shm. |
 | `zwp_pointer_constraints_v1` | none | Not registered by the repo. |
 | `zwp_pointer_gestures_v1` | none | Not registered by the repo. |
 | `zwp_primary_selection_device_manager_v1` | tested | Smithay primary selection; `tests/protocols.sh`. |

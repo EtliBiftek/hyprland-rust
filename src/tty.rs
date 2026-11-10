@@ -28,7 +28,6 @@ use smithay::{
                 memory::MemoryRenderBufferRenderElement, surface::WaylandSurfaceRenderElement,
             },
             gles::GlesRenderer,
-            ImportDma,
         },
         session::{libseat::LibSeatSession, Event as SessionEvent, Session},
         udev::{all_gpus, primary_gpu, UdevBackend, UdevEvent},
@@ -385,10 +384,17 @@ pub fn init_tty(
 
     std::env::set_var("WAYLAND_DISPLAY", &data.state.socket_name);
     data.state.session = Some(session);
-    data.state.init_dmabuf(tty.renderer.dmabuf_formats());
+    data.state.init_dmabuf_renderer(&tty.renderer);
     data.tty = Some(tty);
     handle.insert_idle(render_all);
     Ok(())
+}
+
+/// Answers pending dmabuf imports with the tty renderer (every loop iteration).
+pub fn test_dmabuf_imports(data: &mut CalloopData) {
+    if let Some(tty) = data.tty.as_mut() {
+        data.state.test_dmabuf_imports(&mut tty.renderer);
+    }
 }
 
 fn render_all(data: &mut CalloopData) {

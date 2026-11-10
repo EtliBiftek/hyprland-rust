@@ -2,7 +2,7 @@ use smithay::{
     backend::{
         renderer::{
             damage::OutputDamageTracker, element::surface::WaylandSurfaceRenderElement,
-            gles::GlesRenderer, ImportDma,
+            gles::GlesRenderer,
         },
         winit::{self, WinitEvent},
     },
@@ -49,7 +49,7 @@ pub fn init_winit(
     state.add_output(&output);
 
     let mut damage_tracker = OutputDamageTracker::from_output(&output);
-    state.init_dmabuf(backend.renderer().dmabuf_formats());
+    state.init_dmabuf_renderer(backend.renderer());
 
     std::env::set_var("WAYLAND_DISPLAY", &state.socket_name);
 
@@ -75,6 +75,7 @@ pub fn init_winit(
                 }
                 WinitEvent::Input(event) => state.process_input_event(event),
                 WinitEvent::Redraw => {
+                    state.test_dmabuf_imports(backend.renderer());
                     let elements = if state.session_locked {
                         Vec::new()
                     } else {

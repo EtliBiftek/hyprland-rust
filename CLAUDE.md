@@ -152,10 +152,11 @@ one commit and one test per item, update `docs/PARITY.md`.
 - #41 partial: `resize_on_border`, `extend_border_grab_area`, `snap:*` done; `gaps_workspaces` and `no_focus_fallback` done (#41 complete).
 - #11 done (CRTC off via `DrmCompositor::clear`; VKMS debugfs test).
 - #15 partial: `addreserved`, output-management apply, `keyword monitor`, output scale rendering at physical size, fractional-scale preferred scale (largest output, sent once) done.
+- #3 partial: dmabuf default feedback (v4 with an EGL render node) and import testing done; `wl_drm` (needs smithay `use_system_lib`) and dmabuf capture remain.
 - #23 partial: `overlay_cursor` done; dmabuf export remains.
 - Also done: `enable_swallow`, `background_color`, `on_focus_under_fullscreen`, `exit_window_retains_fullscreen`, `warp_on_change_workspace`; tty builds frames only on change (`WmState::frame_gen`, 250 ms fallback), scene/blur textures are reused.
-- Next: #43 rest, then the
-  partial ones (#3, #23 dmabuf).
+- Next: #23 dmabuf export (screencopy `linux_dmabuf` buffers), #3 `wl_drm`,
+  #43 `misc:vrr`; all three need a GPU, CI has only llvmpipe/VKMS.
 - Quota rule (owner, 2026-11-09): use the quota to the end, no percent stop.
   The scheduled task `osmium-gaps-resume` (05:05, 11:05, 17:05, 23:05)
   continues the list; keep this section current after every item.

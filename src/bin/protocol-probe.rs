@@ -4,6 +4,7 @@
 //! `protocol-probe copycap`   ext-image-copy-capture of a toplevel source and an output source
 //! `protocol-probe activate`  xdg-activation of the first of two windows
 //! `protocol-probe layerpopup` a layer popup placed off screen comes back on screen
+//! `protocol-probe dmabuf`    linux-dmabuf: a file that is not a dmabuf must fail to import
 //! `protocol-probe focusgrab` hyprland-focus-grab: prints `grabbed`, then `cleared` when a click
 //!                            outside the whitelisted window clears it
 //! Prints `OK ...` and exits 0, or prints `FAIL ...` and exits 1.
@@ -46,6 +47,10 @@ use wayland_protocols::{
             ext_image_copy_capture_manager_v1::{self, ExtImageCopyCaptureManagerV1},
             ext_image_copy_capture_session_v1::{self, ExtImageCopyCaptureSessionV1},
         },
+    },
+    wp::linux_dmabuf::zv1::client::{
+        zwp_linux_buffer_params_v1::{self, ZwpLinuxBufferParamsV1},
+        zwp_linux_dmabuf_v1::{self, ZwpLinuxDmabufV1},
     },
     xdg::activation::v1::client::{
         xdg_activation_token_v1::{self, XdgActivationTokenV1},
@@ -132,6 +137,8 @@ struct P {
     sess_stopped: bool,
     popup_x: Option<i32>,
     token: Option<String>,
+    /// linux-dmabuf v3 `modifier` events: (format, modifier_hi, modifier_lo).
+    dmabuf_formats: Vec<(u32, u32, u32)>,
 }
 
 fn bind_err(n: &str) -> ! {
@@ -354,6 +361,36 @@ fn main() {
                 fail("no cleared event");
             }
         }
+        "dmabuf" => {
+            let dmabuf: ZwpLinuxDmabufV1 = globals
+                .bind(&qh, 3..=3, ())
+                .unwrap_or_else(|_| bind_err("zwp_linux_dmabuf_v1"));
+            wait(&mut p, &mut q, 1, |_| false);
+            // An unknown format is a protocol error, so use an advertised one.
+            const ARGB8888: u32 = 0x3432_5241;
+            const XRGB8888: u32 = 0x3432_5258;
+            let known = p
+                .dmabuf_formats
+                .iter()
+                .find(|f| f.0 == ARGB8888 || f.0 == XRGB8888)
+                .copied();
+            let Some((format, hi, lo)) = known else {
+                println!("OK dmabuf: skipped, the renderer has no dmabuf formats");
+                return;
+            };
+            // Not a dmabuf and not mappable: no driver can import it.
+            let file = File::open("/dev/null").unwrap_or_else(|e| fail(&format!("/dev/null: {e}")));
+            let params = dmabuf.create_params(&qh, ());
+            params.add(file.as_fd(), 0, 0, 64 * 4, hi, lo);
+            params.create(64, 64, format, zwp_linux_buffer_params_v1::Flags::empty());
+            if !wait(&mut p, &mut q, 10, |p| p.result.is_some()) {
+                fail("no answer to the dmabuf import");
+            }
+            if p.result == Some(true) {
+                fail("a file that is not a dmabuf was imported");
+            }
+            println!("OK dmabuf: bad import refused");
+        }
         "export" | "copycap" => {
             let list: ExtForeignToplevelListV1 = globals
                 .bind(&qh, 1..=1, ())
@@ -372,7 +409,7 @@ fn main() {
                 copycap(&mut ctx, &globals, &mut p, &mut q, &handle);
             }
         }
-        _ => fail("usage: protocol-probe export|copycap|focusgrab"),
+        _ => fail("usage: protocol-probe export|copycap|dmabuf|focusgrab"),
     }
 }
 
@@ -629,6 +666,47 @@ impl Dispatch<ExtForeignToplevelListV1, ()> for P {
 
     event_created_child!(P, ExtForeignToplevelListV1, [
         ext_foreign_toplevel_list_v1::EVT_TOPLEVEL_OPCODE => (ExtForeignToplevelHandleV1, ()),
+    ]);
+}
+
+impl Dispatch<ZwpLinuxDmabufV1, ()> for P {
+    fn event(
+        p: &mut Self,
+        _: &ZwpLinuxDmabufV1,
+        ev: zwp_linux_dmabuf_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let zwp_linux_dmabuf_v1::Event::Modifier {
+            format,
+            modifier_hi,
+            modifier_lo,
+        } = ev
+        {
+            p.dmabuf_formats.push((format, modifier_hi, modifier_lo));
+        }
+    }
+}
+
+impl Dispatch<ZwpLinuxBufferParamsV1, ()> for P {
+    fn event(
+        p: &mut Self,
+        _: &ZwpLinuxBufferParamsV1,
+        ev: zwp_linux_buffer_params_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        match ev {
+            zwp_linux_buffer_params_v1::Event::Created { .. } => p.result = Some(true),
+            zwp_linux_buffer_params_v1::Event::Failed => p.result = Some(false),
+            _ => {}
+        }
+    }
+
+    event_created_child!(P, ZwpLinuxBufferParamsV1, [
+        zwp_linux_buffer_params_v1::EVT_CREATED_OPCODE => (WlBuffer, ()),
     ]);
 }
 

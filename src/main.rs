@@ -244,6 +244,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     event_loop.run(None, &mut data, |data| {
         data.state.lua_drain();
         data.state.x11_sync();
+        tty::test_dmabuf_imports(data);
     })?;
 
     Ok(())
