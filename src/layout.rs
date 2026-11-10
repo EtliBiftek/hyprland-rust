@@ -675,6 +675,57 @@ pub fn snap_position(win: Rect, others: &[Rect], mon: Rect, o: SnapOpts) -> (i32
     )
 }
 
+/// `cursor:hotspot_padding`: moves `pos` so that the square of `pad` px around
+/// it lies on the outputs (`rects`: x, y, w, h). Each corner outside is pushed
+/// to the nearest output, like Hyprland's `closestValid`.
+pub fn pad_hotspot(pos: (f64, f64), rects: &[(f64, f64, f64, f64)], pad: f64) -> (f64, f64) {
+    let inside = |p: (f64, f64)| {
+        rects
+            .iter()
+            .any(|r| p.0 >= r.0 && p.0 < r.0 + r.2 && p.1 >= r.1 && p.1 < r.1 + r.3)
+    };
+    let nearest = |p: (f64, f64)| {
+        let d = |q: &(f64, f64)| (q.0 - p.0).powi(2) + (q.1 - p.1).powi(2);
+        rects
+            .iter()
+            .map(|r| {
+                (
+                    p.0.clamp(r.0, r.0 + r.2 - 1.0),
+                    p.1.clamp(r.1, r.1 + r.3 - 1.0),
+                )
+            })
+            .min_by(|a, b| d(a).total_cmp(&d(b)))
+    };
+    let mut c = pos;
+    for (dx, dy) in [(pad, pad), (-pad, -pad), (pad, -pad), (-pad, pad)] {
+        let corner = (c.0 + dx, c.1 + dy);
+        if !inside(corner) {
+            if let Some(n) = nearest(corner) {
+                c = (c.0 + n.0 - corner.0, c.1 + n.1 - corner.1);
+            }
+        }
+    }
+    c
+}
+
+#[cfg(test)]
+mod hotspot_tests {
+    use super::pad_hotspot;
+
+    #[test]
+    fn hotspot_padding_keeps_distance_to_edges() {
+        let one = [(0.0, 0.0, 100.0, 100.0)];
+        assert_eq!(pad_hotspot((50.0, 50.0), &one, 10.0), (50.0, 50.0));
+        assert_eq!(pad_hotspot((2.0, 50.0), &one, 10.0), (10.0, 50.0));
+        assert_eq!(pad_hotspot((99.0, 99.0), &one, 10.0), (89.0, 89.0));
+        assert_eq!(pad_hotspot((99.0, 0.0), &one, 0.0), (99.0, 0.0));
+        // The pointer still crosses between two outputs.
+        let two = [(0.0, 0.0, 100.0, 100.0), (100.0, 0.0, 100.0, 100.0)];
+        assert_eq!(pad_hotspot((100.0, 50.0), &two, 10.0), (100.0, 50.0));
+        assert_eq!(pad_hotspot((198.0, 50.0), &two, 10.0), (189.0, 50.0));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

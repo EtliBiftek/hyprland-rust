@@ -199,6 +199,36 @@ impl Hypr {
         from: Point<f64, Logical>,
         to: Point<f64, Logical>,
     ) -> Point<f64, Logical> {
+        let p = self.clamp_to_output(from, to);
+        // `cursor:hotspot_padding` (0-100): distance kept to the screen edges.
+        let pad = match crate::options::get_option(&self.config, "cursor:hotspot_padding") {
+            Some(crate::options::OptValue::Int(n)) => n.clamp(0, 100) as f64,
+            _ => 0.0,
+        };
+        if pad == 0.0 {
+            return p;
+        }
+        let rects: Vec<_> = self
+            .space
+            .outputs()
+            .filter_map(|o| self.space.output_geometry(o))
+            .map(|g| {
+                (
+                    g.loc.x as f64,
+                    g.loc.y as f64,
+                    g.size.w as f64,
+                    g.size.h as f64,
+                )
+            })
+            .collect();
+        crate::layout::pad_hotspot((p.x, p.y), &rects, pad).into()
+    }
+
+    fn clamp_to_output(
+        &self,
+        from: Point<f64, Logical>,
+        to: Point<f64, Logical>,
+    ) -> Point<f64, Logical> {
         if self.space.output_under(to).next().is_some() {
             return to;
         }

@@ -148,7 +148,7 @@ one commit and one test per item, update `docs/PARITY.md`.
   #16, #31 and #32-38 were done in main (some partially, see the lists below).
 - #21 partial: only `immediate` is still stored only.
 - #22 needs no change: Hyprland also only reports `minimized`.
-- #42 done (`drag_lock`, `tap_button_map` still ignored). #43 partial: `binds:scroll_event_delay`, `binds:hide_special_on_workspace_change`, `misc:initial_workspace_tracking` (+ `_token_timeout`), `misc:animate_manual_resizes` / `animate_mouse_windowdragging` done; `misc:vrr`, `cursor:hotspot_padding` remain.
+- #42 done (`drag_lock`, `tap_button_map` still ignored). #43 partial: `binds:scroll_event_delay`, `binds:hide_special_on_workspace_change`, `misc:initial_workspace_tracking` (+ `_token_timeout`), `misc:animate_manual_resizes` / `animate_mouse_windowdragging`, `cursor:hotspot_padding` done; only `misc:vrr` remains (needs VRR hardware, phase 6).
 - #41 partial: `resize_on_border`, `extend_border_grab_area`, `snap:*` done; `gaps_workspaces` and `no_focus_fallback` done (#41 complete).
 - #11 done (CRTC off via `DrmCompositor::clear`; VKMS debugfs test).
 - #15 partial: `addreserved`, output-management apply, `keyword monitor`, output scale rendering at physical size, fractional-scale preferred scale (largest output, sent once) done.
