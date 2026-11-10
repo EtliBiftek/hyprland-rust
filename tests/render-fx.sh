@@ -33,6 +33,7 @@ decoration {
 }
 windowrule = match:class fx.*, float on, size 400 300, move 100 100
 windowrule = match:class fxa, size 200 150, move 200 150, opacity 0.5
+bindm = SUPER, mouse:272, movewindow
 CONF
 
 cat > "$T/px.py" <<'PY'
@@ -271,6 +272,49 @@ assert 200 <= m <= 385, "window must be partway to its size while animating"
 assert e >= 396, "window must reach its full size when the animation ends"
 PY
 echo "ok: open animation"
+
+# 6. misc:animate_mouse_windowdragging (windowsMove linear, 3 s) --------------
+stop_all
+kw animation "windowsIn, 0"
+kw animation "windowsMove, 1, 30, linear"
+start fx solid ff00ff00 400 300
+wait_clients 1
+sleep 1
+XWIN=$(xdotool search --pid "$COMP" 2>/dev/null | head -n1 || true)
+[ -n "$XWIN" ] || fail "no X11 window of the compositor"
+xdotool windowfocus --sync "$XWIN"
+# drag_shot FILE: drags the window 300 px to the right, shoots while it is
+# held, then puts it back.
+drag_shot() {
+    xdotool mousemove --window "$XWIN" 200 200
+    sleep 0.3
+    xdotool keydown super mousedown 1
+    sleep 0.3
+    xdotool mousemove --window "$XWIN" 500 200
+    sleep 0.3
+    shot "$1"
+    xdotool mousemove --window "$XWIN" 200 200
+    sleep 0.3
+    xdotool mouseup 1 keyup super
+    sleep 4
+}
+drag_shot "$T/drag_off.ppm"
+kw misc:animate_mouse_windowdragging true
+drag_shot "$T/drag_on.ppm"
+python3 - "$T" <<'PY' || fail "drag animation check failed"
+import sys
+sys.path.insert(0, sys.argv[1])
+from px import *
+def left(img):
+    xs = [x for x in range(0, 1280) if near(px(img, x, 350), (0, 255, 0), 8)]
+    return xs[0] if xs else -1
+off = left(load(sys.argv[1] + "/drag_off.ppm"))
+on = left(load(sys.argv[1] + "/drag_on.ppm"))
+print("left edge while dragging: option off", off, "on", on)
+assert 398 <= off <= 402, "a dragged window must follow the pointer at once"
+assert 104 <= on <= 385, "with animate_mouse_windowdragging the window must lag behind"
+PY
+echo "ok: animate_mouse_windowdragging"
 
 kill -0 "$COMP" 2>/dev/null || fail "compositor died"
 grep -q "panicked" "$T/log" && fail "compositor panicked"

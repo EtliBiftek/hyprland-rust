@@ -65,6 +65,9 @@ pub struct WmState {
     pub ws_tokens: Vec<(String, String, Option<std::time::Instant>)>,
     /// Number of tokens handed out so far.
     pub ws_token_seq: u64,
+    /// Interactive pointer grab in progress: `Some(true)` resizes a window,
+    /// `Some(false)` moves one.
+    pub grab_resizes: Option<bool>,
     /// For `cursor:inactive_timeout`.
     pub last_motion: std::time::Instant,
     /// `hyprctl kill`: the next click kills the client under the pointer.
@@ -131,6 +134,7 @@ impl WmState {
             cursor_hidden: false,
             ws_tokens: Vec::new(),
             ws_token_seq: 0,
+            grab_resizes: None,
             last_motion: std::time::Instant::now(),
             kill_mode: false,
             last_wheel_bind: 0,

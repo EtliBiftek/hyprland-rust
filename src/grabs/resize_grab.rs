@@ -87,6 +87,7 @@ impl PointerGrab<Hypr> for ResizeSurfaceGrab {
     ) {
         // While the grab is active, no client has pointer focus
         handle.motion(data, None, event);
+        data.wm.grab_resizes = Some(true);
 
         let mut delta = event.location - self.start_data.location;
 
@@ -305,7 +306,9 @@ impl PointerGrab<Hypr> for ResizeSurfaceGrab {
         &self.start_data
     }
 
-    fn unset(&mut self, _data: &mut Hypr) {}
+    fn unset(&mut self, data: &mut Hypr) {
+        data.wm.grab_resizes = None;
+    }
 }
 
 /// State of the resize operation.

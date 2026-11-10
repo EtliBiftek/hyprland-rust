@@ -826,7 +826,17 @@ pub fn output_elements(h: &mut Hypr, r: &mut GlesRenderer, output: &Output) -> V
         .collect();
     let deco = h.config.decoration.clone();
     let mut anim = h.config.anim.clone();
-    let grabbed = h.seat.get_pointer().is_some_and(|p| p.is_grabbed());
+    // Windows follow a grab at once, unless `misc:animate_manual_resizes` /
+    // `misc:animate_mouse_windowdragging` asks for the move animation.
+    let grab_animates = h.wm.grab_resizes.is_some_and(|resize| {
+        let key = if resize {
+            "misc:animate_manual_resizes"
+        } else {
+            "misc:animate_mouse_windowdragging"
+        };
+        crate::options::flag(&h.config, key)
+    });
+    let grabbed = h.seat.get_pointer().is_some_and(|p| p.is_grabbed()) && !grab_animates;
     let key = (h.workspaces[h.active_workspace].id, h.wm.special_shown);
     let layers: Vec<_> = {
         let map = layer_map_for_output(output);

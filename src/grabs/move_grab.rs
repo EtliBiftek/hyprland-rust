@@ -84,6 +84,7 @@ impl PointerGrab<Hypr> for MoveSurfaceGrab {
     ) {
         // While the grab is active, no client has pointer focus
         handle.motion(data, None, event);
+        data.wm.grab_resizes = Some(false);
 
         let delta = event.location - self.start_data.location;
         let new_location = self.initial_window_location.to_f64() + delta;
@@ -208,5 +209,7 @@ impl PointerGrab<Hypr> for MoveSurfaceGrab {
         &self.start_data
     }
 
-    fn unset(&mut self, _data: &mut Hypr) {}
+    fn unset(&mut self, data: &mut Hypr) {
+        data.wm.grab_resizes = None;
+    }
 }

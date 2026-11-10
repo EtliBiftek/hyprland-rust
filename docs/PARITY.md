@@ -378,8 +378,8 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `master:special_scale_factor` | partial | Float. Clamped to 0.0-1.0. |
 | `misc:allow_session_lock_restore` | tested | Bool. A new locker may replace a crashed one (`tests/session-lock.sh`). |
 | `misc:always_follow_on_dnd` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
-| `misc:animate_manual_resizes` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
-| `misc:animate_mouse_windowdragging` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
+| `misc:animate_manual_resizes` | partial | Bool. `windowsMove` also runs during a resize grab; no test (same code as `animate_mouse_windowdragging`). |
+| `misc:animate_mouse_windowdragging` | tested | Bool. `windowsMove` also runs during a move grab (`tests/render-fx.sh`). |
 | `misc:anr_missed_pings` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:background_color` | tested | Color. `tests/render-fx.sh`; default is dark grey (26, 26, 26), not Hyprland's 0x111111. |
 | `misc:bell_sound` | parsed | String. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
