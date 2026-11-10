@@ -60,7 +60,37 @@ pub fn ppid_from_stat(stat: &str) -> Option<i32> {
         .ok()
 }
 
+/// Value of the initial workspace token in the bytes of `/proc/PID/environ`.
+pub fn token_from_environ(env: &[u8]) -> Option<&str> {
+    env.split(|&b| b == 0).find_map(|kv| {
+        std::str::from_utf8(kv)
+            .ok()?
+            .strip_prefix(crate::wm::WS_TOKEN_ENV)?
+            .strip_prefix('=')
+    })
+}
+
 impl Hypr {
+    /// `misc:initial_workspace_tracking`: selector of the workspace the
+    /// window's process was started on by `exec`, if its token is still valid.
+    fn initial_workspace(&mut self, w: &Window) -> Option<String> {
+        if self.wm.ws_tokens.is_empty() {
+            return None;
+        }
+        let env = std::fs::read(format!("/proc/{}/environ", self.window_pid(w))).ok()?;
+        let token = token_from_environ(&env)?;
+        let at = self.wm.ws_tokens.iter().position(|t| t.0 == token)?;
+        let (_, sel, expiry) = self.wm.ws_tokens[at].clone();
+        // A token with an expiry is single-shot: the first window uses it up.
+        if let Some(deadline) = expiry {
+            self.wm.ws_tokens.remove(at);
+            if deadline <= std::time::Instant::now() {
+                return None;
+            }
+        }
+        Some(sel)
+    }
+
     /// `misc:enable_swallow`: a window opened from a terminal (class matching
     /// `misc:swallow_regex`) takes the terminal's place until it closes.
     fn try_swallow(&mut self, w: &Window) {
@@ -264,14 +294,19 @@ impl Hypr {
                 self.set_floating(w, Some(true));
             }
         }
+        let initial_ws = self.initial_workspace(w);
         self.try_swallow(w);
-        if self.config.rules.window.is_empty() {
+        if self.config.rules.window.is_empty() && initial_ws.is_none() {
             return;
         }
         // Dynamic effects first: they may add tags that static rules match.
         self.refresh_window_rules(w);
         let p = self.rule_props(w);
-        let plan = rules::static_plan(&self.config.rules.window, &p);
+        let mut plan = rules::static_plan(&self.config.rules.window, &p);
+        // A `workspace` rule wins over the workspace `exec` ran on.
+        if plan.workspace.is_none() {
+            plan.workspace = initial_ws.map(|sel| (sel, true));
+        }
         state(w).borrow_mut().suppress_event = plan.suppress_event.clone();
         self.run_plan(w, &plan);
     }
@@ -442,7 +477,15 @@ impl Hypr {
 
 #[cfg(test)]
 mod tests {
-    use super::ppid_from_stat;
+    use super::{ppid_from_stat, token_from_environ};
+
+    #[test]
+    fn workspace_token_in_environ() {
+        let env = b"A=1 HL_INITIAL_WORKSPACE_TOKEN=7-3 HL_INITIAL_WORKSPACE_TOKENX=9 ";
+        assert_eq!(token_from_environ(env), Some("7-3"));
+        assert_eq!(token_from_environ(b"HL_INITIAL_WORKSPACE_TOKENX=9 "), None);
+        assert_eq!(token_from_environ(b""), None);
+    }
 
     #[test]
     fn ppid() {

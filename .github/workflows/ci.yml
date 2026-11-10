@@ -66,6 +66,9 @@ jobs:
       - name: Window swallowing test (headless)
         timeout-minutes: 3
         run: sh tests/swallow.sh
+      - name: Initial workspace tracking test (headless)
+        timeout-minutes: 3
+        run: sh tests/initial-workspace.sh
       - name: Lua config test (headless + hyprland.lua)
         timeout-minutes: 3
         run: sh tests/lua-config.sh

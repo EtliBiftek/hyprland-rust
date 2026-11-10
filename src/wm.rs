@@ -60,6 +60,11 @@ pub struct WmState {
     pub swallowed: Vec<(Window, Window)>,
     /// `cursor:hide_on_key_press` hid the cursor until the next motion.
     pub cursor_hidden: bool,
+    /// `misc:initial_workspace_tracking`: (token, workspace selector, expiry;
+    /// `None` never expires) of the commands started by `exec`.
+    pub ws_tokens: Vec<(String, String, Option<std::time::Instant>)>,
+    /// Number of tokens handed out so far.
+    pub ws_token_seq: u64,
     /// For `cursor:inactive_timeout`.
     pub last_motion: std::time::Instant,
     /// `hyprctl kill`: the next click kills the client under the pointer.
@@ -124,6 +129,8 @@ impl WmState {
             last_clear: [0.1, 0.1, 0.1, 1.0],
             swallowed: Vec::new(),
             cursor_hidden: false,
+            ws_tokens: Vec::new(),
+            ws_token_seq: 0,
             last_motion: std::time::Instant::now(),
             kill_mode: false,
             last_wheel_bind: 0,
@@ -1609,10 +1616,42 @@ impl Hypr {
         true
     }
 
+    /// `exec`: with `misc:initial_workspace_tracking` the command carries a
+    /// token (as Hyprland, in `HL_INITIAL_WORKSPACE_TOKEN`) naming the
+    /// workspace it was started on; its window opens there.
+    pub(crate) fn exec(&mut self, cmd: &str) {
+        use crate::options::{get_option, OptValue};
+        let int = |k: &str| match get_option(&self.config, k) {
+            Some(OptValue::Int(n)) => n,
+            _ => 0,
+        };
+        let mode = int("misc:initial_workspace_tracking");
+        if mode == 0 {
+            return spawn(cmd);
+        }
+        let ws = &self.workspaces[self.focus_ws()];
+        let sel = if ws.id >= 1 {
+            ws.id.to_string()
+        } else if ws.is_special() {
+            ws.name.clone()
+        } else {
+            format!("name:{}", ws.name)
+        };
+        // 1: the token expires; 2: it is valid for the life of the process tree.
+        let timeout = int("misc:initial_workspace_token_timeout").clamp(1, 3600) as u64;
+        let now = std::time::Instant::now();
+        self.wm.ws_tokens.retain(|t| t.2.is_none_or(|d| d > now));
+        let expiry = (mode == 1).then(|| now + std::time::Duration::from_secs(timeout));
+        self.wm.ws_token_seq += 1;
+        let token = format!("{}-{}", std::process::id(), self.wm.ws_token_seq);
+        self.wm.ws_tokens.push((token.clone(), sel, expiry));
+        spawn_env(cmd, Some(&token));
+    }
+
     pub fn dispatch(&mut self, action: &Dispatcher) {
         tracing::debug!(?action, "dispatch");
         match action {
-            Dispatcher::Exec(cmd) => spawn(cmd),
+            Dispatcher::Exec(cmd) => self.exec(cmd),
             Dispatcher::KillActive => self.kill_window(None, false),
             Dispatcher::ForceKillActive => self.kill_window(None, true),
             Dispatcher::Exit => {
@@ -1795,6 +1834,13 @@ impl Hypr {
 }
 
 pub fn spawn(cmd: &str) {
+    spawn_env(cmd, None)
+}
+
+/// Name of the environment variable holding the initial workspace token.
+pub const WS_TOKEN_ENV: &str = "HL_INITIAL_WORKSPACE_TOKEN";
+
+fn spawn_env(cmd: &str, ws_token: Option<&str>) {
     let cmd = crate::config::strip_exec_rules(cmd);
     tracing::info!("exec: {cmd}");
     // Double fork: the inner `sh` backgrounds the command and exits at once, so
@@ -1804,6 +1850,7 @@ pub fn spawn(cmd: &str) {
         .arg("eval \"$1\" &")
         .arg("sh")
         .arg(cmd)
+        .envs(ws_token.map(|t| (WS_TOKEN_ENV, t)))
         .spawn()
     {
         Ok(mut child) => {

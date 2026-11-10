@@ -14,7 +14,6 @@ use crate::{
     config::{Config, ConfigError},
     options,
     state::Hypr,
-    wm::spawn,
     CalloopData,
 };
 
@@ -98,7 +97,7 @@ impl Hypr {
                 self.lua_loaded();
                 // Hyprland runs `exec` (not `exec-once`) again on every reload.
                 for cmd in self.config.exec.clone() {
-                    spawn(&cmd);
+                    self.exec(&cmd);
                 }
                 self.relayout();
                 self.refresh_all_rules();
@@ -125,7 +124,7 @@ impl Hypr {
         match self.config.apply_keyword(key, value) {
             Ok(()) => {
                 if key == "exec" {
-                    spawn(value);
+                    self.exec(value);
                 }
                 if key == "monitor" {
                     self.apply_monitor_rules();

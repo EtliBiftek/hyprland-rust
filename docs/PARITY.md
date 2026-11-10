@@ -399,8 +399,8 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `misc:focus_on_activate` | tested | Bool, also the `focus_on_activate` rule (`tests/probe.sh`). |
 | `misc:font_family` | parsed | String. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:force_default_wallpaper` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
-| `misc:initial_workspace_token_timeout` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
-| `misc:initial_workspace_tracking` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
+| `misc:initial_workspace_token_timeout` | tested | Int, seconds (1-3600). `tests/initial-workspace.sh`. |
+| `misc:initial_workspace_tracking` | tested | Int. `exec` (dispatcher, keyword, reload; not `exec-once`) passes `HL_INITIAL_WORKSPACE_TOKEN`; the window opens silently on that workspace unless a `workspace` rule matches. 1: first window, until the timeout; 2: every window of the process tree. `tests/initial-workspace.sh`. |
 | `misc:key_press_enables_dpms` | tested | Bool. `tests/keybinds-xvfb.sh`. |
 | `misc:layers_hog_keyboard_focus` | parsed | Bool. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
 | `misc:lockdead_screen_delay` | parsed | Int. Accepted, ignored (`is_known_unimplemented` prefix `misc:`). |
