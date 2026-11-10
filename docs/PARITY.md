@@ -780,7 +780,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `zwp_idle_inhibit_manager_v1` | none | Not registered by the repo. |
 | `zwp_input_method_manager_v2` | partial | `handlers/input_method.rs`: popups tracked but not drawn. No client test. |
 | `zwp_keyboard_shortcuts_inhibit_manager_v1` | none | Not registered by the repo. |
-| `zwp_linux_dmabuf_v1` | partial | `handlers/dmabuf.rs`: renderer formats (winit, tty) or linear ARGB/XRGB (headless); default feedback (v4) when EGL names a render node, else v3; imports are tested against the renderer (`tests/probe.sh`). No per-surface feedback or scanout tranches (the v4 path has not run in CI: llvmpipe has no render node); capture stays shm. |
+| `zwp_linux_dmabuf_v1` | partial | `handlers/dmabuf.rs`: renderer formats (winit, tty) or linear ARGB/XRGB (headless); default feedback (v4) when EGL names a render node, else v3; imports are answered after `GlesRenderer::import_dmabuf` (`tests/probe.sh` checks that the answer comes; llvmpipe accepts even a bogus plane, so a refusal has not been seen in CI). No per-surface feedback or scanout tranches (the v4 path has not run in CI: llvmpipe has no render node); capture stays shm. |
 | `zwp_pointer_constraints_v1` | none | Not registered by the repo. |
 | `zwp_pointer_gestures_v1` | none | Not registered by the repo. |
 | `zwp_primary_selection_device_manager_v1` | tested | Smithay primary selection; `tests/protocols.sh`. |

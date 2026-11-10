@@ -48,7 +48,7 @@ timeout 60 "$PROBE" export || fail "probe export"
 pkill -f weston 2>/dev/null || true
 timeout 60 "$PROBE" copycap || fail "probe copycap"
 timeout 30 "$PROBE" layerpopup || fail "probe layerpopup"
-# linux-dmabuf imports are tested against the renderer.
+# linux-dmabuf imports are queued and answered by the backend's renderer.
 timeout 30 "$PROBE" dmabuf || fail "probe dmabuf"
 grep -q "linux-dmabuf: " "$T/log" || fail "dmabuf global not announced in the log"
 
