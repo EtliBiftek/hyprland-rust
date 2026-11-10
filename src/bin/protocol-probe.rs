@@ -378,8 +378,10 @@ fn main() {
                 println!("OK dmabuf: skipped, the renderer has no dmabuf formats");
                 return;
             };
-            // Not a dmabuf and not mappable: no driver can import it.
-            let file = File::open("/dev/null").unwrap_or_else(|e| fail(&format!("/dev/null: {e}")));
+            // A socket is not a dmabuf, cannot be mapped and has no size for
+            // the protocol checks: no driver can import it.
+            let (file, _peer) = std::os::unix::net::UnixStream::pair()
+                .unwrap_or_else(|e| fail(&format!("socketpair: {e}")));
             let params = dmabuf.create_params(&qh, ());
             params.add(file.as_fd(), 0, 0, 64 * 4, hi, lo);
             params.create(64, 64, format, zwp_linux_buffer_params_v1::Flags::empty());
