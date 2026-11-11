@@ -1279,6 +1279,11 @@ pub struct DeviceOpts {
     pub clickfinger_behavior: Option<bool>,
     pub middle_button_emulation: Option<bool>,
     pub tap_and_drag: Option<bool>,
+    /// shortcut: Hyprland's `2` (sticky) maps to libinput's timeout lock,
+    /// the input crate only has an on/off switch; upgrade with its libinput_1_27 API.
+    pub drag_lock: Option<bool>,
+    /// `true` = `lmr` (left/middle/right), `false` = `lrm`.
+    pub tap_button_map_lmr: Option<bool>,
     pub scroll_factor: Option<f32>,
     /// Keyboard: `kb_layout`, `kb_variant`, `kb_model`, `kb_options`, `kb_rules`
     /// (`device { }` only; the keymap switches when that keyboard types).
@@ -1300,6 +1305,8 @@ impl DeviceOpts {
             .middle_button_emulation
             .or(self.middle_button_emulation);
         self.tap_and_drag = other.tap_and_drag.or(self.tap_and_drag);
+        self.drag_lock = other.drag_lock.or(self.drag_lock);
+        self.tap_button_map_lmr = other.tap_button_map_lmr.or(self.tap_button_map_lmr);
         self.scroll_factor = other.scroll_factor.or(self.scroll_factor);
         for (a, b) in self.kb.iter_mut().zip(&other.kb) {
             if b.is_some() {
@@ -1343,6 +1350,20 @@ impl DeviceOpts {
             "clickfinger_behavior" => self.clickfinger_behavior = Some(parse_bool(value)?),
             "middle_button_emulation" => self.middle_button_emulation = Some(parse_bool(value)?),
             "tap-and-drag" => self.tap_and_drag = Some(parse_bool(value)?),
+            "drag_lock" => {
+                let v: i64 = value
+                    .parse()
+                    .map_err(|_| format!("invalid int `{value}`"))?;
+                self.drag_lock = Some(v != 0);
+            }
+            "tap_button_map" => {
+                self.tap_button_map_lmr = match value {
+                    "lmr" => Some(true),
+                    "lrm" => Some(false),
+                    "" => None,
+                    other => return Err(format!("invalid tap_button_map `{other}`")),
+                }
+            }
             // shortcut: flat profile, not raw deltas; use unaccelerated
             // motion in input.rs if a user notices the difference.
             "force_no_accel" if parse_bool(value)? => {
@@ -2596,7 +2617,7 @@ mod tests {
     #[test]
     fn libinput_options() {
         let (cfg, errors) = Config::parse_str(
-            "input {\nscroll_method = 2fg\nforce_no_accel = true\ntouchpad {\nclickfinger_behavior = true\ntap-and-drag = false\n}\n}",
+            "input {\nscroll_method = 2fg\nforce_no_accel = true\ntouchpad {\nclickfinger_behavior = true\ntap-and-drag = false\ndrag_lock = 2\ntap_button_map = lmr\n}\n}",
         );
         assert!(errors.is_empty(), "{errors:?}");
         let o = cfg.input.opts_for("x", true);
@@ -2604,6 +2625,10 @@ mod tests {
         assert_eq!(o.accel_profile, Some(AccelProfile::Flat));
         assert_eq!(o.clickfinger_behavior, Some(true));
         assert_eq!(o.tap_and_drag, Some(false));
+        assert_eq!(o.drag_lock, Some(true));
+        assert_eq!(o.tap_button_map_lmr, Some(true));
+        let (_, errors) = Config::parse_str("input {\ntouchpad {\ntap_button_map = xyz\n}\n}");
+        assert_eq!(errors.len(), 1, "{errors:?}");
     }
 
     #[test]

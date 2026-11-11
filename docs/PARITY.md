@@ -347,7 +347,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `input:touchpad:clickfinger_behavior` | tested | Bool. libinput click method. |
 | `input:touchpad:disable_while_typing` | partial | Bool. Touchpad device option (default on for touchpads). |
 | `input:touchpad:drag_3fg` | parsed | Int. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
-| `input:touchpad:drag_lock` | parsed | Int. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
+| `input:touchpad:drag_lock` | tested | Int. libinput drag lock; `2` (sticky) acts like `1` (timeout). |
 | `input:touchpad:flip_x` | parsed | Bool. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
 | `input:touchpad:flip_y` | parsed | Bool. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
 | `input:touchpad:middle_button_emulation` | tested | Bool. libinput. |
@@ -355,7 +355,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `input:touchpad:scroll_factor` | tested | Float. Used for finger scrolling. |
 | `input:touchpad:tap-and-drag` | tested | Bool. libinput. |
 | `input:touchpad:tap-to-click` | tested | Bool. Touchpad device option (default on for touchpads). |
-| `input:touchpad:tap_button_map` | parsed | String. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
+| `input:touchpad:tap_button_map` | tested | String. `lrm` / `lmr`, libinput tap button map. |
 | `input:virtualkeyboard:release_pressed_on_close` | parsed | Bool. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
 | `input:virtualkeyboard:share_states` | parsed | Int. Accepted, ignored: `Input::apply` logs and skips unknown `input:` keys. |
 | `layers:allow_new_top_layers_over_existing_fullscreen` | none | Bool. Not accepted: unknown option, config load error (`config.rs` `apply_inner`). |

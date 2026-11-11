@@ -338,6 +338,16 @@ impl Hypr {
         if let Some(v) = o.tap_and_drag {
             let _ = d.config_tap_set_drag_enabled(v);
         }
+        if let Some(v) = o.drag_lock {
+            let _ = d.config_tap_set_drag_lock_enabled(v);
+        }
+        if let Some(lmr) = o.tap_button_map_lmr {
+            let _ = d.config_tap_set_button_map(if lmr {
+                input::TapButtonMap::LeftMiddleRight
+            } else {
+                input::TapButtonMap::LeftRightMiddle
+            });
+        }
     }
 
     pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>) {
