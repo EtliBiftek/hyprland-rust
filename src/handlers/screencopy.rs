@@ -5,7 +5,7 @@
 //! which renders the whole output into an offscreen texture, reads it back and
 //! writes the requested region into the client's shm buffer.
 //! shortcuts: shm buffers only (no linux_dmabuf event); `overlay_cursor` is drawn at
-//! scale 1; output scale/transform are assumed to be 1/normal; a full-output
+//! scale 1; the output transform is assumed to be normal; a full-output
 //! readback is cropped on the CPU; `copy_with_damage` reports the whole region
 //! as damaged and completes on the next frame; the headless backend has no
 //! renderer and answers `failed`. Upgrade with dmabuf export + damage tracking.
@@ -38,7 +38,7 @@ use smithay::{
             Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
         },
     },
-    utils::{Rectangle, Transform},
+    utils::{Logical, Rectangle, Transform},
     wayland::shm::with_buffer_contents_mut,
 };
 
@@ -155,10 +155,15 @@ fn new_frame(
         .as_ref()
         .and_then(|o| o.current_mode())
         .map(|m| m.size);
+    let scale = output
+        .as_ref()
+        .map_or(1.0, |o| o.current_scale().fractional_scale());
     let rect = size.and_then(|s| {
         let full = Rectangle::<i32, smithay::utils::Physical>::from_size(s);
+        // The region is in output-local logical coordinates; the buffer is physical.
         let r = match region {
-            Some((x, y, w, h)) => Rectangle::new((x, y).into(), (w, h).into()),
+            Some((x, y, w, h)) => Rectangle::<i32, Logical>::new((x, y).into(), (w, h).into())
+                .to_physical_precise_round(scale),
             None => full,
         };
         r.intersection(full).filter(|r| !r.is_empty())

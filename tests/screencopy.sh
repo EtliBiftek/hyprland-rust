@@ -103,4 +103,23 @@ timeout 20 grim -c -t ppm -g "880,580 60x60" "$T/hidden.ppm" || fail "grim -c fa
 cmp -s "$T/plain.ppm" "$T/hidden.ppm" || fail "cursor:inactive_timeout left the cursor visible"
 echo "ok: cursor:inactive_timeout"
 
+# Scaled output: regions are logical. 500,100 is right of the window (logical
+# 20..420); read as physical pixels it would land inside the window.
+"$CTL" keyword monitor "winit,preferred,auto,2" >/dev/null
+sleep 1
+"$CTL" -j clients | python3 -c 'import json,sys; c=json.load(sys.stdin)[0]; print("window", c["at"], c["size"]); x,y=c["at"]; w,h=c["size"]; assert x+w < 500 and x < 250 and x+w > 300 and y < 50 and y+h > 80, "window moved"' \
+    || fail "window geometry after scale 2"
+timeout 20 grim -t ppm -g "500,100 50x50" "$T/scaled.ppm" || fail "grim (scaled region) failed"
+python3 - "$T/scaled.ppm" <<'PY' || fail "scaled region check failed"
+import sys
+parts = open(sys.argv[1], "rb").read().split(b"\n", 3)
+w, h = map(int, parts[1].split())
+assert (w, h) == (100, 100), f"size {w}x{h}, expected 100x100 at scale 2"
+px = parts[3]
+odd = sum(any(abs(c - 26) > 3 for c in px[i:i + 3]) for i in range(0, len(px), 3))
+print(f"non-background pixels: {odd}/{w * h}")
+assert odd == 0, "region was read in physical pixels"
+PY
+echo "ok: scaled region capture"
+
 echo "OK: wlr-screencopy through grim"
