@@ -127,6 +127,32 @@ sys.exit(0 if win > 1000 else 1)
 PY
 echo "ok: tty backend renders the client (screencopy)"
 
+# Orientation: a small floating window at the top left must be at the top of
+# the capture, not mirrored to the bottom.
+ctl dispatch togglefloating >/dev/null
+ctl dispatch resizeactive exact 300 200 >/dev/null
+ctl dispatch moveactive exact 20 20 >/dev/null
+sleep 0.5
+MON=$(ctl -j monitors | json '[m["name"] for m in d if m["focused"]][0]')
+ctl -j clients | json 'd[0]["at"], d[0]["size"]'
+WAYLAND_DISPLAY=$(ls "$T" | grep '^wayland-[0-9]*$' | head -n1) grim -o "$MON" -t ppm "$T/orient.ppm" \
+    || fail "grim -o $MON failed"
+python3 - "$T/orient.ppm" <<'PY' || fail "tty capture is mirrored or the window moved"
+import sys
+parts = open(sys.argv[1], "rb").read().split(b"\n", 3)
+w, h = map(int, parts[1].split())
+px = parts[3]
+def green(x, y):
+    i = (y * w + x) * 3
+    r, g, b = px[i:i + 3]
+    return g > r + 20 and g > b + 20
+top = sum(green(x, y) for x in range(0, w // 2, 4) for y in range(0, h // 2, 4))
+bottom = sum(green(x, y) for x in range(0, w, 4) for y in range(h // 2 + 50, h, 4))
+print(f"size {w}x{h}, window pixels top-left: {top}, bottom: {bottom}")
+sys.exit(0 if top > 500 and bottom == 0 else 1)
+PY
+echo "ok: tty capture orientation"
+
 # dpms off really deactivates the CRTCs (debugfs), on brings them back.
 crtc_active() { sudo sh -c 'for d in /sys/kernel/debug/dri/*; do grep -q vkms "$d/name" 2>/dev/null && cat "$d/state"; done' | grep -c 'active=1'; }
 before=$(crtc_active)
