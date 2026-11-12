@@ -147,7 +147,8 @@ sleep 0.5; nonbg floated
 ctl dispatch resizeactive exact 300 200 >/dev/null
 sleep 0.5; nonbg resized
 sleep 2; nonbg resized-2s
-ctl -j clients | cut -c1-600
+ctl -j clients | json '[(c["pid"], c["at"], c["size"], c["mapped"], c["hidden"]) for c in d]'
+for p in $(pgrep weston-simple-shm); do echo "alive $p"; done
 ctl dispatch moveactive exact 20 20 >/dev/null
 sleep 0.5; nonbg moved
 sleep 0.5
