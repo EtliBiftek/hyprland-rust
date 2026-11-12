@@ -148,12 +148,12 @@ one commit and one test per item, update `docs/PARITY.md`.
   #16, #31 and #32-38 were done in main (some partially, see the lists below).
 - #21 partial: only `immediate` is still stored only.
 - #22 needs no change: Hyprland also only reports `minimized`.
-- #42 done (`drag_lock`, `tap_button_map` still ignored). #43 partial: `binds:scroll_event_delay`, `binds:hide_special_on_workspace_change`, `misc:initial_workspace_tracking` (+ `_token_timeout`), `misc:animate_manual_resizes` / `animate_mouse_windowdragging`, `cursor:hotspot_padding` done; only `misc:vrr` remains (needs VRR hardware, phase 6).
+- #42 done (incl. `drag_lock`, `tap_button_map`). #43 partial: `binds:scroll_event_delay`, `binds:hide_special_on_workspace_change`, `misc:initial_workspace_tracking` (+ `_token_timeout`), `misc:animate_manual_resizes` / `animate_mouse_windowdragging`, `cursor:hotspot_padding` done; only `misc:vrr` remains (needs VRR hardware, phase 6).
 - #41 partial: `resize_on_border`, `extend_border_grab_area`, `snap:*` done; `gaps_workspaces` and `no_focus_fallback` done (#41 complete).
 - #11 done (CRTC off via `DrmCompositor::clear`; VKMS debugfs test).
-- #15 partial: `addreserved`, output-management apply, `keyword monitor`, output scale rendering at physical size, fractional-scale preferred scale (largest output, sent once) done.
+- #15 partial: `addreserved`, output-management apply, `keyword monitor`, output scale rendering at physical size, fractional-scale preferred scale (largest output, sent once), screencopy regions scaled from logical coordinates done.
 - #3 partial: dmabuf default feedback (v4 with an EGL render node) and import testing done; `wl_drm` (needs smithay `use_system_lib`) and dmabuf capture remain.
-- #23 partial: `overlay_cursor` done; dmabuf export remains.
+- #23 partial: `overlay_cursor`, scaled regions, tty capture orientation test done; dmabuf export and output transforms (rotated outputs) remain.
 - Also done: `enable_swallow`, `background_color`, `on_focus_under_fullscreen`, `exit_window_retains_fullscreen`, `warp_on_change_workspace`; tty builds frames only on change (`WmState::frame_gen`, 250 ms fallback), scene/blur textures are reused.
 - Next: #23 dmabuf export (screencopy `linux_dmabuf` buffers), #3 `wl_drm`,
   #43 `misc:vrr`; all three need a GPU, CI has only llvmpipe/VKMS.
