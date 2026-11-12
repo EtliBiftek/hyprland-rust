@@ -135,8 +135,8 @@ ctl dispatch moveactive exact 20 20 >/dev/null
 sleep 0.5
 MON=$(ctl -j monitors | json '[m["name"] for m in d if m["focused"]][0]')
 ctl -j clients | json 'd[0]["at"], d[0]["size"]'
-WAYLAND_DISPLAY=$(ls "$T" | grep '^wayland-[0-9]*$' | head -n1) grim -o "$MON" -t ppm "$T/orient.ppm" \
-    || fail "grim -o $MON failed"
+WAYLAND_DISPLAY=$(ls "$T" | grep '^wayland-[0-9]*$' | head -n1) grim -t ppm "$T/orient.ppm" \
+    || fail "grim failed"
 python3 - "$T/orient.ppm" <<'PY' || fail "tty capture is mirrored or the window moved"
 import sys
 parts = open(sys.argv[1], "rb").read().split(b"\n", 3)
