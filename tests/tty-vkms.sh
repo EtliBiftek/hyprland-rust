@@ -145,7 +145,7 @@ nonbg start
 ctl dispatch togglefloating >/dev/null
 sleep 0.5; nonbg floated
 ctl dispatch moveactive exact 20 20 >/dev/null
-sleep 0.5; nonbg moved
+for i in 1 2 3 4 5 6 7 8; do sleep 0.3; nonbg moved-$i; done
 sleep 0.5
 MON=$(ctl -j monitors | json '[m["name"] for m in d if m["focused"]][0]')
 ctl -j clients | json 'd[0]["at"], d[0]["size"]'
