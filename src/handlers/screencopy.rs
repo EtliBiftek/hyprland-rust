@@ -44,10 +44,6 @@ use smithay::{
 
 use crate::Hypr;
 
-/// Rows of the GL readback are bottom row first (CI showed it upside down) when rendering
-/// into a texture with `Transform::Normal`, so they are flipped on copy.
-const FLIP_ROWS: bool = true;
-
 pub struct FrameData {
     output: Option<Output>,
     /// Region in output pixels; `None` when the request was invalid.
@@ -81,6 +77,10 @@ pub(crate) struct Shot {
     pub rgba: Vec<u8>,
     pub w: usize,
     pub h: usize,
+    /// Rows are flipped on copy. The GL readback is bottom row first; CI showed
+    /// the winit output (`Flipped180`) wants it flipped and the tty one (`Normal`)
+    /// does not. shortcut: other transforms are treated like `Normal`.
+    pub flip: bool,
 }
 
 /// True for an Xrgb8888 shm buffer of exactly `w` x `h` that fits its pool.
@@ -106,7 +106,7 @@ pub(crate) fn copy_shot_to_shm(
     with_buffer_contents_mut(buffer, |ptr, _, d| {
         for row in 0..r.size.h as usize {
             let y = r.loc.y as usize + row;
-            let y = if FLIP_ROWS { shot.h - 1 - y } else { y };
+            let y = if shot.flip { shot.h - 1 - y } else { y };
             let start = (y * shot.w + r.loc.x as usize) * 4;
             let src = &shot.rgba[start..start + r.size.w as usize * 4];
             // Safety: bounds were validated by the caller against the pool length.
@@ -383,6 +383,7 @@ impl Hypr {
             rgba,
             w: size.w as usize,
             h: size.h as usize,
+            flip: output.current_transform() == Transform::Flipped180,
         })
     }
 }
