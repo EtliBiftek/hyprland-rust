@@ -133,8 +133,7 @@ nonbg() { # prints how many sampled pixels differ from the bottom-right one
     WAYLAND_DISPLAY=$(ls "$T" | grep '^wayland-[0-9]*$' | head -n1) grim -t ppm "$T/dbg.ppm" || return 0
     python3 - "$T/dbg.ppm" "$1" <<'PY'
 import sys
-parts = open(sys.argv[1], "rb").read().split(b"
-", 3)
+parts = open(sys.argv[1], "rb").read().split(b"\n", 3)
 w, h = map(int, parts[1].split())
 px = parts[3]
 bg = px[-3:]
