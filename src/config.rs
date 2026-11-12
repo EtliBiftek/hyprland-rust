@@ -1351,10 +1351,10 @@ impl DeviceOpts {
             "middle_button_emulation" => self.middle_button_emulation = Some(parse_bool(value)?),
             "tap-and-drag" => self.tap_and_drag = Some(parse_bool(value)?),
             "drag_lock" => {
-                let v: i64 = value
-                    .parse()
-                    .map_err(|_| format!("invalid int `{value}`"))?;
-                self.drag_lock = Some(v != 0);
+                self.drag_lock = Some(match value.parse::<i64>() {
+                    Ok(v) => v != 0,
+                    Err(_) => parse_bool(value)?,
+                });
             }
             "tap_button_map" => {
                 self.tap_button_map_lmr = match value {
@@ -2627,6 +2627,9 @@ mod tests {
         assert_eq!(o.tap_and_drag, Some(false));
         assert_eq!(o.drag_lock, Some(true));
         assert_eq!(o.tap_button_map_lmr, Some(true));
+        let (cfg, errors) = Config::parse_str("input {\ntouchpad {\ndrag_lock = false\n}\n}");
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(cfg.input.opts_for("x", true).drag_lock, Some(false));
         let (_, errors) = Config::parse_str("input {\ntouchpad {\ntap_button_map = xyz\n}\n}");
         assert_eq!(errors.len(), 1, "{errors:?}");
     }
