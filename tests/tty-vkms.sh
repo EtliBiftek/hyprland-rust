@@ -129,8 +129,24 @@ echo "ok: tty backend renders the client (screencopy)"
 
 # Orientation: a small floating window at the top left must be at the top of
 # the capture, not mirrored to the bottom.
+nonbg() { # prints how many sampled pixels differ from the bottom-right one
+    WAYLAND_DISPLAY=$(ls "$T" | grep '^wayland-[0-9]*$' | head -n1) grim -t ppm "$T/dbg.ppm" || return 0
+    python3 - "$T/dbg.ppm" "$1" <<'PY'
+import sys
+parts = open(sys.argv[1], "rb").read().split(b"
+", 3)
+w, h = map(int, parts[1].split())
+px = parts[3]
+bg = px[-3:]
+n = sum(px[i:i+3] != bg for i in range(0, len(px) - 2, 12))
+print("stage", sys.argv[2], "non-bg samples", n)
+PY
+}
+nonbg start
 ctl dispatch togglefloating >/dev/null
+sleep 0.5; nonbg floated
 ctl dispatch resizeactive exact 300 200 >/dev/null
+sleep 0.5; nonbg resized
 ctl dispatch moveactive exact 20 20 >/dev/null
 sleep 0.5
 MON=$(ctl -j monitors | json '[m["name"] for m in d if m["focused"]][0]')
