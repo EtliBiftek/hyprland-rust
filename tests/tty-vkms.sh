@@ -147,27 +147,27 @@ sleep 0.5; nonbg floated
 ctl dispatch moveactive exact 20 20 >/dev/null
 sleep 0.5
 sleep 0.5
-MON=$(ctl -j monitors | json '[m["name"] for m in d if m["focused"]][0]')
 ctl -j clients | json 'd[0]["at"], d[0]["size"]'
+ctl -j monitors | json '[(m["name"], m["x"], m["y"], m["width"], m["height"], m["focused"]) for m in d]'
+# Capture each output on its own: the floating window (at 20,20) must show up
+# at the top of one of them, not mirrored to the bottom.
 orient_ok() {
-    WAYLAND_DISPLAY=$(ls "$T" | grep '^wayland-[0-9]*$' | head -n1) grim -t ppm "$T/orient.ppm" || return 1
-    python3 - "$T/orient.ppm" <<'PY'
+    for name in $(ctl -j monitors | json '" ".join(m["name"] for m in d)'); do
+        WAYLAND_DISPLAY=$(ls "$T" | grep '^wayland-[0-9]*$' | head -n1) grim -o "$name" -t ppm "$T/orient.ppm" || continue
+        python3 - "$T/orient.ppm" "$name" <<'PY' && return 0
 import sys
 parts = open(sys.argv[1], "rb").read().split(b"\n", 3)
 w, h = map(int, parts[1].split())
 px = parts[3]
-bg = px[(h * w - 1) * 3:(h * w) * 3]  # bottom-right corner is background
-def green(x, y):  # any pixel that is not background (window or its border)
-    i = (y * w + x) * 3
-    return any(abs(a - c) > 20 for a, c in zip(px[i:i + 3], bg))
-top = sum(green(x, y) for x in range(0, w // 2, 4) for y in range(0, h // 2, 4))
-bottom = sum(green(x, y) for x in range(0, w, 4) for y in range(h // 2 + 50, h, 4))
-print(f"size {w}x{h}, window pixels top-left: {top}, bottom: {bottom}")
-nb = [(x, y) for y in range(0, h, 2) for x in range(0, w, 2) if green(x, y)]
-print("bg", tuple(bg), "non-bg samples", len(nb),
-      "bbox", (min(p[0] for p in nb), min(p[1] for p in nb), max(p[0] for p in nb), max(p[1] for p in nb)) if nb else None)
-sys.exit(0 if top > 500 and bottom == 0 else 1)
+bg = px[-3:]  # bottom-right corner is background
+ys = [y for y in range(0, h, 2) for x in range(0, w, 4)
+      if any(abs(a - c) > 20 for a, c in zip(px[(y * w + x) * 3:(y * w + x) * 3 + 3], bg))]
+print(sys.argv[2], f"{w}x{h}", "non-bg rows:", (min(ys), max(ys)) if ys else None)
+# The window is 20..~480 high: mirrored it would start well below 100.
+sys.exit(0 if ys and min(ys) < 60 else 1)
 PY
+    done
+    return 1
 }
 # Some captures come back empty (under investigation): retry a few times.
 ok=0
