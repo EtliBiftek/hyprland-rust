@@ -149,6 +149,9 @@ def green(x, y):  # any pixel that is not background (window or its border)
 top = sum(green(x, y) for x in range(0, w // 2, 4) for y in range(0, h // 2, 4))
 bottom = sum(green(x, y) for x in range(0, w, 4) for y in range(h // 2 + 50, h, 4))
 print(f"size {w}x{h}, window pixels top-left: {top}, bottom: {bottom}")
+nb = [(x, y) for y in range(0, h, 2) for x in range(0, w, 2) if green(x, y)]
+print("bg", tuple(bg), "non-bg samples", len(nb),
+      "bbox", (min(p[0] for p in nb), min(p[1] for p in nb), max(p[0] for p in nb), max(p[1] for p in nb)) if nb else None)
 sys.exit(0 if top > 500 and bottom == 0 else 1)
 PY
 echo "ok: tty capture orientation"
