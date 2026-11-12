@@ -62,6 +62,16 @@ xdotool windowfocus --sync "$WIN"
 xdotool mousemove --window "$WIN" 100 100
 sleep 1
 
+CTL=${CTL:-./target/debug/hyprctl}
+unset HYPRLAND_INSTANCE_SIGNATURE
+# Window creation + EGL init can take >10 s on a slow runner: wait until the
+# compositor answers IPC and EGL is up before pressing keys.
+for _ in $(seq 150); do
+    "$CTL" -j activeworkspace >/dev/null 2>&1 &&
+        grep -q "Selected color format" "$T/log" && break
+    sleep 0.2
+done
+sleep 1
 xdotool key super+Return
 for _ in $(seq 25); do
     [ -e "$T/exec-fired" ] && break
@@ -71,13 +81,6 @@ done
 echo "ok: SUPER+Return -> exec"
 
 # --- workspace selectors, bind flags and submaps, checked through hyprctl ---
-CTL=${CTL:-./target/debug/hyprctl}
-unset HYPRLAND_INSTANCE_SIGNATURE
-for _ in $(seq 25); do
-    "$CTL" -j activeworkspace >/dev/null 2>&1 && break
-    sleep 0.2
-done
-
 ws_is() { # $1 = expected JSON fragment of activeworkspace
     for _ in $(seq 25); do
         "$CTL" -j activeworkspace 2>/dev/null | grep -q "$1" && return 0

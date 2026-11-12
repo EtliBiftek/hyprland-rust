@@ -142,10 +142,10 @@ import sys
 parts = open(sys.argv[1], "rb").read().split(b"\n", 3)
 w, h = map(int, parts[1].split())
 px = parts[3]
-def green(x, y):
+bg = px[(h * w - 1) * 3:(h * w) * 3]  # bottom-right corner is background
+def green(x, y):  # any pixel that is not background (window or its border)
     i = (y * w + x) * 3
-    r, g, b = px[i:i + 3]
-    return g > r + 20 and g > b + 20
+    return any(abs(a - c) > 20 for a, c in zip(px[i:i + 3], bg))
 top = sum(green(x, y) for x in range(0, w // 2, 4) for y in range(0, h // 2, 4))
 bottom = sum(green(x, y) for x in range(0, w, 4) for y in range(h // 2 + 50, h, 4))
 print(f"size {w}x{h}, window pixels top-left: {top}, bottom: {bottom}")
