@@ -153,9 +153,9 @@ one commit and one test per item, update `docs/PARITY.md`.
 - #11 done (CRTC off via `DrmCompositor::clear`; VKMS debugfs test).
 - #15 partial: `addreserved`, output-management apply, `keyword monitor`, output scale rendering at physical size, fractional-scale preferred scale (largest output, sent once), screencopy regions scaled from logical coordinates done.
 - #3 partial: dmabuf default feedback (v4 with an EGL render node) and import testing done; `wl_drm` (needs smithay `use_system_lib`) and dmabuf capture remain.
-- #23 partial: `overlay_cursor`, scaled regions, tty capture orientation test done; dmabuf export and output transforms (rotated outputs) remain.
+- #23 partial: `overlay_cursor`, scaled regions, tty capture orientation test, rotated outputs (shot rendered with the output transform; `tests/tty-vkms.sh`) done; dmabuf export remains.
 - Also done: `enable_swallow`, `background_color`, `on_focus_under_fullscreen`, `exit_window_retains_fullscreen`, `warp_on_change_workspace`; tty builds frames only on change (`WmState::frame_gen`, 250 ms fallback), scene/blur textures are reused.
-- CI was red (keybinds race fixed: the test waits for EGL; tty-vkms orientation check). Open issue (2026-11-12): on the two-output VKMS setup a captured floating window is often blank or displaced (per-output `grim -o` shows nothing, whole-layout shows it at x>=1024); `tests/tty-vkms.sh` prints WARN instead of failing. screencopy now flips rows only for `Flipped180` outputs (`Shot::flip`; tty `Normal` was mirrored). The older uncommitted transform WIP is in `git stash`.
+- CI green at 1118b48 (2026-11-13). The blank/displaced floating-window capture on two outputs is fixed: window animation state (`FxWin::from/to/last`) is now in layout coordinates (`Ctx::origin`), it was output-local and restarted on every output's frame. Other `FxState` fields (`known`, `ws_key`, ghosts) are still shared by all outputs. The transform WIP in `git stash` is obsolete.
 - Next: #23 dmabuf export (screencopy `linux_dmabuf` buffers), #3 `wl_drm`,
   #43 `misc:vrr`; all three need a GPU, CI has only llvmpipe/VKMS.
 - Quota rule (owner, 2026-11-09): use the quota to the end, no percent stop.
