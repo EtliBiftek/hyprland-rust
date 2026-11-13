@@ -180,6 +180,41 @@ echo "ok: tty capture orientation"
 ctl dispatch resizeactive exact 300 200 >/dev/null
 sleep 1; nonbg resized
 
+# Rotated output: the capture is in scanout orientation and grim undoes the
+# wl_output transform, so the window (at 20,20, 300x200) stays at the top left
+# of a 768x1024 image. A region capture must map to the same corner.
+first=$(ctl -j monitors | json 'd[0]["name"]')
+ctl keyword monitor "$first,preferred,0x0,1,transform,1" >/dev/null
+sleep 1
+ctl -j monitors | json '[(m["name"], m["transform"]) for m in d]'
+WL=$(ls "$T" | grep '^wayland-[0-9]*$' | head -n1)
+WAYLAND_DISPLAY=$WL grim -o "$first" -t ppm "$T/rot.ppm" || fail "grim failed on the rotated output"
+WAYLAND_DISPLAY=$WL grim -g "0,0 200x100" -t ppm "$T/rotreg.ppm" || fail "grim region failed on the rotated output"
+python3 - "$T/rot.ppm" "$T/rotreg.ppm" <<'PY' || fail "capture of the rotated output is wrong"
+import sys
+def load(p):
+    parts = open(p, "rb").read().split(b"\n", 3)
+    w, h = map(int, parts[1].split())
+    return w, h, parts[3]
+w, h, px = load(sys.argv[1])
+bg = px[-3:]  # bottom-right corner is background
+far = lambda c: any(abs(a - b) > 20 for a, b in zip(c, bg))
+pts = [(x, y) for y in range(0, h, 2) for x in range(0, w, 4) if far(px[(y * w + x) * 3:(y * w + x) * 3 + 3])]
+xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
+box = (min(xs), min(ys), max(xs), max(ys)) if pts else None
+print(f"rotated {w}x{h}", "non-bg box:", box)
+assert (w, h) == (768, 1024), "rotated capture has the wrong size"
+assert box and box[0] < 60 and box[1] < 60 and box[2] < 400 and box[3] < 300, "window not at the top left"
+rw, rh, rp = load(sys.argv[2])
+at = lambda x, y: rp[(y * rw + x) * 3:(y * rw + x) * 3 + 3]
+print(f"region {rw}x{rh}", "corner:", tuple(at(2, 2)), "middle:", tuple(at(100, 60)))
+assert (rw, rh) == (200, 100), "region capture has the wrong size"
+assert not far(at(2, 2)) and far(at(100, 60)), "region capture shows the wrong part"
+PY
+ctl keyword monitor "$first,preferred,0x0,1,transform,0" >/dev/null
+sleep 0.5
+echo "ok: screencopy of a rotated output"
+
 # dpms off really deactivates the CRTCs (debugfs), on brings them back.
 crtc_active() { sudo sh -c 'for d in /sys/kernel/debug/dri/*; do grep -q vkms "$d/name" 2>/dev/null && cat "$d/state"; done' | grep -c 'active=1'; }
 before=$(crtc_active)

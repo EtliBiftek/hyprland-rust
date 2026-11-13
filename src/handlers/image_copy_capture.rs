@@ -337,6 +337,11 @@ impl Dispatch<ExtImageCopyCaptureFrameV1, FrameData> for Hypr {
                     return;
                 }
                 let frame = resource.clone();
+                // Output frames are in scanout orientation, like wlr-screencopy.
+                let transform = match &target {
+                    Target::Output(o) => o.current_transform().into(),
+                    _ => wl_output::Transform::Normal,
+                };
                 state.queue_capture(
                     target,
                     buffer,
@@ -345,7 +350,7 @@ impl Dispatch<ExtImageCopyCaptureFrameV1, FrameData> for Hypr {
                             frame.failed(FailureReason::Unknown);
                             return;
                         }
-                        frame.transform(wl_output::Transform::Normal);
+                        frame.transform(transform);
                         frame.damage(0, 0, w, h);
                         let secs = time.as_secs();
                         frame.presentation_time(

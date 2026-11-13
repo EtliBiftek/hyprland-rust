@@ -166,6 +166,5 @@ fn render_window_shot(renderer: &mut GlesRenderer, window: &Window) -> Result<Sh
         rgba,
         w: size.w as usize,
         h: size.h as usize,
-        flip: true,
     })
 }

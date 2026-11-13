@@ -5,7 +5,7 @@
 //! which renders the whole output into an offscreen texture, reads it back and
 //! writes the requested region into the client's shm buffer.
 //! shortcuts: shm buffers only (no linux_dmabuf event); `overlay_cursor` is drawn at
-//! scale 1; the output transform is assumed to be normal; a full-output
+//! scale 1; a full-output
 //! readback is cropped on the CPU; `copy_with_damage` reports the whole region
 //! as damaged and completes on the next frame; the headless backend has no
 //! renderer and answers `failed`. Upgrade with dmabuf export + damage tracking.
@@ -77,10 +77,6 @@ pub(crate) struct Shot {
     pub rgba: Vec<u8>,
     pub w: usize,
     pub h: usize,
-    /// Rows are flipped on copy. The GL readback is bottom row first; CI showed
-    /// the winit output (`Flipped180`) wants it flipped and the tty one (`Normal`)
-    /// does not. shortcut: other transforms are treated like `Normal`.
-    pub flip: bool,
 }
 
 /// True for an Xrgb8888 shm buffer of exactly `w` x `h` that fits its pool.
@@ -106,7 +102,6 @@ pub(crate) fn copy_shot_to_shm(
     with_buffer_contents_mut(buffer, |ptr, _, d| {
         for row in 0..r.size.h as usize {
             let y = r.loc.y as usize + row;
-            let y = if shot.flip { shot.h - 1 - y } else { y };
             let start = (y * shot.w + r.loc.x as usize) * 4;
             let src = &shot.rgba[start..start + r.size.w as usize * 4];
             // Safety: bounds were validated by the caller against the pool length.
@@ -158,15 +153,22 @@ fn new_frame(
     let scale = output
         .as_ref()
         .map_or(1.0, |o| o.current_scale().fractional_scale());
+    let transform = output
+        .as_ref()
+        .map_or(Transform::Normal, |o| o.current_transform());
     let rect = size.and_then(|s| {
-        let full = Rectangle::<i32, smithay::utils::Physical>::from_size(s);
-        // The region is in output-local logical coordinates; the buffer is physical.
+        // The region is in output-local logical coordinates; the buffer is
+        // physical and in the mode's orientation (before the output transform).
+        let shown = transform.transform_size(s);
+        let full = Rectangle::<i32, smithay::utils::Physical>::from_size(shown);
         let r = match region {
             Some((x, y, w, h)) => Rectangle::<i32, Logical>::new((x, y).into(), (w, h).into())
                 .to_physical_precise_round(scale),
             None => full,
         };
-        r.intersection(full).filter(|r| !r.is_empty())
+        r.intersection(full)
+            .filter(|r| !r.is_empty())
+            .map(|r| transform.transform_rect_in(r, &shown))
     });
     let frame = data_init.init(
         frame,
@@ -340,7 +342,10 @@ impl Hypr {
             .create_buffer(Fourcc::Abgr8888, (size.w, size.h).into())
             .map_err(|e| format!("create_buffer: {e:?}"))?;
         let scale = output.current_scale().fractional_scale();
-        let mut tracker = OutputDamageTracker::new(size, scale, Transform::Normal);
+        // Drawn like the scanout buffer, output transform applied: clients undo
+        // the transform they know from wl_output (the winit output is
+        // `Flipped180`, a rotated tty output 90/270). The readback is top row first.
+        let mut tracker = OutputDamageTracker::new(size, scale, output.current_transform());
         let clear = self.clear_color();
         let mut target = renderer
             .bind(&mut tex)
@@ -383,7 +388,6 @@ impl Hypr {
             rgba,
             w: size.w as usize,
             h: size.h as usize,
-            flip: output.current_transform() == Transform::Flipped180,
         })
     }
 }
