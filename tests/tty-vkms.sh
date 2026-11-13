@@ -156,8 +156,7 @@ orient_ok() {
     WAYLAND_DISPLAY=$(ls "$T" | grep '^wayland-[0-9]*$' | head -n1) grim -t ppm "$T/orient.ppm" || return 1
     python3 - "$T/orient.ppm" <<'PY'
 import sys
-parts = open(sys.argv[1], "rb").read().split(b"
-", 3)
+parts = open(sys.argv[1], "rb").read().split(b"\n", 3)
 w, h = map(int, parts[1].split())
 px = parts[3]
 bg = px[-3:]  # bottom-right corner is background
