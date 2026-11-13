@@ -194,6 +194,11 @@ struct Ctx<'a> {
     /// `scr` plus `general:gaps_workspaces`: how far a workspace slides.
     ws_scr: FRect,
     clear: [f32; 4],
+    /// Output position in the layout. Window animation state (`FxWin::from`,
+    /// `to`, `last`) is kept in layout coordinates: every output draws the
+    /// same windows, so output-local targets would restart the move
+    /// animation on each output's frame.
+    origin: (f32, f32),
     grabbed: bool,
     ws: Option<&'a WsAnim>,
     animating: bool,
@@ -483,9 +488,10 @@ fn window_group(
     let mut fw = cell.borrow_mut();
     let fw = &mut *fw;
     let now = ctx.now;
+    let (ox, oy) = ctx.origin;
     let target = FRect::new(
-        i.loc.0 as f32,
-        i.loc.1 as f32,
+        i.loc.0 as f32 + ox,
+        i.loc.1 as f32 + oy,
         i.size.0 as f32,
         i.size.1 as f32,
     );
@@ -510,7 +516,7 @@ fn window_group(
         }
         fw.to = target;
     }
-    let mut rect = cur(&*fw);
+    let mut rect = cur(&*fw).moved(-ox, -oy);
     if fw.mv.as_ref().is_some_and(|a| a.done(now)) {
         fw.mv = None;
         fw.from = fw.to;
@@ -557,7 +563,7 @@ fn window_group(
         _ => fw.ws_slide = false,
     }
     fw.shown = true;
-    fw.last = rect;
+    fw.last = rect.moved(ox, oy);
 
     // Border color (animated on focus change / rule change).
     let br = ctx.res("border");
@@ -729,7 +735,7 @@ fn ghost_group(ctx: &mut Ctx, g: &Ghost) -> Vec<FxElement> {
     let now = ctx.now;
     let p = g.anim.progress(now);
     let q = 1.0 - p;
-    let base = fw.last;
+    let base = fw.last.moved(-ctx.origin.0, -ctx.origin.1);
     let (rect, alpha) = match g.ws {
         Some((dir, special)) => {
             let (dx, dy, ao) = ws_style(g.style, q, dir, special, ctx.ws_scr);
@@ -740,7 +746,7 @@ fn ghost_group(ctx: &mut Ctx, g: &Ghost) -> Vec<FxElement> {
             (rr, ao.unwrap_or(1.0 - g.fade.progress(now)))
         }
     };
-    fw.to = base;
+    fw.to = fw.last;
     compose(ctx, fw, rect, alpha, false)
 }
 
@@ -950,6 +956,7 @@ pub fn output_elements(h: &mut Hypr, r: &mut GlesRenderer, output: &Output) -> V
         scr,
         ws_scr,
         clear: h_clear,
+        origin: (origin.0 as f32, origin.1 as f32),
         grabbed,
         ws: ws_anim.as_ref(),
         animating: ws_anim.is_some(),

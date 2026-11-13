@@ -149,36 +149,33 @@ sleep 0.5
 sleep 0.5
 ctl -j clients | json 'd[0]["at"], d[0]["size"]'
 ctl -j monitors | json '[(m["name"], m["x"], m["y"], m["width"], m["height"], m["focused"]) for m in d]'
-# Capture each output on its own: the floating window (at 20,20) must show up
-# at the top of one of them, not mirrored to the bottom.
+# The floating window (at 20,20 on the first output) must be at the top left of
+# the whole-layout capture: not mirrored to the bottom, and not drawn a second
+# time on the other output (window animation state was once output-local).
 orient_ok() {
-    for name in $(ctl -j monitors | json '" ".join(m["name"] for m in d)'); do
-        WAYLAND_DISPLAY=$(ls "$T" | grep '^wayland-[0-9]*$' | head -n1) grim -o "$name" -t ppm "$T/orient.ppm" || continue
-        python3 - "$T/orient.ppm" "$name" <<'PY' && return 0
+    WAYLAND_DISPLAY=$(ls "$T" | grep '^wayland-[0-9]*$' | head -n1) grim -t ppm "$T/orient.ppm" || return 1
+    python3 - "$T/orient.ppm" <<'PY'
 import sys
-parts = open(sys.argv[1], "rb").read().split(b"\n", 3)
+parts = open(sys.argv[1], "rb").read().split(b"
+", 3)
 w, h = map(int, parts[1].split())
 px = parts[3]
 bg = px[-3:]  # bottom-right corner is background
-ys = [y for y in range(0, h, 2) for x in range(0, w, 4)
-      if any(abs(a - c) > 20 for a, c in zip(px[(y * w + x) * 3:(y * w + x) * 3 + 3], bg))]
-print(sys.argv[2], f"{w}x{h}", "non-bg rows:", (min(ys), max(ys)) if ys else None)
-# The window is 20..~480 high: mirrored it would start well below 100.
-sys.exit(0 if ys and min(ys) < 60 else 1)
+pts = [(x, y) for y in range(0, h, 2) for x in range(0, w, 4)
+       if any(abs(a - c) > 20 for a, c in zip(px[(y * w + x) * 3:(y * w + x) * 3 + 3], bg))]
+xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
+print(f"{w}x{h}", "non-bg box:", (min(xs), min(ys), max(xs), max(ys)) if pts else None)
+# Window is at 20,20 and smaller than the 1024x768 output.
+sys.exit(0 if pts and min(ys) < 60 and min(xs) < 60 and max(xs) < 1024 else 1)
 PY
-    done
-    return 1
 }
-# Some captures come back empty (under investigation): retry a few times.
 ok=0
-for _ in 1 2 3 4 5 6; do
+for _ in 1 2 3; do
     orient_ok && ok=1 && break
     sleep 0.4
 done
-# shortcut: informational only. Captures of a floating window on the two-output
-# VKMS setup are often blank or show it displaced (see CLAUDE.md); make this
-# fatal once that is understood.
-if [ "$ok" = 1 ]; then echo "ok: tty capture orientation"; else echo "WARN: tty capture orientation not confirmed"; fi
+[ "$ok" = 1 ] || fail "tty capture: floating window not at the top left of the layout"
+echo "ok: tty capture orientation"
 # Known issue under investigation: after resizeactive the capture shows no
 # window (informational only).
 ctl dispatch resizeactive exact 300 200 >/dev/null
