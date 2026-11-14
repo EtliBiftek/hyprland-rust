@@ -152,14 +152,15 @@ one commit and one test per item, update `docs/PARITY.md`.
 - #41 partial: `resize_on_border`, `extend_border_grab_area`, `snap:*` done; `gaps_workspaces` and `no_focus_fallback` done (#41 complete).
 - #11 done (CRTC off via `DrmCompositor::clear`; VKMS debugfs test).
 - #15 partial: `addreserved`, output-management apply, `keyword monitor`, output scale rendering at physical size, fractional-scale preferred scale (largest output, sent once), screencopy regions scaled from logical coordinates done.
-- #3 partial: dmabuf default feedback (v4 with an EGL render node) and import testing done; `wl_drm` (needs smithay `use_system_lib`) and dmabuf capture remain.
-- #23 partial: `overlay_cursor`, scaled regions, tty capture orientation test, rotated outputs (shot rendered with the output transform; `tests/tty-vkms.sh`) done; dmabuf export done for wlr-screencopy (whole-output frames) and hyprland-toplevel-export: the client dmabuf is the render target (`tests/probe.sh`, `protocol-probe scdmabuf`/`exportdma` on a udmabuf, which llvmpipe imports). Left: ext-image-copy-capture dmabuf (its `dmabuf_device` needs a render node) and dmabuf for region frames.
+- #3 partial: dmabuf default feedback (v4 with an EGL render node) and import testing done; dmabuf capture done (see #23); only `wl_drm` (needs smithay `use_system_lib`) remains.
+- #23 done: `overlay_cursor`, scaled regions, tty capture orientation test, rotated outputs (shot rendered with the output transform; `tests/tty-vkms.sh`) done; dmabuf export done for wlr-screencopy (whole output and regions: elements are shifted by the region origin), hyprland-toplevel-export and ext-image-copy-capture (`dmabuf_format` always, `dmabuf_device` only with an EGL render node; the protocol allows formats without a device): the client dmabuf is the render target (`tests/probe.sh`, `protocol-probe scdmabuf`/`scregion`/`exportdma`/`copycapdma` on a udmabuf, which llvmpipe imports). A region dmabuf frame fails while the session is locked. Not done (optimizations, not list items): capture damage tracking (`copy_with_damage` reports full damage), `paint_cursors`.
 - Also done: `enable_swallow`, `background_color`, `on_focus_under_fullscreen`, `exit_window_retains_fullscreen`, `warp_on_change_workspace`; tty builds frames only on change (`WmState::frame_gen`, 250 ms fallback), scene/blur textures are reused.
-- CI green at 331bd0e (2026-11-14). The blank/displaced floating-window capture on two outputs is fixed: window animation state (`FxWin::from/to/last`) is now in layout coordinates (`Ctx::origin`), it was output-local and restarted on every output's frame. Other `FxState` fields (`known`, `ws_key`, ghosts) are still shared by all outputs. The transform WIP in `git stash` is obsolete.
-- Next: #23 ext-image-copy-capture dmabuf (needs a render node), #3 `wl_drm`,
-  #43 `misc:vrr`; all three need a GPU, CI has only llvmpipe/VKMS. A dmabuf
-  client can be tested in CI with `/dev/udmabuf` (see `udmabuf` in
-  `src/bin/protocol-probe.rs`).
+- CI green at 4c6311f (2026-11-14). The blank/displaced floating-window capture on two outputs is fixed: window animation state (`FxWin::from/to/last`) is now in layout coordinates (`Ctx::origin`), it was output-local and restarted on every output's frame. Other `FxState` fields (`known`, `ws_key`, ghosts) are still shared by all outputs. The transform WIP in `git stash` is obsolete.
+- Next: nothing a scheduled run can do. Left: #3 `wl_drm` (smithay
+  `use_system_lib`), #21 `immediate` (tearing page flips), #43 `misc:vrr`;
+  all three need real hardware, CI has only llvmpipe/VKMS, so they wait for
+  the owner. A dmabuf client can be tested in CI with `/dev/udmabuf` (see
+  `udmabuf` in `src/bin/protocol-probe.rs`).
 - Quota rule (owner, 2026-11-09): use the quota to the end, no percent stop.
   The scheduled task `osmium-gaps-resume` (05:05, 11:05, 17:05, 23:05)
   continues the list; keep this section current after every item.
