@@ -392,7 +392,7 @@ impl Hypr {
         let mut target = renderer
             .bind(&mut tex)
             .map_err(|e| format!("bind: {e:?}"))?;
-        self.render_output_into(renderer, &mut target, output, overlay_cursor)?;
+        let _ = self.render_output_into(renderer, &mut target, output, overlay_cursor)?;
         let mapping = renderer
             .copy_framebuffer(
                 &target,
