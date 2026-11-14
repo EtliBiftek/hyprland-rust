@@ -8,8 +8,8 @@
 //! so the global exists for tests and accepts everything (it never draws).
 //! The global is created once.
 //! shortcuts: no per-surface feedback and no scanout tranches; no `wl_drm`
-//! (needs smithay's `use_system_lib`); screencopy and the capture protocols
-//! still write shm only.
+//! (needs smithay's `use_system_lib`); only wlr-screencopy renders into client
+//! dmabufs, the other capture protocols still write shm only.
 
 use smithay::{
     backend::{
@@ -31,7 +31,15 @@ pub struct DmabufHolder {
     global: Option<DmabufGlobal>,
     /// The backend has a renderer and answers imports itself.
     tested: bool,
+    /// The renderer can draw into an Xrgb8888 dmabuf (screencopy `linux_dmabuf`).
+    export: bool,
     pending: Vec<(Dmabuf, ImportNotifier)>,
+}
+
+impl DmabufHolder {
+    pub fn can_export(&self) -> bool {
+        self.export
+    }
 }
 
 impl Default for DmabufHolder {
@@ -40,6 +48,7 @@ impl Default for DmabufHolder {
             state: DmabufState::new(),
             global: None,
             tested: false,
+            export: false,
             pending: Vec::new(),
         }
     }
@@ -100,6 +109,11 @@ impl Hypr {
             .ok()
             .and_then(|d| d.try_get_render_node().ok().flatten());
         self.extra.dmabuf.tested = true;
+        self.extra.dmabuf.export = renderer
+            .egl_context()
+            .dmabuf_render_formats()
+            .iter()
+            .any(|f| f.code == Fourcc::Xrgb8888);
         self.init_dmabuf(renderer.dmabuf_formats(), node);
     }
 

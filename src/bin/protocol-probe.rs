@@ -5,6 +5,7 @@
 //! `protocol-probe activate`  xdg-activation of the first of two windows
 //! `protocol-probe layerpopup` a layer popup placed off screen comes back on screen
 //! `protocol-probe dmabuf`    linux-dmabuf: an import of a bogus plane is answered (created or failed)
+//! `protocol-probe scdmabuf`  wlr-screencopy of the output into a dmabuf (udmabuf) shows a red window
 //! `protocol-probe focusgrab` hyprland-focus-grab: prints `grabbed`, then `cleared` when a click
 //!                            outside the whitelisted window clears it
 //! Prints `OK ...` and exits 0, or prints `FAIL ...` and exits 1.
@@ -13,7 +14,10 @@ use std::{
     collections::HashMap,
     fs::{File, OpenOptions},
     io::Write,
-    os::{fd::AsFd, unix::fs::FileExt},
+    os::{
+        fd::{AsFd, AsRawFd, FromRawFd, OwnedFd},
+        unix::fs::FileExt,
+    },
     time::{Duration, Instant},
 };
 
@@ -65,9 +69,15 @@ use wayland_protocols::{
     },
 };
 
-use wayland_protocols_wlr::layer_shell::v1::client::{
-    zwlr_layer_shell_v1::{self, ZwlrLayerShellV1},
-    zwlr_layer_surface_v1::{self, ZwlrLayerSurfaceV1},
+use wayland_protocols_wlr::{
+    layer_shell::v1::client::{
+        zwlr_layer_shell_v1::{self, ZwlrLayerShellV1},
+        zwlr_layer_surface_v1::{self, ZwlrLayerSurfaceV1},
+    },
+    screencopy::v1::client::{
+        zwlr_screencopy_frame_v1::{self, ZwlrScreencopyFrameV1},
+        zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1,
+    },
 };
 
 macro_rules! hypr_client {
@@ -139,6 +149,10 @@ struct P {
     token: Option<String>,
     /// linux-dmabuf v3 `modifier` events: (format, modifier_hi, modifier_lo).
     dmabuf_formats: Vec<(u32, u32, u32)>,
+    /// wl_buffer of the last successful linux-dmabuf `create`.
+    dma_buffer: Option<WlBuffer>,
+    /// wlr-screencopy `linux_dmabuf` event: (format, width, height).
+    sc_dmabuf: Option<(u32, u32, u32)>,
 }
 
 fn bind_err(n: &str) -> ! {
@@ -415,8 +429,117 @@ fn main() {
                 copycap(&mut ctx, &globals, &mut p, &mut q, &handle);
             }
         }
-        _ => fail("usage: protocol-probe export|copycap|dmabuf|focusgrab"),
+        "scdmabuf" => scdmabuf(&mut ctx, &globals, &mut p, &mut q),
+        _ => fail("usage: protocol-probe export|copycap|dmabuf|scdmabuf|focusgrab"),
     }
+}
+
+/// A dmabuf of `len` bytes backed by a memfd (the kernel's udmabuf driver), so
+/// the test needs no GPU; the pixels are read back through the memfd.
+fn udmabuf(len: u64) -> (File, OwnedFd) {
+    #[repr(C)]
+    struct Create {
+        memfd: u32,
+        flags: u32,
+        offset: u64,
+        size: u64,
+    }
+    // _IOW('u', 0x42, struct udmabuf_create)
+    const UDMABUF_CREATE: u32 = 0x4018_7542;
+    let dev = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/udmabuf")
+        .unwrap_or_else(|e| fail(&format!("/dev/udmabuf: {e}")));
+    // Safety: plain syscalls; every returned fd is checked and owned at once.
+    unsafe {
+        let fd = libc::memfd_create(c"probe-udmabuf".as_ptr(), libc::MFD_ALLOW_SEALING);
+        if fd < 0 {
+            fail("memfd_create");
+        }
+        let mem = File::from_raw_fd(fd);
+        mem.set_len(len).unwrap();
+        if libc::fcntl(fd, libc::F_ADD_SEALS, libc::F_SEAL_SHRINK) < 0 {
+            fail("F_SEAL_SHRINK");
+        }
+        let create = Create {
+            memfd: fd as u32,
+            flags: 0,
+            offset: 0,
+            size: len,
+        };
+        let buf = libc::ioctl(dev.as_raw_fd(), UDMABUF_CREATE as _, &create);
+        if buf < 0 {
+            fail(&format!(
+                "UDMABUF_CREATE: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        (mem, OwnedFd::from_raw_fd(buf))
+    }
+}
+
+fn scdmabuf(
+    ctx: &mut Ctx,
+    globals: &wayland_client::globals::GlobalList,
+    p: &mut P,
+    q: &mut EventQueue<P>,
+) {
+    let qh = ctx.qh.clone();
+    let dmabuf: ZwpLinuxDmabufV1 = globals
+        .bind(&qh, 3..=3, ())
+        .unwrap_or_else(|_| bind_err("zwp_linux_dmabuf_v1"));
+    let mgr: ZwlrScreencopyManagerV1 = globals
+        .bind(&qh, 3..=3, ())
+        .unwrap_or_else(|_| bind_err("zwlr_screencopy_manager_v1"));
+    let output: WlOutput = globals
+        .bind(&qh, 1..=1, ())
+        .unwrap_or_else(|_| bind_err("wl_output"));
+    ctx.window("probe-red", 200, 200, RED);
+    // Let the window map, tile and finish its animation.
+    wait(p, q, 3, |_| false);
+
+    let frame = mgr.capture_output(0, &output, &qh, ());
+    if !wait(p, q, 5, |p| p.export_buffer_done || p.result.is_some()) || p.result.is_some() {
+        fail("screencopy: no buffer_done");
+    }
+    let (format, w, h) = p
+        .sc_dmabuf
+        .unwrap_or_else(|| fail("screencopy: no linux_dmabuf event"));
+    // Smallest modifier first: linear (0) when the renderer has it.
+    let (hi, lo) = p
+        .dmabuf_formats
+        .iter()
+        .filter(|f| f.0 == format)
+        .map(|f| (f.1, f.2))
+        .min()
+        .unwrap_or_else(|| fail("screencopy format is not a linux-dmabuf format"));
+    let (mem, fd) = udmabuf(u64::from(w * h * 4).next_multiple_of(4096));
+    let params = dmabuf.create_params(&qh, ());
+    params.add(fd.as_fd(), 0, 0, w * 4, hi, lo);
+    params.create(
+        w as i32,
+        h as i32,
+        format,
+        zwp_linux_buffer_params_v1::Flags::empty(),
+    );
+    if !wait(p, q, 10, |p| p.result.is_some()) {
+        fail("no answer to the dmabuf import");
+    }
+    let buffer = p
+        .dma_buffer
+        .take()
+        .unwrap_or_else(|| fail("the renderer refused the udmabuf"));
+    p.result = None;
+    frame.copy(&buffer);
+    if !wait(p, q, 10, |p| p.result.is_some()) || p.result != Some(true) {
+        fail("screencopy into the dmabuf failed");
+    }
+    let share = red_share(&mem, w, h);
+    if share < 0.5 {
+        fail(&format!("dmabuf pixels not red ({share:.2}, {w}x{h})"));
+    }
+    println!("OK scdmabuf {w}x{h} red {share:.2}");
 }
 
 fn export(
@@ -560,6 +683,7 @@ noop!(
     ExtForeignToplevelImageCaptureSourceManagerV1,
     ExtOutputImageCaptureSourceManagerV1,
     ExtImageCopyCaptureManagerV1,
+    ZwlrScreencopyManagerV1,
     HyprlandFocusGrabManagerV1,
     HyprlandToplevelExportManagerV1,
     HyprlandToplevelMappingManagerV1
@@ -705,7 +829,10 @@ impl Dispatch<ZwpLinuxBufferParamsV1, ()> for P {
         _: &QueueHandle<Self>,
     ) {
         match ev {
-            zwp_linux_buffer_params_v1::Event::Created { .. } => p.result = Some(true),
+            zwp_linux_buffer_params_v1::Event::Created { buffer } => {
+                p.dma_buffer = Some(buffer);
+                p.result = Some(true);
+            }
             zwp_linux_buffer_params_v1::Event::Failed => p.result = Some(false),
             _ => {}
         }
@@ -773,6 +900,30 @@ impl Dispatch<HyprlandToplevelExportFrameV1, ()> for P {
                 };
                 p.export_buf = Some((f, width, height));
             }
+            E::BufferDone => p.export_buffer_done = true,
+            E::Ready { .. } => p.result = Some(true),
+            E::Failed => p.result = Some(false),
+            _ => {}
+        }
+    }
+}
+
+impl Dispatch<ZwlrScreencopyFrameV1, ()> for P {
+    fn event(
+        p: &mut Self,
+        _: &ZwlrScreencopyFrameV1,
+        event: zwlr_screencopy_frame_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        use zwlr_screencopy_frame_v1::Event as E;
+        match event {
+            E::LinuxDmabuf {
+                format,
+                width,
+                height,
+            } => p.sc_dmabuf = Some((format, width, height)),
             E::BufferDone => p.export_buffer_done = true,
             E::Ready { .. } => p.result = Some(true),
             E::Failed => p.result = Some(false),

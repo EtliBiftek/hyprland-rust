@@ -4,11 +4,13 @@
 //! `copy` queues the frame; the backend render loop calls `screencopy_process`
 //! which renders the whole output into an offscreen texture, reads it back and
 //! writes the requested region into the client's shm buffer.
-//! shortcuts: shm buffers only (no linux_dmabuf event); `overlay_cursor` is drawn at
-//! scale 1; a full-output
+//! Whole-output frames also offer `linux_dmabuf` (Xrgb8888): the output is
+//! rendered straight into the client's dmabuf, no readback.
+//! shortcuts: region frames are shm only (render with an offset to add dmabuf);
+//! `overlay_cursor` is drawn at scale 1; a full-output
 //! readback is cropped on the CPU; `copy_with_damage` reports the whole region
 //! as damaged and completes on the next frame; the headless backend has no
-//! renderer and answers `failed`. Upgrade with dmabuf export + damage tracking.
+//! renderer and answers `failed`. Upgrade with damage tracking.
 
 use std::{
     slice,
@@ -18,11 +20,12 @@ use std::{
 
 use smithay::{
     backend::{
-        allocator::Fourcc,
+        allocator::{dmabuf::Dmabuf, Buffer, Fourcc},
         renderer::{
             damage::OutputDamageTracker,
             element::surface::WaylandSurfaceRenderElement,
-            gles::{GlesRenderer, GlesTexture},
+            gles::{GlesRenderer, GlesTarget, GlesTexture},
+            sync::SyncPoint,
             Bind, ExportMem, Offscreen,
         },
     },
@@ -39,7 +42,7 @@ use smithay::{
         },
     },
     utils::{Logical, Rectangle, Transform},
-    wayland::shm::with_buffer_contents_mut,
+    wayland::{dmabuf::get_dmabuf, shm::with_buffer_contents_mut},
 };
 
 use crate::Hypr;
@@ -50,6 +53,17 @@ pub struct FrameData {
     rect: Option<Rectangle<i32, smithay::utils::Physical>>,
     copied: AtomicBool,
     overlay_cursor: bool,
+    /// `linux_dmabuf` was offered for this frame.
+    dmabuf: bool,
+}
+
+/// True for an (X|A)rgb8888 dmabuf of exactly `w` x `h`.
+fn dmabuf_matches(buffer: &WlBuffer, w: i32, h: i32) -> bool {
+    get_dmabuf(buffer).is_ok_and(|d| {
+        matches!(d.format().code, Fourcc::Xrgb8888 | Fourcc::Argb8888)
+            && d.size().w == w
+            && d.size().h == h
+    })
 }
 
 struct Pending {
@@ -144,6 +158,7 @@ fn new_frame(
     wl_output: &WlOutput,
     region: Option<(i32, i32, i32, i32)>,
     overlay_cursor: bool,
+    can_export: bool,
 ) {
     let output = Output::from_resource(wl_output);
     let size = output
@@ -170,6 +185,8 @@ fn new_frame(
             .filter(|r| !r.is_empty())
             .map(|r| transform.transform_rect_in(r, &shown))
     });
+    // Only whole-output frames: the dmabuf is the render target.
+    let dmabuf = can_export && rect.is_some_and(|r| Some(r.size) == size && r.loc == (0, 0).into());
     let frame = data_init.init(
         frame,
         FrameData {
@@ -177,6 +194,7 @@ fn new_frame(
             rect,
             copied: AtomicBool::new(false),
             overlay_cursor,
+            dmabuf,
         },
     );
     match rect {
@@ -187,6 +205,9 @@ fn new_frame(
                 r.size.h as u32,
                 r.size.w as u32 * 4,
             );
+            if dmabuf {
+                frame.linux_dmabuf(Fourcc::Xrgb8888 as u32, r.size.w as u32, r.size.h as u32);
+            }
             if frame.version() >= 3 {
                 frame.buffer_done();
             }
@@ -197,20 +218,29 @@ fn new_frame(
 
 impl Dispatch<ZwlrScreencopyManagerV1, ()> for Hypr {
     fn request(
-        _state: &mut Self,
+        state: &mut Self,
         _client: &Client,
-        _resource: &ZwlrScreencopyManagerV1,
+        resource: &ZwlrScreencopyManagerV1,
         request: zwlr_screencopy_manager_v1::Request,
         _data: &(),
         _handle: &DisplayHandle,
         data_init: &mut DataInit<'_, Self>,
     ) {
+        // `linux_dmabuf` is a version 3 event; a frame has its manager's version.
+        let can_export = state.extra.dmabuf.can_export() && resource.version() >= 3;
         match request {
             zwlr_screencopy_manager_v1::Request::CaptureOutput {
                 frame,
                 output,
                 overlay_cursor,
-            } => new_frame(data_init, frame, &output, None, overlay_cursor != 0),
+            } => new_frame(
+                data_init,
+                frame,
+                &output,
+                None,
+                overlay_cursor != 0,
+                can_export,
+            ),
             zwlr_screencopy_manager_v1::Request::CaptureOutputRegion {
                 frame,
                 output,
@@ -225,6 +255,7 @@ impl Dispatch<ZwlrScreencopyManagerV1, ()> for Hypr {
                 &output,
                 Some((x, y, width, height)),
                 overlay_cursor != 0,
+                can_export,
             ),
             _ => {}
         }
@@ -256,10 +287,12 @@ impl Dispatch<ZwlrScreencopyFrameV1, FrameData> for Hypr {
             );
             return;
         }
-        if !shm_matches(&buffer, rect.size.w, rect.size.h) {
+        if !shm_matches(&buffer, rect.size.w, rect.size.h)
+            && !(data.dmabuf && dmabuf_matches(&buffer, rect.size.w, rect.size.h))
+        {
             resource.post_error(
                 zwlr_screencopy_frame_v1::Error::InvalidBuffer,
-                "buffer must be an shm buffer matching the advertised format and size",
+                "buffer must match an advertised format and size",
             );
             return;
         }
@@ -282,6 +315,11 @@ impl Pending {
             self.frame.failed();
             return;
         }
+        self.ready(time);
+    }
+
+    fn ready(self, time: Duration) {
+        let r = self.rect;
         self.frame.flags(zwlr_screencopy_frame_v1::Flags::empty());
         if self.with_damage {
             self.frame.damage(0, 0, r.size.w as u32, r.size.h as u32);
@@ -315,6 +353,16 @@ impl Hypr {
         let time = self.start_time.elapsed();
         let (mut plain, mut with_cursor) = (None, None);
         for p in mine {
+            if let Ok(mut dmabuf) = get_dmabuf(&p.buffer).cloned() {
+                match self.render_shot_dmabuf(renderer, output, p.overlay_cursor, &mut dmabuf) {
+                    Ok(()) => p.ready(time),
+                    Err(e) => {
+                        tracing::warn!("screencopy into a dmabuf failed: {e}");
+                        p.frame.failed();
+                    }
+                }
+                continue;
+            }
             let slot = if p.overlay_cursor {
                 &mut with_cursor
             } else {
@@ -341,38 +389,10 @@ impl Hypr {
         let mut tex: GlesTexture = renderer
             .create_buffer(Fourcc::Abgr8888, (size.w, size.h).into())
             .map_err(|e| format!("create_buffer: {e:?}"))?;
-        let scale = output.current_scale().fractional_scale();
-        // Drawn like the scanout buffer, output transform applied: clients undo
-        // the transform they know from wl_output (the winit output is
-        // `Flipped180`, a rotated tty output 90/270). The readback is top row first.
-        let mut tracker = OutputDamageTracker::new(size, scale, output.current_transform());
-        let clear = self.clear_color();
         let mut target = renderer
             .bind(&mut tex)
             .map_err(|e| format!("bind: {e:?}"))?;
-        if self.session_locked {
-            let lock = self.lock_elements(renderer, output);
-            render_output::<_, WaylandSurfaceRenderElement<GlesRenderer>, _, _>(
-                output,
-                renderer,
-                &mut target,
-                1.0,
-                0,
-                std::iter::empty::<&Space<Window>>(),
-                &lock,
-                &mut tracker,
-                clear,
-            )
-            .map_err(|e| format!("render: {e:?}"))?;
-        } else {
-            let mut elements = crate::render::output_elements(self, renderer, output);
-            if overlay_cursor {
-                elements.splice(0..0, self.cursor_fx_elements(renderer, output));
-            }
-            tracker
-                .render_output(renderer, &mut target, 0, &elements, clear)
-                .map_err(|e| format!("render: {e:?}"))?;
-        }
+        self.render_output_into(renderer, &mut target, output, overlay_cursor)?;
         let mapping = renderer
             .copy_framebuffer(
                 &target,
@@ -389,5 +409,63 @@ impl Hypr {
             w: size.w as usize,
             h: size.h as usize,
         })
+    }
+
+    /// Renders the whole output into the client's dmabuf.
+    fn render_shot_dmabuf(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        output: &Output,
+        overlay_cursor: bool,
+        dmabuf: &mut Dmabuf,
+    ) -> Result<(), String> {
+        let mut target = renderer.bind(dmabuf).map_err(|e| format!("bind: {e:?}"))?;
+        let sync = self.render_output_into(renderer, &mut target, output, overlay_cursor)?;
+        // The client reads the buffer as soon as `ready` arrives.
+        let _ = sync.wait();
+        Ok(())
+    }
+
+    /// Draws the output (or the lock screen) into `target`, which has the mode's size.
+    fn render_output_into(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        target: &mut GlesTarget<'_>,
+        output: &Output,
+        overlay_cursor: bool,
+    ) -> Result<SyncPoint, String> {
+        let size = output.current_mode().ok_or("output has no mode")?.size;
+        let scale = output.current_scale().fractional_scale();
+        // Drawn like the scanout buffer, output transform applied: clients undo
+        // the transform they know from wl_output (the winit output is
+        // `Flipped180`, a rotated tty output 90/270). The readback is top row first.
+        let mut tracker = OutputDamageTracker::new(size, scale, output.current_transform());
+        let clear = self.clear_color();
+        let sync = if self.session_locked {
+            let lock = self.lock_elements(renderer, output);
+            render_output::<_, WaylandSurfaceRenderElement<GlesRenderer>, _, _>(
+                output,
+                renderer,
+                target,
+                1.0,
+                0,
+                std::iter::empty::<&Space<Window>>(),
+                &lock,
+                &mut tracker,
+                clear,
+            )
+            .map_err(|e| format!("render: {e:?}"))?
+            .sync
+        } else {
+            let mut elements = crate::render::output_elements(self, renderer, output);
+            if overlay_cursor {
+                elements.splice(0..0, self.cursor_fx_elements(renderer, output));
+            }
+            tracker
+                .render_output(renderer, target, 0, &elements, clear)
+                .map_err(|e| format!("render: {e:?}"))?
+                .sync
+        };
+        Ok(sync)
     }
 }

@@ -3,6 +3,7 @@
 #  - hyprland-toplevel-mapping + hyprland-toplevel-export capture a red window
 #  - ext-image-copy-capture of a toplevel source and an output source
 #  - hyprland-focus-grab: a click outside the whitelisted window sends `cleared`
+#  - wlr-screencopy into a dmabuf (a udmabuf, so no GPU is needed)
 # Needs: Xvfb, xdotool, libxkbcommon-x11-0, Mesa.
 set -eu
 BIN=${BIN:-./target/debug/hyprland-rust}
@@ -51,6 +52,10 @@ timeout 30 "$PROBE" layerpopup || fail "probe layerpopup"
 # linux-dmabuf imports are queued and answered by the backend's renderer.
 timeout 30 "$PROBE" dmabuf || fail "probe dmabuf"
 grep -q "linux-dmabuf: " "$T/log" || fail "dmabuf global not announced in the log"
+# Screencopy renders the output straight into the client's dmabuf.
+sudo modprobe udmabuf 2>/dev/null || true
+sudo chmod a+rw /dev/udmabuf 2>/dev/null || true
+timeout 60 "$PROBE" scdmabuf || fail "probe scdmabuf"
 
 # misc:focus_on_activate: the activated window takes the focus.
 "$CTL" keyword misc:focus_on_activate true >/dev/null

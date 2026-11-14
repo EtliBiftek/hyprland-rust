@@ -775,7 +775,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `zwlr_layer_shell_v1` | tested | `tests/layer-shell.sh` (waybar). Layer popups are constrained to the output (`tests/probe.sh`). |
 | `zwlr_output_manager_v1` | tested | `handlers/output_management.rs`: heads at bind (`wlr-randr`), `apply` of position, scale and transform (`tests/foreign-toplevel.sh`); other modes and disabling answer `failed`. |
 | `zwlr_output_power_manager_v1` | none | Not registered by the repo. |
-| `zwlr_screencopy_manager_v1` | tested | `handlers/screencopy.rs`, `tests/screencopy.sh` (grim, winit in Xvfb): full output, logical regions on scaled outputs, `overlay_cursor`, rotated outputs (`tests/tty-vkms.sh`). shm only, headless answers `failed`. |
+| `zwlr_screencopy_manager_v1` | tested | `handlers/screencopy.rs`, `tests/screencopy.sh` (grim, winit in Xvfb): full output, logical regions on scaled outputs, `overlay_cursor`, rotated outputs (`tests/tty-vkms.sh`). Whole-output frames also offer `linux_dmabuf` (Xrgb8888) and render straight into the client dmabuf (`tests/probe.sh`, `protocol-probe scdmabuf` with a udmabuf); region frames are shm only, headless answers `failed`. |
 | `zwlr_virtual_pointer_manager_v1` | partial | `handlers/virtual_pointer.rs`: motion, absolute motion, button, axis. No client test (global in `tests/globals.sh`). |
 | `zwp_idle_inhibit_manager_v1` | none | Not registered by the repo. |
 | `zwp_input_method_manager_v2` | partial | `handlers/input_method.rs`: popups tracked but not drawn. No client test. |
