@@ -8,8 +8,8 @@
 //! so the global exists for tests and accepts everything (it never draws).
 //! The global is created once.
 //! shortcuts: no per-surface feedback and no scanout tranches; no `wl_drm`
-//! (needs smithay's `use_system_lib`); wlr-screencopy and toplevel-export render
-//! into client dmabufs, ext-image-copy-capture still offers shm only.
+//! (needs smithay's `use_system_lib`). wlr-screencopy, toplevel-export and
+//! ext-image-copy-capture render into client dmabufs.
 
 use smithay::{
     backend::{
@@ -31,14 +31,24 @@ pub struct DmabufHolder {
     global: Option<DmabufGlobal>,
     /// The backend has a renderer and answers imports itself.
     tested: bool,
-    /// The renderer can draw into an Xrgb8888 dmabuf (screencopy `linux_dmabuf`).
-    export: bool,
+    /// Modifiers the renderer can draw an Xrgb8888 dmabuf with (screencopy
+    /// `linux_dmabuf`); empty: no capture into dmabufs.
+    export_mods: Vec<u64>,
+    /// The EGL render node, if any.
+    device: Option<libc::dev_t>,
     pending: Vec<(Dmabuf, ImportNotifier)>,
 }
 
 impl DmabufHolder {
     pub fn can_export(&self) -> bool {
-        self.export
+        !self.export_mods.is_empty()
+    }
+
+    /// Xrgb8888 modifiers for capture dmabufs and the device to allocate them
+    /// on, when the renderer names one.
+    pub fn capture(&self) -> Option<(&[u64], Option<libc::dev_t>)> {
+        self.can_export()
+            .then_some((self.export_mods.as_slice(), self.device))
     }
 }
 
@@ -48,7 +58,8 @@ impl Default for DmabufHolder {
             state: DmabufState::new(),
             global: None,
             tested: false,
-            export: false,
+            export_mods: Vec::new(),
+            device: None,
             pending: Vec::new(),
         }
     }
@@ -109,11 +120,14 @@ impl Hypr {
             .ok()
             .and_then(|d| d.try_get_render_node().ok().flatten());
         self.extra.dmabuf.tested = true;
-        self.extra.dmabuf.export = renderer
+        self.extra.dmabuf.export_mods = renderer
             .egl_context()
             .dmabuf_render_formats()
             .iter()
-            .any(|f| f.code == Fourcc::Xrgb8888);
+            .filter(|f| f.code == Fourcc::Xrgb8888)
+            .map(|f| u64::from(f.modifier))
+            .collect();
+        self.extra.dmabuf.device = node.map(|n| n.dev_id());
         self.init_dmabuf(renderer.dmabuf_formats(), node);
     }
 

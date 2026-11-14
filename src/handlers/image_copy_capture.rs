@@ -1,7 +1,8 @@
 //! ext-image-capture-source-v1 and ext-image-copy-capture-v1 (portals, OBS, grim
 //! 1.5+, wf-recorder): output and foreign-toplevel sources copied into shm
-//! buffers through the capture queue in `capture.rs`.
-//! shortcuts: shm (Xrgb8888) only, no dmabuf constraints; every frame is a full
+//! buffers, or rendered into dmabufs (Xrgb8888, `dmabuf_device` only when EGL
+//! names a render node), through the capture queue in `capture.rs`.
+//! shortcuts: every frame is a full
 //! copy reported as fully damaged; `paint_cursors` is ignored; cursor sessions
 //! exist but never get position or capture data (their frames fail);
 //! a size change after session creation sends new constraints and fails the frame.
@@ -12,6 +13,7 @@ use std::sync::{
 };
 
 use smithay::{
+    backend::allocator::Fourcc,
     output::Output,
     reexports::{
         wayland_protocols::ext::{
@@ -41,7 +43,11 @@ use smithay::{
     },
 };
 
-use super::{capture::Target, screencopy::shm_matches};
+use super::{
+    capture::Target,
+    dmabuf::DmabufHolder,
+    screencopy::{dmabuf_matches, shm_matches},
+};
 use crate::{ipc::window_addr, Hypr};
 
 pub fn init(dh: &DisplayHandle) {
@@ -186,14 +192,21 @@ fn new_session(
         },
     );
     match size {
-        Some((w, h)) => send_constraints(&sess, w, h),
+        Some((w, h)) => send_constraints(&sess, w, h, &state.extra.dmabuf),
         None => sess.stopped(),
     }
 }
 
-fn send_constraints(session: &ExtImageCopyCaptureSessionV1, w: i32, h: i32) {
+fn send_constraints(session: &ExtImageCopyCaptureSessionV1, w: i32, h: i32, dma: &DmabufHolder) {
     session.buffer_size(w as u32, h as u32);
     session.shm_format(wl_shm::Format::Xrgb8888);
+    if let Some((mods, device)) = dma.capture() {
+        let mods = mods.iter().flat_map(|m| m.to_ne_bytes()).collect();
+        session.dmabuf_format(Fourcc::Xrgb8888 as u32, mods);
+        if let Some(dev) = device {
+            session.dmabuf_device(dev.to_ne_bytes().to_vec());
+        }
+    }
     session.done();
 }
 
@@ -327,12 +340,14 @@ impl Dispatch<ExtImageCopyCaptureFrameV1, FrameData> for Hypr {
                     let mut announced = sess.size.lock().unwrap();
                     if *announced != (w, h) {
                         *announced = (w, h);
-                        send_constraints(&data.session, w, h);
+                        send_constraints(&data.session, w, h, &state.extra.dmabuf);
                         resource.failed(FailureReason::BufferConstraints);
                         return;
                     }
                 }
-                if !shm_matches(&buffer, w, h) {
+                if !shm_matches(&buffer, w, h)
+                    && !(state.extra.dmabuf.can_export() && dmabuf_matches(&buffer, w, h))
+                {
                     resource.failed(FailureReason::BufferConstraints);
                     return;
                 }

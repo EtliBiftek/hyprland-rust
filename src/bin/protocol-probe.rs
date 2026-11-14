@@ -7,6 +7,7 @@
 //! `protocol-probe dmabuf`    linux-dmabuf: an import of a bogus plane is answered (created or failed)
 //! `protocol-probe scdmabuf`  wlr-screencopy of the output into a dmabuf (udmabuf) shows a red window
 //! `protocol-probe scregion`  the same for an output region; the pixels equal the shm capture
+//! `protocol-probe copycapdma` `copycap`, but into dmabufs
 //! `protocol-probe exportdma` `export`, but into a dmabuf
 //! `protocol-probe focusgrab` hyprland-focus-grab: prints `grabbed`, then `cleared` when a click
 //!                            outside the whitelisted window clears it
@@ -145,6 +146,7 @@ struct P {
     result: Option<bool>,
     cleared: bool,
     sess_size: Option<(u32, u32)>,
+    sess_dmabuf: Option<u32>,
     sess_done: bool,
     sess_stopped: bool,
     popup_x: Option<i32>,
@@ -413,7 +415,7 @@ fn main() {
             };
             println!("OK dmabuf: import answered, bogus plane {verdict}");
         }
-        "export" | "exportdma" | "copycap" => {
+        "export" | "exportdma" | "copycap" | "copycapdma" => {
             let list: ExtForeignToplevelListV1 = globals
                 .bind(&qh, 1..=1, ())
                 .unwrap_or_else(|_| bind_err("ext_foreign_toplevel_list_v1"));
@@ -425,7 +427,7 @@ fn main() {
             let handle = handle_of(&p, "probe-red").unwrap();
             // Let the window commit its buffer before capturing.
             wait(&mut p, &mut q, 1, |_| false);
-            if mode != "copycap" {
+            if mode.starts_with("export") {
                 export(
                     &mut ctx,
                     &globals,
@@ -435,11 +437,18 @@ fn main() {
                     mode == "exportdma",
                 );
             } else {
-                copycap(&mut ctx, &globals, &mut p, &mut q, &handle);
+                copycap(
+                    &mut ctx,
+                    &globals,
+                    &mut p,
+                    &mut q,
+                    &handle,
+                    mode == "copycapdma",
+                );
             }
         }
         "scdmabuf" | "scregion" => scdmabuf(&mut ctx, &globals, &mut p, &mut q, mode == "scregion"),
-        _ => fail("usage: protocol-probe export|copycap|dmabuf|scdmabuf|scregion|focusgrab"),
+        _ => fail("usage: protocol-probe export|exportdma|copycap|copycapdma|dmabuf|scdmabuf|scregion|focusgrab"),
     }
 }
 
@@ -674,6 +683,7 @@ fn copycap(
     p: &mut P,
     q: &mut EventQueue<P>,
     handle: &ExtForeignToplevelHandleV1,
+    dma: bool,
 ) {
     let qh = ctx.qh.clone();
     let tl_mgr: ExtForeignToplevelImageCaptureSourceManagerV1 = globals
@@ -708,7 +718,14 @@ fn copycap(
             fail(&format!("{name}: session constraints missing"));
         }
         let (w, h) = p.sess_size.unwrap();
-        let (buf, file) = ctx.buffer(w, h, None);
+        let (buf, file) = if dma {
+            let format = p
+                .sess_dmabuf
+                .unwrap_or_else(|| fail(&format!("{name}: no dmabuf_format")));
+            dma_buffer(globals, p, q, &qh, format, w, h)
+        } else {
+            ctx.buffer(w, h, None)
+        };
         let frame = sess.create_frame(&qh, ());
         frame.attach_buffer(&buf);
         frame.damage_buffer(0, 0, w as i32, h as i32);
@@ -728,7 +745,7 @@ fn copycap(
                 fail("output capture is all zero");
             }
         }
-        println!("OK copycap {name} {w}x{h}");
+        println!("OK copycap {name} {w}x{h} dmabuf {dma}");
     }
 }
 
@@ -1046,6 +1063,7 @@ impl Dispatch<ExtImageCopyCaptureSessionV1, ()> for P {
         use ext_image_copy_capture_session_v1::Event as E;
         match event {
             E::BufferSize { width, height } => p.sess_size = Some((width, height)),
+            E::DmabufFormat { format, .. } => p.sess_dmabuf = Some(format),
             E::Done => p.sess_done = true,
             E::Stopped => p.sess_stopped = true,
             _ => {}
