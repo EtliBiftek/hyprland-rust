@@ -112,7 +112,9 @@ impl Hypr {
             }
             if let Ok(mut dmabuf) = get_dmabuf(&job.buffer).cloned() {
                 let res = match &job.target {
-                    Target::Output(o) => self.render_shot_dmabuf(renderer, o, false, &mut dmabuf),
+                    Target::Output(o) => {
+                        self.render_shot_dmabuf(renderer, o, false, &mut dmabuf, None)
+                    }
                     Target::Window(w) => renderer
                         .bind(&mut dmabuf)
                         .map_err(|e| format!("bind: {e:?}"))

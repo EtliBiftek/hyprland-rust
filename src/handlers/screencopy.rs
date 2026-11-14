@@ -4,9 +4,11 @@
 //! `copy` queues the frame; the backend render loop calls `screencopy_process`
 //! which renders the whole output into an offscreen texture, reads it back and
 //! writes the requested region into the client's shm buffer.
-//! Whole-output frames also offer `linux_dmabuf` (Xrgb8888): the output is
-//! rendered straight into the client's dmabuf, no readback.
-//! shortcuts: region frames are shm only (render with an offset to add dmabuf);
+//! Frames also offer `linux_dmabuf` (Xrgb8888): the output (or the region,
+//! with the elements shifted) is rendered straight into the client's dmabuf,
+//! no readback.
+//! shortcuts: a region frame into a dmabuf fails while the session is locked
+//! (the lock path draws through `render_output`, which cannot shift);
 //! `overlay_cursor` is drawn at scale 1; a full-output
 //! readback is cropped on the CPU; `copy_with_damage` reports the whole region
 //! as damaged and completes on the next frame; the headless backend has no
@@ -23,7 +25,10 @@ use smithay::{
         allocator::{dmabuf::Dmabuf, Buffer, Fourcc},
         renderer::{
             damage::OutputDamageTracker,
-            element::surface::WaylandSurfaceRenderElement,
+            element::{
+                surface::WaylandSurfaceRenderElement,
+                utils::{Relocate, RelocateRenderElement},
+            },
             gles::{GlesRenderer, GlesTarget, GlesTexture},
             sync::SyncPoint,
             Bind, ExportMem, Offscreen,
@@ -41,7 +46,7 @@ use smithay::{
             Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
         },
     },
-    utils::{Logical, Rectangle, Transform},
+    utils::{Logical, Physical, Point, Rectangle, Size, Transform},
     wayland::{dmabuf::get_dmabuf, shm::with_buffer_contents_mut},
 };
 
@@ -50,7 +55,9 @@ use crate::Hypr;
 pub struct FrameData {
     output: Option<Output>,
     /// Region in output pixels; `None` when the request was invalid.
-    rect: Option<Rectangle<i32, smithay::utils::Physical>>,
+    rect: Option<Rectangle<i32, Physical>>,
+    /// Top-left of the region on the output as shown (before the transform).
+    src: Point<i32, Physical>,
     copied: AtomicBool,
     overlay_cursor: bool,
     /// `linux_dmabuf` was offered for this frame.
@@ -70,7 +77,8 @@ struct Pending {
     frame: ZwlrScreencopyFrameV1,
     buffer: WlBuffer,
     output: Output,
-    rect: Rectangle<i32, smithay::utils::Physical>,
+    rect: Rectangle<i32, Physical>,
+    src: Point<i32, Physical>,
     with_damage: bool,
     overlay_cursor: bool,
 }
@@ -110,7 +118,7 @@ pub(crate) fn shm_matches(buffer: &WlBuffer, w: i32, h: i32) -> bool {
 pub(crate) fn copy_shot_to_shm(
     buffer: &WlBuffer,
     shot: &Shot,
-    rect: Rectangle<i32, smithay::utils::Physical>,
+    rect: Rectangle<i32, Physical>,
 ) -> bool {
     let r = rect;
     with_buffer_contents_mut(buffer, |ptr, _, d| {
@@ -171,11 +179,11 @@ fn new_frame(
     let transform = output
         .as_ref()
         .map_or(Transform::Normal, |o| o.current_transform());
-    let rect = size.and_then(|s| {
+    let found = size.and_then(|s| {
         // The region is in output-local logical coordinates; the buffer is
         // physical and in the mode's orientation (before the output transform).
         let shown = transform.transform_size(s);
-        let full = Rectangle::<i32, smithay::utils::Physical>::from_size(shown);
+        let full = Rectangle::<i32, Physical>::from_size(shown);
         let r = match region {
             Some((x, y, w, h)) => Rectangle::<i32, Logical>::new((x, y).into(), (w, h).into())
                 .to_physical_precise_round(scale),
@@ -183,15 +191,17 @@ fn new_frame(
         };
         r.intersection(full)
             .filter(|r| !r.is_empty())
-            .map(|r| transform.transform_rect_in(r, &shown))
+            .map(|r| (r.loc, transform.transform_rect_in(r, &shown)))
     });
-    // Only whole-output frames: the dmabuf is the render target.
-    let dmabuf = can_export && rect.is_some_and(|r| Some(r.size) == size && r.loc == (0, 0).into());
+    let src = found.map(|f| f.0).unwrap_or_default();
+    let rect = found.map(|f| f.1);
+    let dmabuf = can_export && rect.is_some();
     let frame = data_init.init(
         frame,
         FrameData {
             output,
             rect,
+            src,
             copied: AtomicBool::new(false),
             overlay_cursor,
             dmabuf,
@@ -301,6 +311,7 @@ impl Dispatch<ZwlrScreencopyFrameV1, FrameData> for Hypr {
             buffer,
             output,
             rect,
+            src: data.src,
             with_damage,
             overlay_cursor: data.overlay_cursor,
         });
@@ -354,7 +365,9 @@ impl Hypr {
         let (mut plain, mut with_cursor) = (None, None);
         for p in mine {
             if let Ok(mut dmabuf) = get_dmabuf(&p.buffer).cloned() {
-                match self.render_shot_dmabuf(renderer, output, p.overlay_cursor, &mut dmabuf) {
+                let part = Some((p.src, p.rect.size));
+                match self.render_shot_dmabuf(renderer, output, p.overlay_cursor, &mut dmabuf, part)
+                {
                     Ok(()) => p.ready(time),
                     Err(e) => {
                         tracing::warn!("screencopy into a dmabuf failed: {e}");
@@ -392,7 +405,14 @@ impl Hypr {
         let mut target = renderer
             .bind(&mut tex)
             .map_err(|e| format!("bind: {e:?}"))?;
-        let _ = self.render_output_into(renderer, &mut target, output, overlay_cursor)?;
+        let _ = self.render_output_into(
+            renderer,
+            &mut target,
+            output,
+            overlay_cursor,
+            Point::default(),
+            size,
+        )?;
         let mapping = renderer
             .copy_framebuffer(
                 &target,
@@ -411,30 +431,37 @@ impl Hypr {
         })
     }
 
-    /// Renders the whole output into the client's dmabuf.
+    /// Renders the output into the client's dmabuf. `part` is a region: its
+    /// top-left on the output as shown and its size in the buffer.
     pub(crate) fn render_shot_dmabuf(
         &mut self,
         renderer: &mut GlesRenderer,
         output: &Output,
         overlay_cursor: bool,
         dmabuf: &mut Dmabuf,
+        part: Option<(Point<i32, Physical>, Size<i32, Physical>)>,
     ) -> Result<(), String> {
+        let mode = output.current_mode().ok_or("output has no mode")?.size;
+        let (src, size) = part.unwrap_or((Point::default(), mode));
         let mut target = renderer.bind(dmabuf).map_err(|e| format!("bind: {e:?}"))?;
-        let sync = self.render_output_into(renderer, &mut target, output, overlay_cursor)?;
+        let sync =
+            self.render_output_into(renderer, &mut target, output, overlay_cursor, src, size)?;
         // The client reads the buffer as soon as `ready` arrives.
         let _ = sync.wait();
         Ok(())
     }
 
-    /// Draws the output (or the lock screen) into `target`, which has the mode's size.
+    /// Draws the output (or the lock screen) into `target` of `size`: the part
+    /// of the output that starts at `src` (output as shown, physical pixels).
     fn render_output_into(
         &mut self,
         renderer: &mut GlesRenderer,
         target: &mut GlesTarget<'_>,
         output: &Output,
         overlay_cursor: bool,
+        src: Point<i32, Physical>,
+        size: Size<i32, Physical>,
     ) -> Result<SyncPoint, String> {
-        let size = output.current_mode().ok_or("output has no mode")?.size;
         let scale = output.current_scale().fractional_scale();
         // Drawn like the scanout buffer, output transform applied: clients undo
         // the transform they know from wl_output (the winit output is
@@ -442,6 +469,9 @@ impl Hypr {
         let mut tracker = OutputDamageTracker::new(size, scale, output.current_transform());
         let clear = self.clear_color();
         let sync = if self.session_locked {
+            if src != Point::default() {
+                return Err("region capture into a dmabuf while locked".into());
+            }
             let lock = self.lock_elements(renderer, output);
             render_output::<_, WaylandSurfaceRenderElement<GlesRenderer>, _, _>(
                 output,
@@ -461,6 +491,11 @@ impl Hypr {
             if overlay_cursor {
                 elements.splice(0..0, self.cursor_fx_elements(renderer, output));
             }
+            let shift = Point::default() - src;
+            let elements: Vec<_> = elements
+                .into_iter()
+                .map(|e| RelocateRenderElement::from_element(e, shift, Relocate::Relative))
+                .collect();
             tracker
                 .render_output(renderer, target, 0, &elements, clear)
                 .map_err(|e| format!("render: {e:?}"))?

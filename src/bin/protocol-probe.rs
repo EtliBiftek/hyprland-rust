@@ -6,6 +6,7 @@
 //! `protocol-probe layerpopup` a layer popup placed off screen comes back on screen
 //! `protocol-probe dmabuf`    linux-dmabuf: an import of a bogus plane is answered (created or failed)
 //! `protocol-probe scdmabuf`  wlr-screencopy of the output into a dmabuf (udmabuf) shows a red window
+//! `protocol-probe scregion`  the same for an output region; the pixels equal the shm capture
 //! `protocol-probe exportdma` `export`, but into a dmabuf
 //! `protocol-probe focusgrab` hyprland-focus-grab: prints `grabbed`, then `cleared` when a click
 //!                            outside the whitelisted window clears it
@@ -437,8 +438,8 @@ fn main() {
                 copycap(&mut ctx, &globals, &mut p, &mut q, &handle);
             }
         }
-        "scdmabuf" => scdmabuf(&mut ctx, &globals, &mut p, &mut q),
-        _ => fail("usage: protocol-probe export|copycap|dmabuf|scdmabuf|focusgrab"),
+        "scdmabuf" | "scregion" => scdmabuf(&mut ctx, &globals, &mut p, &mut q, mode == "scregion"),
+        _ => fail("usage: protocol-probe export|copycap|dmabuf|scdmabuf|scregion|focusgrab"),
     }
 }
 
@@ -535,6 +536,7 @@ fn scdmabuf(
     globals: &wayland_client::globals::GlobalList,
     p: &mut P,
     q: &mut EventQueue<P>,
+    region: bool,
 ) {
     let qh = ctx.qh.clone();
     let mgr: ZwlrScreencopyManagerV1 = globals
@@ -547,7 +549,15 @@ fn scdmabuf(
     // Let the window map, tile and finish its animation.
     wait(p, q, 3, |_| false);
 
-    let frame = mgr.capture_output(0, &output, &qh, ());
+    let capture = || {
+        if region {
+            // Cuts through the window, which is tiled at the top-left.
+            mgr.capture_output_region(0, &output, 100, 100, 300, 200, &qh, ())
+        } else {
+            mgr.capture_output(0, &output, &qh, ())
+        }
+    };
+    let frame = capture();
     if !wait(p, q, 5, |p| p.export_buffer_done || p.result.is_some()) || p.result.is_some() {
         fail("screencopy: no buffer_done");
     }
@@ -558,6 +568,42 @@ fn scdmabuf(
     frame.copy(&buffer);
     if !wait(p, q, 10, |p| p.result.is_some()) || p.result != Some(true) {
         fail("screencopy into the dmabuf failed");
+    }
+    if region {
+        // The shm path crops a whole-output readback: both must agree.
+        p.export_buffer_done = false;
+        p.result = None;
+        let frame = capture();
+        if !wait(p, q, 5, |p| p.export_buffer_done || p.result.is_some()) || p.result.is_some() {
+            fail("screencopy: no buffer_done for the shm frame");
+        }
+        let (shm, shm_mem) = ctx.buffer(w, h, None);
+        frame.copy(&shm);
+        if !wait(p, q, 10, |p| p.result.is_some()) || p.result != Some(true) {
+            fail("screencopy into shm failed");
+        }
+        let read = |f: &File| {
+            let mut v = vec![0u8; (w * h * 4) as usize];
+            f.read_exact_at(&mut v, 0).unwrap();
+            v
+        };
+        let (a, b) = (read(&mem), read(&shm_mem));
+        let differ = a
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(b.as_chunks::<4>().0)
+            .filter(|(x, y)| (0..3).any(|i| x[i].abs_diff(y[i]) > 8))
+            .count();
+        let share = red_share(&mem, w, h);
+        if (w, h) != (300, 200) || differ > (w * h / 100) as usize || !(0.05..0.6).contains(&share)
+        {
+            fail(&format!(
+                "region dmabuf: {w}x{h}, {differ} pixels differ from shm, red share {share:.3}"
+            ));
+        }
+        println!("OK scregion {w}x{h} red {share:.3}, {differ} pixels differ from shm");
+        return;
     }
     // The probe window keeps its 200x200 buffer whatever size it is tiled to.
     let share = red_share(&mem, w, h);

@@ -56,6 +56,7 @@ grep -q "linux-dmabuf: " "$T/log" || fail "dmabuf global not announced in the lo
 sudo modprobe udmabuf 2>/dev/null || true
 sudo chmod a+rw /dev/udmabuf 2>/dev/null || true
 timeout 60 "$PROBE" scdmabuf || fail "probe scdmabuf"
+timeout 60 "$PROBE" scregion || fail "probe scregion"
 timeout 60 "$PROBE" exportdma || fail "probe exportdma"
 
 # misc:focus_on_activate: the activated window takes the focus.
