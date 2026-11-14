@@ -734,7 +734,7 @@ Every option in the v0.57.1 registry. Types are Hyprland's. Status is for the re
 | `hyprland_input_capture_manager_v1` | none | Needs libei (EIS fd); not implemented. |
 | `hyprland_lock_notifier_v1` | partial | `handlers/lock_notify.rs`: locked/unlocked from ext-session-lock. Global in `tests/globals.sh`. |
 | `hyprland_surface_manager_v1` | partial | `handlers/hyprland_surface.rs`: opacity validated and stored, not applied; visible region ignored. |
-| `hyprland_toplevel_export_manager_v1` | tested | `handlers/toplevel_export.rs` (shm, v2 buffer_done, wlr handle variant). `tests/probe.sh` checks the pixels. No dmabuf. |
+| `hyprland_toplevel_export_manager_v1` | tested | `handlers/toplevel_export.rs` (shm and `linux_dmabuf` Xrgb8888, v2 buffer_done, wlr handle variant). `tests/probe.sh` checks the pixels of both (`protocol-probe export`, `exportdma`). |
 | `hyprland_toplevel_mapping_manager_v1` | tested | `handlers/toplevel_mapping.rs`, used by `tests/probe.sh` to find the export address. |
 | `org_kde_kwin_server_decoration_manager` | none | Not registered by the repo. |
 | `vicinae_hotkey_manager_v1` | none | Not registered by the repo. |

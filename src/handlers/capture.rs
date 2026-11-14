@@ -3,9 +3,10 @@
 //! A protocol handler validates the client's shm buffer and queues a `Job`; the
 //! backends' render loop reaches `capture_process` through `screencopy_process`,
 //! which renders the target offscreen (like wlr-screencopy), writes the pixels
-//! into the shm buffer and runs the job's completion closure.
-//! shortcuts: shm buffers only (no dmabuf targets), every job renders its target
-//! again (no damage tracking, no frame sharing), headless fails all jobs.
+//! into the shm buffer and runs the job's completion closure. A dmabuf buffer is
+//! the render target itself (no readback).
+//! shortcuts: every job renders its target again (no damage tracking, no frame
+//! sharing), headless fails all jobs.
 
 use std::time::Duration;
 
@@ -15,7 +16,8 @@ use smithay::{
         renderer::{
             damage::OutputDamageTracker,
             element::{surface::WaylandSurfaceRenderElement, AsRenderElements},
-            gles::{GlesRenderer, GlesTexture},
+            gles::{GlesRenderer, GlesTarget, GlesTexture},
+            sync::SyncPoint,
             Bind, ExportMem, Offscreen,
         },
     },
@@ -23,6 +25,7 @@ use smithay::{
     output::Output,
     reexports::wayland_server::protocol::wl_buffer::WlBuffer,
     utils::{Rectangle, Scale, Transform},
+    wayland::dmabuf::get_dmabuf,
 };
 
 use super::screencopy::{copy_shot_to_shm, shm_matches, Shot};
@@ -107,6 +110,24 @@ impl Hypr {
                 self.extra.capture.jobs.push(job);
                 continue;
             }
+            if let Ok(mut dmabuf) = get_dmabuf(&job.buffer).cloned() {
+                let res = match &job.target {
+                    Target::Output(o) => self.render_shot_dmabuf(renderer, o, false, &mut dmabuf),
+                    Target::Window(w) => renderer
+                        .bind(&mut dmabuf)
+                        .map_err(|e| format!("bind: {e:?}"))
+                        .and_then(|mut target| render_window_into(renderer, &mut target, w))
+                        // The client reads the buffer as soon as `ready` arrives.
+                        .map(|sync| {
+                            let _ = sync.wait();
+                        }),
+                };
+                if let Err(e) = &res {
+                    tracing::warn!("capture into a dmabuf failed: {e}");
+                }
+                (job.done)(res.is_ok(), time);
+                continue;
+            }
             let shot = match &job.target {
                 Target::Output(o) => self.render_shot(renderer, o, false),
                 Target::Window(w) => render_window_shot(renderer, w),
@@ -127,8 +148,12 @@ impl Hypr {
     }
 }
 
-/// Renders one window (its geometry box, with popups) into an RGBA readback.
-fn render_window_shot(renderer: &mut GlesRenderer, window: &Window) -> Result<Shot, String> {
+/// Draws one window (its geometry box, with popups) into `target`.
+fn render_window_into(
+    renderer: &mut GlesRenderer,
+    target: &mut GlesTarget<'_>,
+    window: &Window,
+) -> Result<SyncPoint, String> {
     let geo = window.geometry();
     let size = geo.size;
     if size.w <= 0 || size.h <= 0 {
@@ -141,16 +166,26 @@ fn render_window_shot(renderer: &mut GlesRenderer, window: &Window) -> Result<Sh
         Scale::from(1.0),
         1.0,
     );
+    let mut tracker = OutputDamageTracker::new((size.w, size.h), 1.0, Transform::Normal);
+    let res = tracker
+        .render_output(renderer, target, 0, &elements, [0.0, 0.0, 0.0, 0.0])
+        .map_err(|e| format!("render: {e:?}"))?;
+    Ok(res.sync)
+}
+
+/// Renders one window into an RGBA readback.
+fn render_window_shot(renderer: &mut GlesRenderer, window: &Window) -> Result<Shot, String> {
+    let size = window.geometry().size;
+    if size.w <= 0 || size.h <= 0 {
+        return Err("window has no size".into());
+    }
     let mut tex: GlesTexture = renderer
         .create_buffer(Fourcc::Abgr8888, (size.w, size.h).into())
         .map_err(|e| format!("create_buffer: {e:?}"))?;
-    let mut tracker = OutputDamageTracker::new((size.w, size.h), 1.0, Transform::Normal);
     let mut target = renderer
         .bind(&mut tex)
         .map_err(|e| format!("bind: {e:?}"))?;
-    tracker
-        .render_output(renderer, &mut target, 0, &elements, [0.0, 0.0, 0.0, 0.0])
-        .map_err(|e| format!("render: {e:?}"))?;
+    let _ = render_window_into(renderer, &mut target, window)?;
     let mapping = renderer
         .copy_framebuffer(
             &target,

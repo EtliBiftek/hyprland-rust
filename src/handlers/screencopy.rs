@@ -58,7 +58,7 @@ pub struct FrameData {
 }
 
 /// True for an (X|A)rgb8888 dmabuf of exactly `w` x `h`.
-fn dmabuf_matches(buffer: &WlBuffer, w: i32, h: i32) -> bool {
+pub(crate) fn dmabuf_matches(buffer: &WlBuffer, w: i32, h: i32) -> bool {
     get_dmabuf(buffer).is_ok_and(|d| {
         matches!(d.format().code, Fourcc::Xrgb8888 | Fourcc::Argb8888)
             && d.size().w == w
@@ -412,7 +412,7 @@ impl Hypr {
     }
 
     /// Renders the whole output into the client's dmabuf.
-    fn render_shot_dmabuf(
+    pub(crate) fn render_shot_dmabuf(
         &mut self,
         renderer: &mut GlesRenderer,
         output: &Output,

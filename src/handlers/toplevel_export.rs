@@ -1,12 +1,12 @@
 //! hyprland-toplevel-export-v1 (xdg-desktop-portal-hyprland window sharing and
-//! previews): renders one toplevel into the client's shm buffer through the
-//! capture queue in `capture.rs`.
-//! shortcuts: no `linux_dmabuf` event (shm only), `overlay_cursor` is ignored,
-//! the whole window is reported as damaged.
+//! previews): renders one toplevel into the client's shm buffer or dmabuf
+//! (Xrgb8888) through the capture queue in `capture.rs`.
+//! shortcuts: `overlay_cursor` is ignored, the whole window is reported as damaged.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use smithay::{
+    backend::allocator::Fourcc,
     desktop::Window,
     reexports::wayland_server::{
         protocol::wl_shm, Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
@@ -19,7 +19,7 @@ use super::{
         hyprland_toplevel_export_frame_v1::{self, HyprlandToplevelExportFrameV1},
         hyprland_toplevel_export_manager_v1::{self, HyprlandToplevelExportManagerV1},
     },
-    screencopy::shm_matches,
+    screencopy::{dmabuf_matches, shm_matches},
 };
 use crate::{ipc::window_addr, Hypr};
 
@@ -65,6 +65,9 @@ fn new_frame(
     match size {
         Some((w, h)) => {
             frame.buffer(wl_shm::Format::Xrgb8888, w as u32, h as u32, w as u32 * 4);
+            if state.extra.dmabuf.can_export() {
+                frame.linux_dmabuf(Fourcc::Xrgb8888 as u32, w as u32, h as u32);
+            }
             if frame.version() >= 2 {
                 frame.buffer_done();
             }
@@ -132,10 +135,12 @@ impl Dispatch<HyprlandToplevelExportFrameV1, FrameData> for Hypr {
             resource.failed();
             return;
         };
-        if !shm_matches(&buffer, w, h) {
+        if !shm_matches(&buffer, w, h)
+            && !(state.extra.dmabuf.can_export() && dmabuf_matches(&buffer, w, h))
+        {
             resource.post_error(
                 hyprland_toplevel_export_frame_v1::Error::InvalidBuffer,
-                "buffer must be an shm buffer matching the advertised format and size",
+                "buffer must match an advertised format and size",
             );
             return;
         }

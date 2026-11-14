@@ -6,6 +6,7 @@
 //! `protocol-probe layerpopup` a layer popup placed off screen comes back on screen
 //! `protocol-probe dmabuf`    linux-dmabuf: an import of a bogus plane is answered (created or failed)
 //! `protocol-probe scdmabuf`  wlr-screencopy of the output into a dmabuf (udmabuf) shows a red window
+//! `protocol-probe exportdma` `export`, but into a dmabuf
 //! `protocol-probe focusgrab` hyprland-focus-grab: prints `grabbed`, then `cleared` when a click
 //!                            outside the whitelisted window clears it
 //! Prints `OK ...` and exits 0, or prints `FAIL ...` and exits 1.
@@ -151,7 +152,7 @@ struct P {
     dmabuf_formats: Vec<(u32, u32, u32)>,
     /// wl_buffer of the last successful linux-dmabuf `create`.
     dma_buffer: Option<WlBuffer>,
-    /// wlr-screencopy `linux_dmabuf` event: (format, width, height).
+    /// `linux_dmabuf` event of a capture frame: (format, width, height).
     sc_dmabuf: Option<(u32, u32, u32)>,
 }
 
@@ -411,7 +412,7 @@ fn main() {
             };
             println!("OK dmabuf: import answered, bogus plane {verdict}");
         }
-        "export" | "copycap" => {
+        "export" | "exportdma" | "copycap" => {
             let list: ExtForeignToplevelListV1 = globals
                 .bind(&qh, 1..=1, ())
                 .unwrap_or_else(|_| bind_err("ext_foreign_toplevel_list_v1"));
@@ -423,8 +424,15 @@ fn main() {
             let handle = handle_of(&p, "probe-red").unwrap();
             // Let the window commit its buffer before capturing.
             wait(&mut p, &mut q, 1, |_| false);
-            if mode == "export" {
-                export(&mut ctx, &globals, &mut p, &mut q, &handle);
+            if mode != "copycap" {
+                export(
+                    &mut ctx,
+                    &globals,
+                    &mut p,
+                    &mut q,
+                    &handle,
+                    mode == "exportdma",
+                );
             } else {
                 copycap(&mut ctx, &globals, &mut p, &mut q, &handle);
             }
@@ -479,6 +487,49 @@ fn udmabuf(len: u64) -> (File, OwnedFd) {
     }
 }
 
+/// A w x h linux-dmabuf wl_buffer on a udmabuf, and the memfd to read it back.
+fn dma_buffer(
+    globals: &wayland_client::globals::GlobalList,
+    p: &mut P,
+    q: &mut EventQueue<P>,
+    qh: &QueueHandle<P>,
+    format: u32,
+    w: u32,
+    h: u32,
+) -> (WlBuffer, File) {
+    let dmabuf: ZwpLinuxDmabufV1 = globals
+        .bind(qh, 3..=3, ())
+        .unwrap_or_else(|_| bind_err("zwp_linux_dmabuf_v1"));
+    wait(p, q, 1, |_| false);
+    // Smallest modifier first: linear (0) when the renderer has it.
+    let (hi, lo) = p
+        .dmabuf_formats
+        .iter()
+        .filter(|f| f.0 == format)
+        .map(|f| (f.1, f.2))
+        .min()
+        .unwrap_or_else(|| fail("capture format is not a linux-dmabuf format"));
+    let (mem, fd) = udmabuf(u64::from(w * h * 4).next_multiple_of(4096));
+    let params = dmabuf.create_params(qh, ());
+    params.add(fd.as_fd(), 0, 0, w * 4, hi, lo);
+    params.create(
+        w as i32,
+        h as i32,
+        format,
+        zwp_linux_buffer_params_v1::Flags::empty(),
+    );
+    p.result = None;
+    if !wait(p, q, 10, |p| p.result.is_some()) {
+        fail("no answer to the dmabuf import");
+    }
+    let buffer = p
+        .dma_buffer
+        .take()
+        .unwrap_or_else(|| fail("the renderer refused the udmabuf"));
+    p.result = None;
+    (buffer, mem)
+}
+
 fn scdmabuf(
     ctx: &mut Ctx,
     globals: &wayland_client::globals::GlobalList,
@@ -486,9 +537,6 @@ fn scdmabuf(
     q: &mut EventQueue<P>,
 ) {
     let qh = ctx.qh.clone();
-    let dmabuf: ZwpLinuxDmabufV1 = globals
-        .bind(&qh, 3..=3, ())
-        .unwrap_or_else(|_| bind_err("zwp_linux_dmabuf_v1"));
     let mgr: ZwlrScreencopyManagerV1 = globals
         .bind(&qh, 3..=3, ())
         .unwrap_or_else(|_| bind_err("zwlr_screencopy_manager_v1"));
@@ -506,31 +554,7 @@ fn scdmabuf(
     let (format, w, h) = p
         .sc_dmabuf
         .unwrap_or_else(|| fail("screencopy: no linux_dmabuf event"));
-    // Smallest modifier first: linear (0) when the renderer has it.
-    let (hi, lo) = p
-        .dmabuf_formats
-        .iter()
-        .filter(|f| f.0 == format)
-        .map(|f| (f.1, f.2))
-        .min()
-        .unwrap_or_else(|| fail("screencopy format is not a linux-dmabuf format"));
-    let (mem, fd) = udmabuf(u64::from(w * h * 4).next_multiple_of(4096));
-    let params = dmabuf.create_params(&qh, ());
-    params.add(fd.as_fd(), 0, 0, w * 4, hi, lo);
-    params.create(
-        w as i32,
-        h as i32,
-        format,
-        zwp_linux_buffer_params_v1::Flags::empty(),
-    );
-    if !wait(p, q, 10, |p| p.result.is_some()) {
-        fail("no answer to the dmabuf import");
-    }
-    let buffer = p
-        .dma_buffer
-        .take()
-        .unwrap_or_else(|| fail("the renderer refused the udmabuf"));
-    p.result = None;
+    let (buffer, mem) = dma_buffer(globals, p, q, &qh, format, w, h);
     frame.copy(&buffer);
     if !wait(p, q, 10, |p| p.result.is_some()) || p.result != Some(true) {
         fail("screencopy into the dmabuf failed");
@@ -552,6 +576,7 @@ fn export(
     p: &mut P,
     q: &mut EventQueue<P>,
     handle: &ExtForeignToplevelHandleV1,
+    dma: bool,
 ) {
     let qh = ctx.qh.clone();
     let map: HyprlandToplevelMappingManagerV1 = globals
@@ -577,7 +602,15 @@ fn export(
     if !wait(p, q, 2, |p| p.export_buffer_done) {
         fail("no buffer_done");
     }
-    let (buf, file) = ctx.buffer(w, h, None);
+    let (buf, file) = if dma {
+        let format = p
+            .sc_dmabuf
+            .unwrap_or_else(|| fail("export: no linux_dmabuf event"))
+            .0;
+        dma_buffer(globals, p, q, &qh, format, w, h)
+    } else {
+        ctx.buffer(w, h, None)
+    };
     _f.copy(&buf, 0);
     if !wait(p, q, 10, |p| p.result.is_some()) || p.result != Some(true) {
         fail("export copy failed");
@@ -904,6 +937,11 @@ impl Dispatch<HyprlandToplevelExportFrameV1, ()> for P {
                 };
                 p.export_buf = Some((f, width, height));
             }
+            E::LinuxDmabuf {
+                format,
+                width,
+                height,
+            } => p.sc_dmabuf = Some((format, width, height)),
             E::BufferDone => p.export_buffer_done = true,
             E::Ready { .. } => p.result = Some(true),
             E::Failed => p.result = Some(false),

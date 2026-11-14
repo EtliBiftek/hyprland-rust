@@ -8,8 +8,8 @@
 //! so the global exists for tests and accepts everything (it never draws).
 //! The global is created once.
 //! shortcuts: no per-surface feedback and no scanout tranches; no `wl_drm`
-//! (needs smithay's `use_system_lib`); only wlr-screencopy renders into client
-//! dmabufs, the other capture protocols still write shm only.
+//! (needs smithay's `use_system_lib`); wlr-screencopy and toplevel-export render
+//! into client dmabufs, ext-image-copy-capture still offers shm only.
 
 use smithay::{
     backend::{
