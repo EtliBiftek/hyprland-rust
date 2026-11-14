@@ -535,11 +535,15 @@ fn scdmabuf(
     if !wait(p, q, 10, |p| p.result.is_some()) || p.result != Some(true) {
         fail("screencopy into the dmabuf failed");
     }
+    // The probe window keeps its 200x200 buffer whatever size it is tiled to.
     let share = red_share(&mem, w, h);
-    if share < 0.5 {
-        fail(&format!("dmabuf pixels not red ({share:.2}, {w}x{h})"));
+    let want = 200.0 * 200.0 / f64::from(w * h);
+    if (share - want).abs() > want * 0.2 {
+        fail(&format!(
+            "dmabuf pixels: red share {share:.3}, expected {want:.3} ({w}x{h})"
+        ));
     }
-    println!("OK scdmabuf {w}x{h} red {share:.2}");
+    println!("OK scdmabuf {w}x{h} red {share:.3}");
 }
 
 fn export(
